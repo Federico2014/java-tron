@@ -26,4 +26,19 @@ public class NewTest {
     // "1daf70c304f467a9efbc9ac1ca7bfe859a478aa6c4b88131b4dbb1547029b972";
   }
 
+  private String recursivelyAddComma(String s) {
+    int length = s.length();
+    if (length <= 3) {
+      return s;
+    }
+    return recursivelyAddComma(s.substring(0, length - 3)).concat(",")
+        .concat(s.substring(length - 3, length));
+  }
+
+  @Test
+  public void formatString() {
+    String str = "123456789";
+    System.out.println(recursivelyAddComma(str));
+  }
+
 }

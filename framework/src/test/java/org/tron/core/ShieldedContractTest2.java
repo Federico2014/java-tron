@@ -106,6 +106,15 @@ public class ShieldedContractTest2 {
         .toHexString(ByteUtil.longTo32Bytes(2)));
   }
 
+  //  @Ignore
+  @Test
+  public void printJstTRC20Address() {
+    String address = "TCFLL5dx5ZJdKnWuesXxi1VPwjLVmWZZy9";
+    logger.info(Hex.toHexString(new byte[11]) + Hex
+        .toHexString(WalletClient.decodeFromBase58Check(address)) + Hex
+        .toHexString(ByteUtil.longTo32Bytes(9)));
+  }
+
 
   @Ignore
   @Test
