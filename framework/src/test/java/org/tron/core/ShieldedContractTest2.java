@@ -66,7 +66,7 @@ public class ShieldedContractTest2 {
   private static WalletGrpc.WalletBlockingStub blockingStubFull = null;
   private static ManagedChannel channelSolidity = null;
   private static WalletSolidityGrpc.WalletSolidityBlockingStub blockingStubSolidity = null;
-  private static String fullnode = "47.252.3.238:50051";
+  private static String fullnode = "47.252.3.238:50051";   // nile 测试网
   private static String soliditynode = "127.0.0.1:50061";
   private static String trc20ContractAddress = "TFUD8x3iAZ9dF7NDCGBtSjznemEomE5rP9";
   private static String shieldedTRC20ContractAddress = "TPcKtz5TRfP4xUZSos81RmXB9K2DBqj2iu";
