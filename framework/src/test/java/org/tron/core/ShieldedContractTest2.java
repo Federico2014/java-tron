@@ -10,6 +10,7 @@ import com.google.protobuf.ByteString;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.SignatureException;
 import java.util.List;
 import java.util.Optional;
@@ -114,6 +115,90 @@ public class ShieldedContractTest2 {
     logger.info(Hex.toHexString(new byte[11]) + Hex
         .toHexString(WalletClient.decodeFromBase58Check(address)) + Hex
         .toHexString(ByteUtil.longTo32Bytes(9)));
+  }
+
+  private String tronToEthAddress(String tronAdress) {
+    byte[] address = WalletClient.decodeFromBase58Check(tronAdress);
+    return null;
+  }
+
+  private String ethToTronAddress(String ethAddress) {
+    return null;
+  }
+
+  @Test
+  public void addressTransform() {
+    String privateKey = "140503e3d6dbac0fa06e2fd36a4a4b21c115d9a70745baf17767caef916677c9";
+    String ethAddress = "0x01Ce410a9c4aa6fD19362E8890394093e7e0cD62";
+    String tronAddress = "TA8km2y45Ly6udYaiJvJXVwzn7ktWzib63";
+    ECKey ecKey = new ECKey(Hex.decode(privateKey), true);
+    byte[] tronAddressBytes = ecKey.getAddress();
+    String tronAddress2 = WalletClient.encode58Check(tronAddressBytes);
+    byte[] tronAddressByte2 = WalletClient.decodeFromBase58Check(tronAddress2);
+    System.out.println(Hex.toHexString(tronAddressByte2));
+  }
+
+  @Test
+  public void tronToEthAddress() throws Exception {
+    String ethAddress = "0x01Ce410a9c4aa6fD19362E8890394093e7e0cD62";
+    String tronAddress = "TA8km2y45Ly6udYaiJvJXVwzn7ktWzib63";
+    byte[] tronBytes = WalletClient.decodeFromBase58Check(tronAddress);
+    byte[] ethBytes = new byte[20];
+    System.arraycopy(tronBytes, 1, ethBytes, 0, 20);
+    Assert.assertArrayEquals(ByteArray.fromHexString(ethAddress), ethBytes);
+    Assert.assertEquals(ethAddress.toLowerCase(), "0x" + Hex.toHexString(ethBytes));
+    String address = "0x" + ByteArray.toHexString(ethBytes);
+    System.out.println("eth address: " + toChecksumAddress(address));
+  }
+
+  @Test
+  public void testChecksumAddress() throws Exception {
+    String ethAddress = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359";
+    byte[] ethBytes = ByteArray.fromHexString(ethAddress);
+    System.out.println(ByteArray.toHexString(ethBytes));
+    String input = ByteArray.toHexString(ethBytes);
+    System.out.println(ByteArray.toHexString(Hash.sha3(input.getBytes(StandardCharsets.UTF_8))));
+    Assert.assertEquals(ethAddress, toChecksumAddress(ethAddress.toLowerCase()));
+  }
+
+  private String toChecksumAddress(String address) throws Exception {
+    StringBuffer sb = new StringBuffer();
+    int nibble = 0;
+
+    if (address.startsWith("0x")) {
+      address = address.substring(2);
+    }
+    String hashedAddress = ByteArray
+        .toHexString(Hash.sha3(address.getBytes(StandardCharsets.UTF_8)));
+    sb.append("0x");
+    for (int i = 0; i < address.length(); i++) {
+      if ("0123456789".contains(String.valueOf(address.charAt(i)))) {
+        sb.append(address.charAt(i));
+      } else if ("abcdef".contains(String.valueOf(address.charAt(i)))) {
+        nibble = Integer.parseInt(String.valueOf(hashedAddress.charAt(i)), 16);
+        if (nibble > 7) {
+          sb.append(String.valueOf(address.charAt(i)).toUpperCase());
+        } else {
+          sb.append(address.charAt(i));
+        }
+      } else {
+        throw new Exception("invalid hex character in address");
+      }
+    }
+    return sb.toString();
+  }
+
+
+  @Test
+  public void ethToTronAddress() {
+    String ethAddress = "0x01Ce410a9c4aa6fD19362E8890394093e7e0cD62";
+    String tronAddress = "TA8km2y45Ly6udYaiJvJXVwzn7ktWzib63";
+    byte[] address = ByteArray.fromHexString(ethAddress);
+    byte[] newAddress = new byte[21];
+    System.arraycopy(address, 0, newAddress, 1, 20);
+    newAddress[0] = WalletClient.getAddressPreFixByte();
+    Assert.assertEquals(tronAddress, WalletClient.encode58Check(newAddress));
+    System.out.println(WalletClient.encode58Check(newAddress));
   }
 
 
