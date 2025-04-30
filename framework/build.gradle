@@ -257,7 +257,7 @@ task copyToParent(type: Copy) {
 }
 
 installDist {
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    duplicatesStrategy = DuplicatesStrategy.WARN
 }
 
 build.finalizedBy(copyToParent)
