@@ -162,14 +162,6 @@ if (releaseBinary == 'true') {
     }
 }
 
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
-        }
-    }
-}
-
 task copyToParent(type: Copy) {
     into "../build/distributions"
     from "$buildDir/distributions"
