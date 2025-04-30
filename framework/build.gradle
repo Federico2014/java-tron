@@ -256,4 +256,8 @@ task copyToParent(type: Copy) {
     include "*.zip"
 }
 
+installDist {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 build.finalizedBy(copyToParent)
