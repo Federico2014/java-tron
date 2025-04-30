@@ -156,7 +156,7 @@ task copyToParent(type: Copy) {
 }
 
 installDist {
-    duplicatesStrategy = DuplicatesStrategy.WARN
+    duplicatesStrategy = DuplicatesStrategy.INHERIT
 }
 
 build.finalizedBy(copyToParent)
