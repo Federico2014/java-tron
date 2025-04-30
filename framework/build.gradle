@@ -205,9 +205,21 @@ def createScript(project, mainClass, name) {
     }
 }
 
-applicationDistribution.from("../gradle/java-tron.vmoptions") {
-    into "bin"
+//applicationDistribution.from("../gradle/java-tron.vmoptions") {
+//    into "bin"
+//}
+
+distributions {
+    main {
+        contents {
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            from("../gradle/java-tron.vmoptions") {
+                into "bin"
+            }
+        }
+    }
 }
+
 //distZip {
 //    doLast {
 //        file("$destinationDir/$archiveName").renameTo("$destinationDir/"+'java-tron-'+version+'-bin.zip')

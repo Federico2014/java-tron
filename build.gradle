@@ -71,12 +71,6 @@ subprojects {
         reproducibleFileOrder = true
         duplicatesStrategy = DuplicatesStrategy.INCLUDE // allow duplicates
     }
-
-    if (System.getenv("JITPACK") != null) {
-        tasks.withType(Copy).configureEach {
-            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        }
-    }
 }
 
 task copyToParent(type: Copy) {

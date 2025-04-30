@@ -127,9 +127,22 @@ def createScript(project, mainClass, name) {
         }
     }
 }
-applicationDistribution.from("../gradle/java-tron.vmoptions") {
-    into "bin"
+
+//applicationDistribution.from("../gradle/java-tron.vmoptions") {
+//    into "bin"
+//}
+
+distributions {
+    main {
+        contents {
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            from("../gradle/java-tron.vmoptions") {
+                into "bin"
+            }
+        }
+    }
 }
+
 createScript(project, 'org.tron.plugins.ArchiveManifest', 'ArchiveManifest')
 createScript(project, 'org.tron.plugins.Toolkit', 'Toolkit')
 
