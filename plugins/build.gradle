@@ -155,8 +155,4 @@ task copyToParent(type: Copy) {
     include "*.zip"
 }
 
-installDist {
-    duplicatesStrategy = DuplicatesStrategy.INHERIT
-}
-
 build.finalizedBy(copyToParent)
