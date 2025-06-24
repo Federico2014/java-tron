@@ -137,6 +137,8 @@ run {
 
 test {
     testLogging {
+        events = ['passed', 'skipped', 'failed', 'standardOut', 'standardError']
+        showStandardStreams = true
         exceptionFormat = 'full'
     }
     jacoco {
