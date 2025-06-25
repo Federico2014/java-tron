@@ -117,6 +117,9 @@ public class PrecompiledContractsTest extends BaseTest {
   private static final DataWord ecRecoverAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000001");
 
+  private static final DataWord modExpAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000005");
+
   private static final String ACCOUNT_NAME = "account";
   private static final String OWNER_ADDRESS;
   private static final String WITNESS_NAME = "witness";
@@ -1147,6 +1150,32 @@ public class PrecompiledContractsTest extends BaseTest {
     Assert.assertTrue(res.getLeft());
     Assert.assertEquals(0, ByteArray.toLong(res.getRight()));
   }
+
+  @Test
+  public void modExpBench() {
+    PrecompiledContract modExpContract = createPrecompiledContract(modExpAddr, OWNER_ADDRESS);
+
+    // eip_example1
+
+    byte[] input = Hex.decode("0000000000000000000000000000000000000000000000000000000000000001"
+        + "0000000000000000000000000000000000000000000000000000000000000020"
+        + "0000000000000000000000000000000000000000000000000000000000000020"
+        + "03"
+        + "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e"
+        + "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f");
+
+    int iterations = 10000;
+    long start = System.nanoTime();
+    for (int i = 0; i < iterations; i++) {
+//      Pair<Boolean, byte[]> result = modExpContract.execute(input);
+//      Assert.assertTrue(result.getLeft());
+      modExpContract.execute(input);
+    }
+    long end = System.nanoTime();
+
+    System.out.println("ModExp precompile contract execution cost: " + ((end - start) / iterations) + "ns per call");
+  }
+
 
   @Test
   public void ecRecoverBench() {
