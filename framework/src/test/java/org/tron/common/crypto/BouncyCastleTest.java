@@ -79,6 +79,29 @@ public class BouncyCastleTest {
   }
 
   @Test
+  public void secp256k1Bench() throws SignatureException {
+    SignInterface sign = SignUtils.fromPrivate(Hex.decode(privString), true);
+    String msg = "transaction raw data";
+    String spongyAddress = "cd2a3d9f938e13cd947ec05abc7fe734df8dd826";
+    byte[] hash = Sha256Hash.hash(true, msg.getBytes());
+    String sig = sign.signHash(hash);
+
+    int iterations = 10000;
+    long startTime = System.nanoTime();
+    for (int i = 0; i < iterations; i++) {
+      ECKey.signatureToKeyBytes(hash, sig);
+//      byte[] address = SignUtils.signatureToAddress(hash, sig, true);
+//      assertEquals(spongyAddress, Hex.toHexString(Arrays.copyOfRange(address, 1, 21)));
+    }
+    long endTime = System.nanoTime();
+    long durationNs = endTime - startTime;
+    long nsPerIteration = durationNs / iterations;
+
+    System.out.println("Secp256k1 execution cost: " + nsPerIteration + "ns per call");
+
+  }
+
+  @Test
   public void testECSpongySignature() throws SignatureException {
     String msg = "transaction raw data";
     String spongySig = "GwYii3BGoQq3sdyWiGVv7bGCR5hJy62g+IF+1jPOSqHt"
