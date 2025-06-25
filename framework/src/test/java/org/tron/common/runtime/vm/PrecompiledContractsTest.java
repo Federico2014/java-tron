@@ -114,6 +114,9 @@ public class PrecompiledContractsTest extends BaseTest {
   private static final DataWord altBN128PairingAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000008");
 
+  private static final DataWord ecRecoverAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000001");
+
   private static final String ACCOUNT_NAME = "account";
   private static final String OWNER_ADDRESS;
   private static final String WITNESS_NAME = "witness";
@@ -1146,6 +1149,32 @@ public class PrecompiledContractsTest extends BaseTest {
   }
 
   @Test
+  public void ecRecoverBench() {
+
+    PrecompiledContract ecRecoverContract = createPrecompiledContract(ecRecoverAddr, OWNER_ADDRESS);
+
+    byte[] input = Hex.decode(
+        "da13687f911cf8ede5e0a4317d8b9bf691b56bc2f3f4e463c8c2eb1f61a54469000000000000000000000000000000000000000000000000000000000000001bf6e5df315197d9fe994fae7e05e33be4bd090f9533f36c6285b80478cd21c38533928bb06d48795a86c12f5ccb95758e891d8b1b2d62106e85ae36cb8414d56b");
+    // Run benchmark with 10,000 iterations
+    byte[] address = new byte[20];
+    int iterations = 10000;
+    long startTime = System.nanoTime();
+    for (int i = 0; i < iterations; i++) {
+      ecRecoverContract.execute(input);
+//      Pair<Boolean, byte[]> result = ecRecoverContract.execute(input);
+//      Assert.assertTrue(result.getLeft());
+//      System.arraycopy(result.getRight(), 12, address, 0, 20);
+//      Assert.assertArrayEquals(address, Hex.decode("9765c8a57ade562c30166b7e18aef179a22da185"));
+    }
+
+    long endTime = System.nanoTime();
+    long durationNs = endTime - startTime;
+    long nsPerIteration = durationNs / iterations;
+
+    System.out.println("ECRecover precompile contract execution cost: " + nsPerIteration + "ns per call");
+  }
+
+  @Test
   public void bn128Bench() throws Exception {
     PrecompiledContract bn128Add = createPrecompiledContract(altBN128AddAddr, OWNER_ADDRESS);
     JSONObject testCase = readJsonFile("bn256Add.json").getJSONObject(0);
@@ -1157,7 +1186,7 @@ public class PrecompiledContractsTest extends BaseTest {
     input = Hex.decode(testCase.getString("Input"));
     bench(bn128Mul, input, 1000);
 
-    PrecompiledContract bn128Pairing = 
+    PrecompiledContract bn128Pairing =
         createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
     testCase = readJsonFile("bn256Pairing.json").getJSONObject(13);
     input = Hex.decode(testCase.getString("Input"));
@@ -1175,11 +1204,11 @@ public class PrecompiledContractsTest extends BaseTest {
       byte[] input = Hex.decode(testCase.getString("Input"));
       Boolean expectedResult = testCase.getBoolean("Result");
       byte[] expectedOutput = Hex.decode(testCase.getString("Expected"));
-      
+
       Pair<Boolean, byte[]> res = bn128Add.execute(input);
       Boolean actualResult = res.getLeft();
       byte[] actualOutput = res.getRight();
-      
+
       Assert.assertEquals(String.format("test %s failed", name), expectedResult, actualResult);
       assertArrayEquals(String.format("test %s failed", name), expectedOutput, actualOutput);
     }
@@ -1208,7 +1237,7 @@ public class PrecompiledContractsTest extends BaseTest {
 
   @Test
   public void bn128PairingTest() throws Exception {
-    PrecompiledContract bn128Pairing = 
+    PrecompiledContract bn128Pairing =
         createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
     // https://github.com/ethereum/go-ethereum/blob/master/core/vm/testdata/precompiles/bn256Pairing.json
     JSONArray testCases = readJsonFile("bn256Pairing.json");
@@ -1223,7 +1252,7 @@ public class PrecompiledContractsTest extends BaseTest {
       Pair<Boolean, byte[]> res = bn128Pairing.execute(input);
       Boolean actualResult = res.getLeft();
       byte[] actualOutput = res.getRight();
-      
+
       Assert.assertEquals(String.format("test %s failed", name), expectedResult, actualResult);
       assertArrayEquals(String.format("test %s failed", name), expectedOutput, actualOutput);
     }
