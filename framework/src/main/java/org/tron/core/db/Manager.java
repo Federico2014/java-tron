@@ -1501,14 +1501,20 @@ public class Manager {
       trxCap.setTrxTrace(null);
     }
     long cost = System.currentTimeMillis() - start;
-    if (cost > 100) {
-      String type = "broadcast";
-      if (Objects.nonNull(blockCap)) {
-        type = blockCap.hasWitnessSignature() ? "apply" : "pack";
-      }
-      logger.info("Process transaction {} cost {} ms during {}, {}",
-             Hex.toHexString(transactionInfo.getId()), cost, type, contract.getType().name());
+//    if (cost > 100) {
+//      String type = "broadcast";
+//      if (Objects.nonNull(blockCap)) {
+//        type = blockCap.hasWitnessSignature() ? "apply" : "pack";
+//      }
+//      logger.info("Process transaction {} cost {} ms during {}, {}",
+//             Hex.toHexString(transactionInfo.getId()), cost, type, contract.getType().name());
+//    }
+    String type = "broadcast";
+    if (Objects.nonNull(blockCap)) {
+      type = blockCap.hasWitnessSignature() ? "apply" : "pack";
     }
+    logger.info("Process transaction {} cost {} ms during {}, {}",
+        Hex.toHexString(transactionInfo.getId()), cost, type, contract.getType().name());
     Metrics.histogramObserve(requestTimer);
     return transactionInfo.getInstance();
   }
