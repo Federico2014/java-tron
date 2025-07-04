@@ -19,6 +19,7 @@ import static org.tron.core.config.Parameter.ChainConstant.TRX_PRECISION;
 
 import com.google.protobuf.ByteString;
 
+import com.sun.jna.ptr.IntByReference;
 import java.lang.reflect.Constructor;
 import java.math.BigInteger;
 import java.security.MessageDigest;
@@ -39,6 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
+import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
 import org.tron.common.crypto.Blake2bfMessageDigest;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.SignUtils;
@@ -750,25 +752,47 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
-      byte[] x1 = parseWord(data, 0);
-      byte[] y1 = parseWord(data, 1);
+//      byte[] x1 = parseWord(data, 0);
+//      byte[] y1 = parseWord(data, 1);
+//
+//      byte[] x2 = parseWord(data, 2);
+//      byte[] y2 = parseWord(data, 3);
+//
+//      BN128<Fp> p1 = BN128Fp.create(x1, y1);
+//      if (p1 == null) {
+//        return Pair.of(false, EMPTY_BYTE_ARRAY);
+//      }
+//
+//      BN128<Fp> p2 = BN128Fp.create(x2, y2);
+//      if (p2 == null) {
+//        return Pair.of(false, EMPTY_BYTE_ARRAY);
+//      }
+//
+//      BN128<Fp> res = p1.add(p2).toEthNotation();
+//
+//      return Pair.of(true, encodeRes(res.x().bytes(), res.y().bytes()));
 
-      byte[] x2 = parseWord(data, 2);
-      byte[] y2 = parseWord(data, 3);
+      final byte[] output = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_RESULT_BYTES];
+      final IntByReference outputLength = new IntByReference();
+      final byte[] error = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_ERROR_BYTES];
+      final IntByReference errorLength = new IntByReference();
+      byte[] result;
 
-      BN128<Fp> p1 = BN128Fp.create(x1, y1);
-      if (p1 == null) {
-        return Pair.of(false, EMPTY_BYTE_ARRAY);
+      LibGnarkEIP196.eip196_perform_operation(
+          LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE,
+          data,
+          data.length,
+          output,
+          outputLength,
+          error,
+          errorLength);
+      if (errorLength.getValue() > 0) {
+        result = ByteArray.subArray(error, 0, errorLength.getValue());
+        return Pair.of(false, result);
       }
 
-      BN128<Fp> p2 = BN128Fp.create(x2, y2);
-      if (p2 == null) {
-        return Pair.of(false, EMPTY_BYTE_ARRAY);
-      }
-
-      BN128<Fp> res = p1.add(p2).toEthNotation();
-
-      return Pair.of(true, encodeRes(res.x().bytes(), res.y().bytes()));
+      result = ByteArray.subArray(output, 0, outputLength.getValue());
+      return Pair.of(true, result);
     }
   }
 
@@ -804,19 +828,41 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
-      byte[] x = parseWord(data, 0);
-      byte[] y = parseWord(data, 1);
+//      byte[] x = parseWord(data, 0);
+//      byte[] y = parseWord(data, 1);
+//
+//      byte[] s = parseWord(data, 2);
+//
+//      BN128<Fp> p = BN128Fp.create(x, y);
+//      if (p == null) {
+//        return Pair.of(false, EMPTY_BYTE_ARRAY);
+//      }
+//
+//      BN128<Fp> res = p.mul(BIUtil.toBI(s)).toEthNotation();
+//
+//      return Pair.of(true, encodeRes(res.x().bytes(), res.y().bytes()));
 
-      byte[] s = parseWord(data, 2);
+      final byte[] output = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_RESULT_BYTES];
+      final IntByReference outputLength = new IntByReference();
+      final byte[] error = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_ERROR_BYTES];
+      final IntByReference errorLength = new IntByReference();
+      byte[] result;
 
-      BN128<Fp> p = BN128Fp.create(x, y);
-      if (p == null) {
-        return Pair.of(false, EMPTY_BYTE_ARRAY);
+      LibGnarkEIP196.eip196_perform_operation(
+          LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE,
+          data,
+          data.length,
+          output,
+          outputLength,
+          error,
+          errorLength);
+      if (errorLength.getValue() > 0) {
+        result = ByteArray.subArray(error, 0, errorLength.getValue());
+        return Pair.of(false, result);
       }
 
-      BN128<Fp> res = p.mul(BIUtil.toBI(s)).toEthNotation();
-
-      return Pair.of(true, encodeRes(res.x().bytes(), res.y().bytes()));
+      result = ByteArray.subArray(output, 0, outputLength.getValue());
+      return Pair.of(true, result);
     }
   }
 
@@ -868,25 +914,48 @@ public class PrecompiledContracts {
         return Pair.of(false, EMPTY_BYTE_ARRAY);
       }
 
-      PairingCheck check = PairingCheck.create();
+//      PairingCheck check = PairingCheck.create();
+//
+//      // iterating over all pairs
+//      for (int offset = 0; offset < data.length; offset += PAIR_SIZE) {
+//
+//        Pair<BN128G1, BN128G2> pair = decodePair(data, offset);
+//
+//        // fail if decoding has failed
+//        if (pair == null) {
+//          return Pair.of(false, EMPTY_BYTE_ARRAY);
+//        }
+//
+//        check.addPair(pair.getLeft(), pair.getRight());
+//      }
+//
+//      check.run();
+//      int result = check.result();
+//
+//      return Pair.of(true, new DataWord(result).getData());
 
-      // iterating over all pairs
-      for (int offset = 0; offset < data.length; offset += PAIR_SIZE) {
+      final byte[] output = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_RESULT_BYTES];
+      final IntByReference outputLength = new IntByReference();
+      final byte[] error = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_ERROR_BYTES];
+      final IntByReference errorLength = new IntByReference();
+      byte[] result;
 
-        Pair<BN128G1, BN128G2> pair = decodePair(data, offset);
+      LibGnarkEIP196.eip196_perform_operation(
+          LibGnarkEIP196.EIP196_PAIR_OPERATION_RAW_VALUE,
+          data,
+          data.length,
+          output,
+          outputLength,
+          error,
+          errorLength);
 
-        // fail if decoding has failed
-        if (pair == null) {
-          return Pair.of(false, EMPTY_BYTE_ARRAY);
-        }
-
-        check.addPair(pair.getLeft(), pair.getRight());
+      if (errorLength.getValue() > 0) {
+        result = ByteArray.subArray(error, 0, errorLength.getValue());
+        return Pair.of(false, result);
       }
 
-      check.run();
-      int result = check.result();
-
-      return Pair.of(true, new DataWord(result).getData());
+      result = ByteArray.subArray(output, 0, outputLength.getValue());
+      return Pair.of(true, result);
     }
 
     private Pair<BN128G1, BN128G2> decodePair(byte[] in, int offset) {

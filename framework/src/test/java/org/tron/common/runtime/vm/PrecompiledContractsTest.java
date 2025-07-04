@@ -1,13 +1,20 @@
 package org.tron.common.runtime.vm;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.tron.common.utils.ByteUtil.stripLeadingZeroes;
 import static org.tron.core.config.Parameter.ChainConstant.BLOCK_PRODUCED_INTERVAL;
 import static org.tron.core.db.TransactionTrace.convertToTronAddress;
 
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Charsets;
+import com.google.common.io.Files;
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
+import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bouncycastle.util.Arrays;
@@ -40,6 +47,7 @@ import org.tron.core.vm.PrecompiledContracts.PrecompiledContract;
 import org.tron.core.vm.config.VMConfig;
 import org.tron.core.vm.repository.Repository;
 import org.tron.core.vm.repository.RepositoryImpl;
+import org.tron.core.zksnark.SendCoinShieldTest;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Proposal.State;
@@ -94,6 +102,14 @@ public class PrecompiledContractsTest extends BaseTest {
 
   private static final DataWord totalAcquiredResourceAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000001000015");
+
+    // bn128
+  private static final DataWord altBN128AddAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000006");
+  private static final DataWord altBN128MulAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000007");
+  private static final DataWord altBN128PairingAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000008");
 
   private static final String ACCOUNT_NAME = "account";
   private static final String OWNER_ADDRESS;
@@ -206,7 +222,7 @@ public class PrecompiledContractsTest extends BaseTest {
     Assert.assertEquals(1,
         dbManager.getAccountStore().get(ByteArray.fromHexString(OWNER_ADDRESS)).getVotesList()
             .get(0).getVoteCount());
-    Assert.assertArrayEquals(ByteArray.fromHexString(WITNESS_ADDRESS),
+    assertArrayEquals(ByteArray.fromHexString(WITNESS_ADDRESS),
         dbManager.getAccountStore().get(ByteArray.fromHexString(OWNER_ADDRESS)).getVotesList()
             .get(0).getVoteAddress().toByteArray());
     Assert.assertEquals(true, result);
@@ -490,16 +506,16 @@ public class PrecompiledContractsTest extends BaseTest {
 
     Pair<Boolean, byte[]> res = checkUnDelegateResourcePcc.execute(null);
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(encodeMultiWord(zero, zero, zero), res.getRight());
+    assertArrayEquals(encodeMultiWord(zero, zero, zero), res.getRight());
 
     res = checkUnDelegateResourcePcc.execute(encodeMultiWord(one, one, one));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(encodeMultiWord(zero, zero, zero), res.getRight());
+    assertArrayEquals(encodeMultiWord(zero, zero, zero), res.getRight());
 
     res = checkUnDelegateResourcePcc.execute(
         encodeMultiWord(owner, ByteArray.fromLong(1_000_000L), ByteArray.fromLong(10L)));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(encodeMultiWord(zero, zero, zero), res.getRight());
+    assertArrayEquals(encodeMultiWord(zero, zero, zero), res.getRight());
 
     long defaultWindowSizeMs = 86_400_000L;
     long currentSlot = latestTimestamp / 3_000;
@@ -508,7 +524,7 @@ public class PrecompiledContractsTest extends BaseTest {
     res = checkUnDelegateResourcePcc.execute(
         encodeMultiWord(owner, ByteArray.fromLong(1_000_000L), one));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(
+    assertArrayEquals(
         encodeMultiWord(zero, zero, ByteArray.fromLong(defaultLeftTime)),
         res.getRight());
 
@@ -521,7 +537,7 @@ public class PrecompiledContractsTest extends BaseTest {
     res = checkUnDelegateResourcePcc.execute(
         encodeMultiWord(owner, ByteArray.fromLong(10_000_000L), one));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(
+    assertArrayEquals(
         encodeMultiWord(ByteArray.fromLong(10_000_000L), zero,
             ByteArray.fromLong(defaultLeftTime)),
         res.getRight());
@@ -537,7 +553,7 @@ public class PrecompiledContractsTest extends BaseTest {
     res = checkUnDelegateResourcePcc.execute(
         encodeMultiWord(owner, ByteArray.fromLong(10_000_000L), one));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(
+    assertArrayEquals(
         encodeMultiWord(
             ByteArray.fromLong(5_000_000L),
             ByteArray.fromLong(5_000_000L),
@@ -549,7 +565,7 @@ public class PrecompiledContractsTest extends BaseTest {
     res = checkUnDelegateResourcePcc.execute(
         encodeMultiWord(owner, ByteArray.fromLong(10_000_000L), one));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(
+    assertArrayEquals(
         encodeMultiWord(
             ByteArray.fromLong(10_000_000L),
             ByteArray.fromLong(0L),
@@ -562,7 +578,7 @@ public class PrecompiledContractsTest extends BaseTest {
     res = checkUnDelegateResourcePcc.execute(
         encodeMultiWord(owner, ByteArray.fromLong(10_000_000L), one));
     Assert.assertTrue(res.getLeft());
-    Assert.assertArrayEquals(
+    assertArrayEquals(
         encodeMultiWord(
             ByteArray.fromLong(0L),
             ByteArray.fromLong(10_000_000L),
@@ -1126,6 +1142,69 @@ public class PrecompiledContractsTest extends BaseTest {
     Assert.assertEquals(0, ByteArray.toLong(res.getRight()));
   }
 
+  @Test
+  public void bn128AdditionTest() throws Exception {
+    PrecompiledContract bn128Add = createPrecompiledContract(altBN128AddAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("bn256Add.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      String name = testCase.getString("Name");
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = bn128Add.execute(input).getRight();
+      assertArrayEquals(String.format("BN128Add test %s failed", name), expected, actual);
+    }
+  }
+
+  @Test
+  public void bn128MultiplicationTest() throws Exception {
+    PrecompiledContract bn128Mul = createPrecompiledContract(altBN128MulAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("bn256ScalarMul.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      String name = testCase.getString("Name");
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = bn128Mul.execute(input).getRight();
+      assertArrayEquals(String.format("bn128Mul test %s failed", name), expected, actual);
+    }
+  }
+
+  @Test
+  public void bn128PairingTest() throws Exception {
+    PrecompiledContract bn128Pairing =
+        createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("bn256Pairing.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      String name = testCase.getString("Name");
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = bn128Pairing.execute(input).getRight();
+      assertArrayEquals(String.format("bn128Pairing test %s failed", name), expected, actual);
+    }
+  }
+
+  @Test
+  public void bn128Bench() throws Exception {
+    PrecompiledContract bn128Add = createPrecompiledContract(altBN128AddAddr, OWNER_ADDRESS);
+    JSONObject testCase = readJsonFile("bn256Add.json").getJSONObject(0);
+    byte[] input = Hex.decode(testCase.getString("Input"));
+    bench(bn128Add, input, 10000);
+
+    PrecompiledContract bn128Mul = createPrecompiledContract(altBN128MulAddr, OWNER_ADDRESS);
+    testCase = readJsonFile("bn256ScalarMul.json").getJSONObject(1);
+    input = Hex.decode(testCase.getString("Input"));
+    bench(bn128Mul, input, 1000);
+
+    PrecompiledContract bn128Pairing =
+        createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
+    testCase = readJsonFile("bn256Pairing.json").getJSONObject(13);
+    input = Hex.decode(testCase.getString("Input"));
+    bench(bn128Pairing, input, 100);
+  }
+
+
   //@Test
   public void convertFromTronBase58AddressNative() {
     // 27WnTihwXsqCqpiNedWvtKCZHsLjDt4Hfmf  TestNet address
@@ -1142,7 +1221,7 @@ public class PrecompiledContractsTest extends BaseTest {
         WITNESS_ADDRESS);
 
     byte[] solidityAddress = contract.execute(data).getRight();
-    Assert.assertArrayEquals(solidityAddress,
+    assertArrayEquals(solidityAddress,
         new DataWord(Hex.decode(WITNESS_ADDRESS_BASE)).getData());
   }
 
@@ -1163,6 +1242,26 @@ public class PrecompiledContractsTest extends BaseTest {
     }
 
     return res;
+  }
+
+  private JSONArray readJsonFile(String fileName) throws Exception {
+    String file1 = SendCoinShieldTest.class.getClassLoader()
+        .getResource("json" + File.separator + fileName).getFile();
+    List<String> readLines = Files.readLines(new File(file1),
+        Charsets.UTF_8);
+
+    return JSONArray
+        .parseArray(readLines.stream().reduce((s, s2) -> s + s2).get());
+  }
+
+  private static void bench(PrecompiledContract contract, byte[] input, int itersCount) {
+    long start = System.nanoTime();
+    for (int i = 0; i < itersCount; i++) {
+      contract.execute(input);
+    }
+    long end = System.nanoTime();
+    System.out.println(
+        contract.getClass().getSimpleName() + " cost " + (end - start) / itersCount + "ns");
   }
 
 }
