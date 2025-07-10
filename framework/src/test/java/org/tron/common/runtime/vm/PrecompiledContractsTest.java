@@ -1337,6 +1337,10 @@ public class PrecompiledContractsTest extends BaseTest {
   }
 
   private static void bench(PrecompiledContract contract, byte[] input, int itersCount) {
+    int MATH_WARMUP = itersCount;
+    for (int i = 0; i < MATH_WARMUP; i++) {
+      contract.execute(input);
+    }
     long start = System.nanoTime();
     for (int i = 0; i < itersCount; i++) {
       contract.execute(input);
