@@ -14,6 +14,8 @@ import com.google.protobuf.ByteString;
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.security.SecureRandom;
+import java.security.SignatureException;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
@@ -23,10 +25,15 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.tron.common.BaseTest;
+import org.tron.common.crypto.ECKey.ECDSASignature;
+import org.tron.common.crypto.SignInterface;
+import org.tron.common.crypto.SignUtils;
 import org.tron.common.runtime.ProgramResult;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 import org.tron.common.utils.Commons;
+import org.tron.common.utils.PublicMethod;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.common.utils.StringUtil;
 import org.tron.core.Constant;
 import org.tron.core.Wallet;
@@ -110,6 +117,10 @@ public class PrecompiledContractsTest extends BaseTest {
       "0000000000000000000000000000000000000000000000000000000000000007");
   private static final DataWord altBN128PairingAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000008");
+
+  //EcRecover
+  private static final DataWord ecRecover = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000001");
 
   private static final String ACCOUNT_NAME = "account";
   private static final String OWNER_ADDRESS;
@@ -1143,6 +1154,47 @@ public class PrecompiledContractsTest extends BaseTest {
   }
 
   @Test
+  public void ecRecoverTest() throws SignatureException {
+    PrecompiledContract ecrecover = createPrecompiledContract(ecRecover, OWNER_ADDRESS);
+    for (int i = 0; i < 10; i++) {
+      SignUtils.setUseECKeyV2(false);
+      byte[] input = getEcRecoverInput();
+      byte[] actual = ecrecover.execute(input).getRight();
+      byte[] address = Arrays.copyOfRange(actual, 11, 32);
+
+      SignUtils.setUseECKeyV2(true);
+      byte[] actual2 = ecrecover.execute(input).getRight();
+      byte[] address2 = Arrays.copyOfRange(actual2, 11, 32);
+      assertArrayEquals(address, address2);
+    }
+
+    for (int i = 0; i < 10; i++) {
+      SignUtils.setUseECKeyV2(true);
+      byte[] input = getEcRecoverInput();
+      byte[] actual = ecrecover.execute(input).getRight();
+      byte[] address = Arrays.copyOfRange(actual, 11, 32);
+
+      SignUtils.setUseECKeyV2(false);
+      byte[] actual2 = ecrecover.execute(input).getRight();
+      byte[] address2 = Arrays.copyOfRange(actual2, 11, 32);
+      assertArrayEquals(address, address2);
+    }
+  }
+
+  @Test
+  public void ecRecoverBench() throws SignatureException {
+    PrecompiledContract ecrecover = createPrecompiledContract(ecRecover, OWNER_ADDRESS);
+    byte[] input = getEcRecoverInput();
+    logger.info("EcRecover bench");
+    SignUtils.setUseECKeyV2(false);
+    bench(ecrecover, input, 10000);
+
+    logger.info("EcRecoverV2 bench");
+    SignUtils.setUseECKeyV2(true);
+    bench(ecrecover, input, 10000);
+  }
+
+  @Test
   public void bn128AdditionTest() throws Exception {
     PrecompiledContract bn128Add = createPrecompiledContract(altBN128AddAddr, OWNER_ADDRESS);
     JSONArray testCases = readJsonFile("bn256Add.json");
@@ -1255,7 +1307,7 @@ public class PrecompiledContractsTest extends BaseTest {
   }
 
   private static void bench(PrecompiledContract contract, byte[] input, int itersCount) {
-    int MATH_WARMUP = 15_000;
+    int MATH_WARMUP = 1000;
     for (int i = 0; i < MATH_WARMUP; i++) {
       contract.execute(input);
     }
@@ -1264,8 +1316,31 @@ public class PrecompiledContractsTest extends BaseTest {
       contract.execute(input);
     }
     long end = System.nanoTime();
-    System.out.println(
-        contract.getClass().getSimpleName() + " cost " + (end - start) / itersCount + "ns");
+    logger.info(
+        contract.getClass().getSimpleName() + " cost " + (end - start) / itersCount + " ns");
   }
 
+  private static byte[] getEcRecoverInput() throws SignatureException {
+    byte[] randomBytes = new byte[128];
+    SecureRandom randocm = new SecureRandom();
+    randocm.nextBytes(randomBytes);
+    byte[] msgHash = Sha256Hash.hash(true, randomBytes);
+    SignInterface sign = SignUtils.getGeneratedRandomSign(randocm, true);
+    byte[] address = sign.getAddress();
+    String signature = sign.signHash(msgHash);
+    ECDSASignature signatureObject = ECDSASignature.transformSignature(signature);
+    byte[] signData = signatureObject.toByteArray();
+
+    byte[] h = new byte[32];
+    byte[] v = new byte[32];
+    byte[] r = new byte[32];
+    byte[] s = new byte[32];
+
+    System.arraycopy(msgHash, 0, h, 0, 32);
+    v[31] = (byte) (signData[64] + 27);
+
+    System.arraycopy(signData, 0, r, 0, 32);
+    System.arraycopy(signData, 32, s, 0, 32);
+    return ByteUtil.merge(h, v, r, s);
+  }
 }

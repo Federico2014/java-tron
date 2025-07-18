@@ -184,6 +184,8 @@ public class ECKeyV2 implements Serializable, SignInterface {
 
   public static byte[] signatureToKeyBytes(byte[] messageHash, byte[] signBytes)
       throws SignatureException {
+    checkECKeyV2Available();
+
     byte[] input = new byte[64];
     System.arraycopy(signBytes, 0, input, 0, 64);
     byte recId = signBytes[64];
