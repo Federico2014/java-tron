@@ -985,7 +985,7 @@ public class ECKey implements Serializable, SignInterface {
           new byte[]{fixedV});
     }
 
-    public static ECDSASignature transformSignature(String signatureBase64)
+    public static ECDSASignature parseBase64Signature(String signatureBase64)
         throws SignatureException {
       byte[] signatureEncoded;
       try {

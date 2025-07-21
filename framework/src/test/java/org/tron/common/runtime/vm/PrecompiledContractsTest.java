@@ -1328,7 +1328,7 @@ public class PrecompiledContractsTest extends BaseTest {
     SignInterface sign = SignUtils.getGeneratedRandomSign(randocm, true);
     byte[] address = sign.getAddress();
     String signature = sign.signHash(msgHash);
-    ECDSASignature signatureObject = ECDSASignature.transformSignature(signature);
+    ECDSASignature signatureObject = ECDSASignature.parseBase64Signature(signature);
     byte[] signData = signatureObject.toByteArray();
 
     byte[] h = new byte[32];

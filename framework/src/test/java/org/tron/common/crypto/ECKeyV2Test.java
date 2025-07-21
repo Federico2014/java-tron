@@ -85,7 +85,7 @@ public class ECKeyV2Test {
     logger.info("ecKeyAddress: " + ByteArray.toHexString(ecKeyAddress));
     Assert.assertArrayEquals(address, ecKeyAddress);
 
-    ECDSASignature ecdsaSignature = ECDSASignature.transformSignature(signatureV2);
+    ECDSASignature ecdsaSignature = ECDSASignature.parseBase64Signature(signatureV2);
     byte[] ecdaaAddress = ECKeyV2.signatureToAddress(msgHash, ecdsaSignature);
     logger.info("ecdaaAddress: " + ByteArray.toHexString(ecdaaAddress));
     Assert.assertArrayEquals(address, ecdaaAddress);
@@ -115,7 +115,7 @@ public class ECKeyV2Test {
     logger.info("ecKeyAddress: " + ByteArray.toHexString(ecKeyAddress));
     Assert.assertArrayEquals(address, ecKeyAddress);
 
-    ECDSASignature ecdsaSignature = ECDSASignature.transformSignature(signature);
+    ECDSASignature ecdsaSignature = ECDSASignature.parseBase64Signature(signature);
     byte[] ecdaaAddress = ECKeyV2.signatureToAddress(msgHash, ecdsaSignature);
     logger.info("ecdaaAddress: " + ByteArray.toHexString(ecdaaAddress));
     Assert.assertArrayEquals(address, ecdaaAddress);

@@ -178,7 +178,7 @@ public class ECKeyV2 implements Serializable, SignInterface {
 
   public static byte[] signatureToKeyBytes(byte[] messageHash, String
       signatureBase64) throws SignatureException {
-    byte[] sigData = ECDSASignature.transformSignature(signatureBase64).toByteArray();
+    byte[] sigData = ECDSASignature.parseBase64Signature(signatureBase64).toByteArray();
     return signatureToKeyBytes(messageHash, sigData);
   }
 
