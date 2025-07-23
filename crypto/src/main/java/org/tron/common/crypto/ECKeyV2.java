@@ -4,34 +4,23 @@ import static org.hyperledger.besu.nativelib.secp256k1.LibSecp256k1.SECP256K1_EC
 
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.LongByReference;
-import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.security.SignatureException;
-import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.util.encoders.Base64;
 import org.hyperledger.besu.nativelib.secp256k1.LibSecp256k1;
-import org.tron.common.crypto.ECKey.ECDSASignature;
-import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteUtil;
 
 @Slf4j(topic = "crypto")
-public class ECKeyV2 implements Serializable, SignInterface {
+public class ECKeyV2 extends ECKey {
 
-  private final byte[] privateKey;
   private final LibSecp256k1.secp256k1_pubkey pubKey = new LibSecp256k1.secp256k1_pubkey();
 
-  private transient byte[] pubKeyHash;
-  private transient byte[] nodeId;
-
   private static final boolean isECKeyV2Available;
-  private static final SecureRandom secureRandom;
 
   private static final String ECKeyV2_NOT_AVAILABLE = "ECKeyV2 is not available!";
 
   static {
-    secureRandom = new SecureRandom();
     isECKeyV2Available = LibSecp256k1.CONTEXT != null;
     if (!isECKeyV2Available) {
       logger.warn(ECKeyV2_NOT_AVAILABLE);
@@ -39,27 +28,34 @@ public class ECKeyV2 implements Serializable, SignInterface {
   }
 
   public ECKeyV2() throws SignatureException {
-    this(secureRandom);
+    super();
+
+    checkECKeyV2Available();
+    if (LibSecp256k1.secp256k1_ec_pubkey_create(
+        LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
+        == 0) {
+      throw new SignatureException("Could not create public key from private key.");
+    }
+
   }
 
   public ECKeyV2(byte[] privateKye) throws SignatureException {
-    checkECKeyV2Available();
+    super(privateKye, true);
 
-    this.privateKey = privateKye;
+    checkECKeyV2Available();
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
-        LibSecp256k1.CONTEXT, pubKey, privateKey)
+        LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
         == 0) {
       throw new SignatureException("Could not create public key from private key.");
     }
   }
 
   public ECKeyV2(SecureRandom secureRandom) throws SignatureException {
-    checkECKeyV2Available();
+    super(secureRandom);
 
-    ECKey key = new ECKey(secureRandom);
-    this.privateKey = key.getPrivateKey();
+    checkECKeyV2Available();
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
-        LibSecp256k1.CONTEXT, pubKey, privateKey)
+        LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
         == 0) {
       throw new SignatureException("Could not create public key from private key.");
     }
@@ -71,13 +67,18 @@ public class ECKeyV2 implements Serializable, SignInterface {
     return new ECKeyV2(key.getPrivateKey());
   }
 
-  public static ECKeyV2 fromPrivate(byte[] privateKey) throws SignatureException {
-    checkECKeyV2Available();
+  public static ECKeyV2 fromPrivate(byte[] privateKey) {
+    try {
+      checkECKeyV2Available();
 
-    if (ByteUtil.isNullOrZeroArray(privateKey)) {
-      return null;
+      if (ByteUtil.isNullOrZeroArray(privateKey)) {
+        return null;
+      }
+      return new ECKeyV2(privateKey);
+    } catch (SignatureException e) {
+      throw new RuntimeException("Failed to create ECKeyV2 from private key", e);
     }
-    return new ECKeyV2(privateKey);
+
   }
 
   public static void checkECKeyV2Available() throws SignatureException {
@@ -88,11 +89,6 @@ public class ECKeyV2 implements Serializable, SignInterface {
 
   public static boolean isECKeyV2Available() {
     return isECKeyV2Available;
-  }
-
-  @Override
-  public byte[] getPrivateKey() {
-    return privateKey;
   }
 
   @Override
@@ -112,14 +108,6 @@ public class ECKeyV2 implements Serializable, SignInterface {
   }
 
   @Override
-  public byte[] getAddress() {
-    if (pubKeyHash == null) {
-      pubKeyHash = Hash.computeAddress(this.getPubKey());
-    }
-    return pubKeyHash;
-  }
-
-  @Override
   public String signHash(byte[] hash) {
     final LibSecp256k1.secp256k1_ecdsa_recoverable_signature signature =
         new LibSecp256k1.secp256k1_ecdsa_recoverable_signature();
@@ -128,7 +116,7 @@ public class ECKeyV2 implements Serializable, SignInterface {
         LibSecp256k1.CONTEXT,
         signature,
         hash,
-        privateKey,
+        getPrivateKey(),
         null,
         null)
         == 0) {
@@ -225,22 +213,5 @@ public class ECKeyV2 implements Serializable, SignInterface {
       ECDSASignature signature) throws
       SignatureException {
     return Hash.computeAddress(signatureToKeyBytes(messageHash, signature.toByteArray()));
-  }
-
-  @Override
-  public byte[] getNodeId() {
-    if (nodeId == null) {
-      byte[] pubBytes = this.getPubKey();
-      System.arraycopy(pubBytes, 1, nodeId, 0, 64);
-    }
-    return nodeId;
-  }
-
-  @Override
-  public byte[] Base64toBytes(String signature) {
-    byte[] signData = Base64.decode(signature);
-    byte first = (byte) (signData[0] - 27);
-    byte[] temp = Arrays.copyOfRange(signData, 1, 65);
-    return ByteUtil.appendByte(temp, first);
   }
 }

@@ -1192,6 +1192,8 @@ public class PrecompiledContractsTest extends BaseTest {
     logger.info("EcRecoverV2 bench");
     SignUtils.setUseECKeyV2(true);
     bench(ecrecover, input, 10000);
+
+    SignUtils.setUseECKeyV2(false);
   }
 
   @Test

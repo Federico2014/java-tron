@@ -32,11 +32,7 @@ public class SignUtils {
   public static SignInterface fromPrivate(byte[] privKeyBytes, boolean isECKeyCryptoEngine) {
     if (isECKeyCryptoEngine) {
       if (useECKeyV2 && ECKeyV2.isECKeyV2Available()) {
-        try {
-          return ECKeyV2.fromPrivate(privKeyBytes);
-        } catch (SignatureException e) {
-          logger.warn("ECKeyV2 is not available");
-        }
+        return ECKeyV2.fromPrivate(privKeyBytes);
       }
       return ECKey.fromPrivate(privKeyBytes);
     }
