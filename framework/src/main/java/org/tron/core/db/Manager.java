@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -1571,12 +1572,6 @@ public class Manager {
       logger.info("Process transaction {} cost {} ms during {}, {}",
              Hex.toHexString(transactionInfo.getId()), cost, type, contract.getType().name());
     }
-//    String type = "broadcast";
-//    if (Objects.nonNull(blockCap)) {
-//      type = blockCap.hasWitnessSignature() ? "apply" : "pack";
-//    }
-//    logger.info("Process transaction {} cost {} ms during {}, {}",
-//        Hex.toHexString(transactionInfo.getId()), cost, type, contract.getType().name());
     Metrics.histogramObserve(requestTimer);
     return transactionInfo.getInstance();
   }
@@ -1774,7 +1769,7 @@ public class Manager {
   /**
    * process block.
    */
-  private void processBlock(BlockCapsule block, List<TransactionCapsule> txs)
+  private void processBlockSequential(BlockCapsule block, List<TransactionCapsule> txs)
       throws ValidateSignatureException, ContractValidateException, ContractExeException,
       AccountResourceInsufficientException, TaposException, TooBigTransactionException,
       DupTransactionException, TransactionExpirationException, ValidateScheduleException,
@@ -1870,6 +1865,167 @@ public class Manager {
       block.setBloom(blockBloom);
     }
   }
+
+  private void processBlock(BlockCapsule block, List<TransactionCapsule> txs)
+      throws ValidateSignatureException, ContractValidateException, ContractExeException,
+      AccountResourceInsufficientException, TaposException, TooBigTransactionException,
+      DupTransactionException, TransactionExpirationException, ValidateScheduleException,
+      ReceiptCheckErrException, VMIllegalException, TooBigTransactionResultException,
+      ZksnarkException, BadBlockException, EventBloomException {
+    // todo set revoking db max size.
+
+    // checkWitness
+    if (!consensus.validBlock(block)) {
+      throw new ValidateScheduleException("validateWitnessSchedule error");
+    }
+
+    chainBaseManager.getBalanceTraceStore().initCurrentBlockBalanceTrace(block);
+
+    //reset BlockEnergyUsage
+    chainBaseManager.getDynamicPropertiesStore().saveBlockEnergyUsage(0);
+
+    //parallel check sign and process transactions
+    CompletableFuture<Void> signValidationFuture = CompletableFuture.runAsync(() -> {
+      if (!block.generatedByMyself) {
+        try {
+          preValidateTransactionSign(txs);
+        } catch (InterruptedException e) {
+          logger.error("Parallel check sign interrupted exception! block info: {}.", block, e);
+          Thread.currentThread().interrupt();
+        } catch (ValidateSignatureException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    }, validateSignService);
+
+    CompletableFuture<Void> transactionProcessingFuture = CompletableFuture.runAsync(() -> {
+      TransactionRetCapsule transactionRetCapsule = new TransactionRetCapsule(block);
+      try {
+        merkleContainer.resetCurrentMerkleTree();
+        accountStateCallBack.preExecute(block);
+        List<TransactionInfo> results = new ArrayList<>();
+        long num = block.getNum();
+        for (TransactionCapsule transactionCapsule : block.getTransactions()) {
+          if (chainBaseManager.getDynamicPropertiesStore().allowConsensusLogicOptimization()
+              && transactionCapsule.retCountIsGreatThanContractCount()) {
+            throw new BadBlockException(String.format(
+                "The result count %d of this transaction %s is "
+                    + "greater than its contract count %d", transactionCapsule.getRetCount(),
+                transactionCapsule.getTransactionId(), transactionCapsule.getContractCount()));
+          }
+          transactionCapsule.setBlockNum(num);
+          if (block.generatedByMyself) {
+            transactionCapsule.setVerified(true);
+          }
+          accountStateCallBack.preExeTrans();
+          TransactionInfo result = processTransaction(transactionCapsule, block);
+          accountStateCallBack.exeTransFinish();
+          if (Objects.nonNull(result)) {
+            results.add(result);
+          }
+        }
+
+        transactionRetCapsule.addAllTransactionInfos(results);
+        block.setResult(transactionRetCapsule);
+        accountStateCallBack.executePushFinish();
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      } finally {
+        accountStateCallBack.exceptionFinish();
+      }
+    });
+
+    CompletableFuture.allOf(signValidationFuture, transactionProcessingFuture).join();
+    try {
+      signValidationFuture.get();
+    } catch (ExecutionException e) {
+      if (e.getCause() instanceof ValidateSignatureException) {
+        throw (ValidateSignatureException) e.getCause();
+      } else {
+        throw new RuntimeException(e.getCause());
+      }
+    } catch (InterruptedException e) {
+      logger.error("Parallel check sign interrupted exception! block info: {}.", block, e);
+      Thread.currentThread().interrupt();
+    }
+
+    try {
+      transactionProcessingFuture.get();
+    } catch (ExecutionException e) {
+      if (e.getCause() instanceof RuntimeException && e.getCause().getCause() != null) {
+        Throwable cause = e.getCause().getCause();
+        if (cause instanceof ContractValidateException) {
+          throw (ContractValidateException) cause;
+        } else if (cause instanceof ContractExeException) {
+          throw (ContractExeException) cause;
+        } else if (cause instanceof AccountResourceInsufficientException) {
+          throw (AccountResourceInsufficientException) cause;
+        } else if (cause instanceof TaposException) {
+          throw (TaposException) cause;
+        } else if (cause instanceof TooBigTransactionException) {
+          throw (TooBigTransactionException) cause;
+        } else if (cause instanceof DupTransactionException) {
+          throw (DupTransactionException) cause;
+        } else if (cause instanceof TransactionExpirationException) {
+          throw (TransactionExpirationException) cause;
+        } else if (cause instanceof ReceiptCheckErrException) {
+          throw (ReceiptCheckErrException) cause;
+        } else if (cause instanceof VMIllegalException) {
+          throw (VMIllegalException) cause;
+        } else if (cause instanceof TooBigTransactionResultException) {
+          throw (TooBigTransactionResultException) cause;
+        } else if (cause instanceof BadBlockException) {
+          throw (BadBlockException) cause;
+        } else {
+          throw new RuntimeException(cause);
+        }
+      } else {
+        throw new RuntimeException(e.getCause());
+      }
+    } catch (InterruptedException e) {
+      logger.error("Parallel processing interrupted exception! block info: {}.", block, e);
+      Thread.currentThread().interrupt();
+    }
+
+    merkleContainer.saveCurrentMerkleTreeAsBestMerkleTree(block.getNum());
+    if (getDynamicPropertiesStore().getAllowAdaptiveEnergy() == 1) {
+      EnergyProcessor energyProcessor = new EnergyProcessor(
+          chainBaseManager.getDynamicPropertiesStore(), chainBaseManager.getAccountStore());
+      energyProcessor.updateTotalEnergyAverageUsage();
+      energyProcessor.updateAdaptiveTotalEnergyLimit();
+    }
+
+    payReward(block);
+
+    boolean flag = chainBaseManager.getDynamicPropertiesStore().getNextMaintenanceTime()
+        <= block.getTimeStamp();
+    if (flag) {
+      proposalController.processProposals();
+    }
+
+    if (!consensus.applyBlock(block)) {
+      throw new BadBlockException("consensus apply block failed");
+    }
+
+    if (flag) {
+      chainBaseManager.getForkController().reset();
+    }
+
+    updateTransHashCache(block);
+    updateRecentBlock(block);
+    updateRecentTransaction(block);
+    updateDynamicProperties(block);
+
+    chainBaseManager.getBalanceTraceStore().resetCurrentBlockTrace();
+
+    if (CommonParameter.getInstance().isJsonRpcFilterEnabled()) {
+      Bloom blockBloom = chainBaseManager.getSectionBloomStore()
+          .initBlockSection(block.getResult());
+      chainBaseManager.getSectionBloomStore().write(block.getNum());
+      block.setBloom(blockBloom);
+    }
+  }
+
 
   private void payReward(BlockCapsule block) {
     WitnessCapsule witnessCapsule =

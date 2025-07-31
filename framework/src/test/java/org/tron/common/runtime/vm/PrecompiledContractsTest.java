@@ -110,7 +110,7 @@ public class PrecompiledContractsTest extends BaseTest {
   private static final DataWord totalAcquiredResourceAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000001000015");
 
-    // bn128
+  // bn128
   private static final DataWord altBN128AddAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000006");
   private static final DataWord altBN128MulAddr = new DataWord(

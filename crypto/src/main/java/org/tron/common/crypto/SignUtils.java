@@ -11,8 +11,14 @@ import org.tron.common.crypto.sm2.SM2.SM2Signature;
 @Slf4j(topic = "crypto")
 public class SignUtils {
 
+  private static final String ECKEYV2_NOT_AVAILABLE = "ECKeyV2 is not available";
+
   @Setter
   private static boolean useECKeyV2 = false;
+
+  private static void logECKeyV2NotAvailable() {
+    logger.warn(ECKEYV2_NOT_AVAILABLE);
+  }
 
   public static SignInterface getGeneratedRandomSign(
       SecureRandom secureRandom, boolean isECKeyCryptoEngine) {
@@ -21,7 +27,7 @@ public class SignUtils {
         try {
           return new ECKeyV2(secureRandom);
         } catch (SignatureException e) {
-          logger.warn("ECKeyV2 is not available");
+          logECKeyV2NotAvailable();
         }
       }
       return new ECKey(secureRandom);
@@ -48,7 +54,7 @@ public class SignUtils {
           try {
             return ECKeyV2.signatureToAddress(messageHash, signatureBase64);
           } catch (SignatureException e) {
-            logger.warn("ECKeyV2 is not available");
+            logECKeyV2NotAvailable();
           }
         }
         return ECKey.signatureToAddress(messageHash, signatureBase64);
@@ -75,7 +81,7 @@ public class SignUtils {
         try {
           return ECKeyV2.signatureToAddress(messageHash, (ECDSASignature) signatureInterface);
         } catch (SignatureException e) {
-          logger.warn("ECKeyV2 is not available");
+          logECKeyV2NotAvailable();
         }
       }
       return ECKey.signatureToAddress(messageHash, (ECDSASignature) signatureInterface);

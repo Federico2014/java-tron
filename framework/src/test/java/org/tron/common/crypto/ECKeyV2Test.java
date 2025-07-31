@@ -161,7 +161,7 @@ public class ECKeyV2Test {
     durationNs = endTime - startTime;
     long nsPerIterationV2 = durationNs / iterations;
     logger.info("ECKeyV2 sign cost: " + nsPerIterationV2 + "ns per call");
-    logger.info("ECKeyV1/ECKeyV2: " + nsPerIteration/nsPerIterationV2);
+    logger.info("ECKeyV1/ECKeyV2: " + nsPerIteration / nsPerIterationV2);
   }
 
   @Test
@@ -207,6 +207,6 @@ public class ECKeyV2Test {
     durationNs = endTime - startTime;
     long nsPerIterationV2 = durationNs / iterations;
     logger.info("ECKeyV2 verify cost: " + nsPerIterationV2 + "ns per call");
-    logger.info("ECKeyV1/ECKeyV2: " + nsPerIteration/nsPerIterationV2);
+    logger.info("ECKeyV1/ECKeyV2: " + nsPerIteration / nsPerIterationV2);
   }
 }
