@@ -7,6 +7,7 @@ import com.sun.jna.ptr.LongByReference;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.security.SignatureException;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.hyperledger.besu.nativelib.secp256k1.LibSecp256k1;
 import org.tron.common.utils.ByteUtil;
@@ -16,6 +17,7 @@ public class ECKeyV2 extends ECKey {
 
   private final LibSecp256k1.secp256k1_pubkey pubKey = new LibSecp256k1.secp256k1_pubkey();
 
+  @Getter
   private static final boolean isECKeyV2Available;
 
   private static final String ECKeyV2_NOT_AVAILABLE = "ECKeyV2 is not available!";
@@ -85,10 +87,6 @@ public class ECKeyV2 extends ECKey {
     if (!isECKeyV2Available) {
       throw new SignatureException(ECKeyV2_NOT_AVAILABLE);
     }
-  }
-
-  public static boolean isECKeyV2Available() {
-    return isECKeyV2Available;
   }
 
   @Override

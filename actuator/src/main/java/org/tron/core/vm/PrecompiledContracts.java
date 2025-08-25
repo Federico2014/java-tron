@@ -41,7 +41,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
-import org.tron.common.crypto.Blake2bfMessageDigest;
+import org.tron.common.crypto.Blake2FDigest;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
@@ -1819,11 +1819,10 @@ public class PrecompiledContracts {
         logger.warn("Incorrect finalization flag, expected 0 or 1 and got {}", data[212]);
         return Pair.of(false, DataWord.ZERO().getData());
       }
-      final MessageDigest digest = new Blake2bfMessageDigest();
+
       byte[] result;
       try {
-        digest.update(data);
-        result = digest.digest();
+        result = Blake2FDigest.blake2f(data);
       } catch (Exception e) {
         return Pair.of(true, EMPTY_BYTE_ARRAY);
       }

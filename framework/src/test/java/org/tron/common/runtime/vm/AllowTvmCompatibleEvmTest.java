@@ -1,15 +1,25 @@
 package org.tron.common.runtime.vm;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.tron.common.utils.ByteUtil.hexToBytes;
 import static org.tron.common.utils.ByteUtil.longTo32Bytes;
+import static org.tron.core.db.TransactionTrace.convertToTronAddress;
 
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Charsets;
+import com.google.common.io.Files;
+import java.io.File;
 import java.util.Collections;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.tron.common.crypto.Blake2FDigest;
+import org.tron.common.runtime.ProgramResult;
 import org.tron.common.runtime.TVMTestResult;
 import org.tron.common.runtime.TvmTestUtils;
 import org.tron.common.utils.WalletUtil;
@@ -18,9 +28,14 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.exception.ReceiptCheckErrException;
 import org.tron.core.exception.VMIllegalException;
+import org.tron.core.store.StoreFactory;
+import org.tron.core.vm.PrecompiledContracts;
+import org.tron.core.vm.PrecompiledContracts.PrecompiledContract;
 import org.tron.core.vm.config.ConfigLoader;
 import org.tron.core.vm.config.VMConfig;
 
+import org.tron.core.vm.repository.RepositoryImpl;
+import org.tron.core.zksnark.SendCoinShieldTest;
 import org.tron.protos.Protocol;
 
 @Slf4j
@@ -37,6 +52,8 @@ public class AllowTvmCompatibleEvmTest extends VMTestBase {
 
     }
   }*/
+  private static final DataWord blake2FAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000020009");
 
   @BeforeClass
   public static void beforeClass() {
@@ -216,6 +233,82 @@ public class AllowTvmCompatibleEvmTest extends VMTestBase {
         hexToBytes("ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87"
             + "c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"));
   }
+
+  @Test
+  public void blake2FTest() throws Exception {
+    Blake2FDigest.setUseBlake2FV2(false);
+    PrecompiledContract blake2F = createPrecompiledContract(blake2FAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("blake2f.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = blake2F.execute(input).getRight();
+      assertArrayEquals(String.format("Blake2F test %d failed", i), expected, actual);
+    }
+  }
+
+  @Test
+  public void blake2FTestV2() throws Exception {
+    Blake2FDigest.setUseBlake2FV2(true);
+    PrecompiledContract blake2F = createPrecompiledContract(blake2FAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("blake2f.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = blake2F.execute(input).getRight();
+      assertArrayEquals(String.format("Blake2F test %d failed", i), expected, actual);
+    }
+  }
+
+  @Test
+  public void blake2FBench() throws Exception {
+    PrecompiledContract blake2F = createPrecompiledContract(blake2FAddr, OWNER_ADDRESS);
+    JSONObject testCase = readJsonFile("blake2f.json").getJSONObject(0);
+    byte[] input = Hex.decode(testCase.getString("Input"));
+    logger.info("Blake2F bench");
+    Blake2FDigest.setUseBlake2FV2(false);
+    bench(blake2F, input, 10000);
+
+    logger.info("Blake2FV2 bench");
+    Blake2FDigest.setUseBlake2FV2(true);
+    bench(blake2F, input, 10000);
+  }
+
+  private PrecompiledContract createPrecompiledContract(DataWord addr, String ownerAddress) {
+    PrecompiledContract contract = PrecompiledContracts.getContractForAddress(addr);
+    contract.setCallerAddress(convertToTronAddress(Hex.decode(ownerAddress)));
+    contract.setRepository(RepositoryImpl.createRoot(StoreFactory.getInstance()));
+    ProgramResult programResult = new ProgramResult();
+    contract.setResult(programResult);
+    return contract;
+  }
+
+  private JSONArray readJsonFile(String fileName) throws Exception {
+    String file1 = SendCoinShieldTest.class.getClassLoader()
+        .getResource("json" + File.separator + fileName).getFile();
+    List<String> readLines = Files.readLines(new File(file1),
+        Charsets.UTF_8);
+
+    return JSONArray
+        .parseArray(readLines.stream().reduce((s, s2) -> s + s2).get());
+  }
+
+  private static void bench(PrecompiledContract contract, byte[] input, int itersCount) {
+    int MATH_WARMUP = 1000;
+    for (int i = 0; i < MATH_WARMUP; i++) {
+      contract.execute(input);
+    }
+    long start = System.nanoTime();
+    for (int i = 0; i < itersCount; i++) {
+      contract.execute(input);
+    }
+    long end = System.nanoTime();
+    logger.info(
+        contract.getClass().getSimpleName() + " cost " + (end - start) / itersCount + " ns");
+  }
+
 
   /*contract c {
     function getprice() public view returns(uint) {
