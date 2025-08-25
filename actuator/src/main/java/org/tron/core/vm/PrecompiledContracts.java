@@ -43,6 +43,7 @@ import org.apache.commons.lang3.tuple.Triple;
 import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
 import org.tron.common.crypto.Blake2FDigest;
 import org.tron.common.crypto.Hash;
+import org.tron.common.crypto.ModExpArithmetric;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
 import org.tron.common.crypto.zksnark.BN128Fp;
@@ -677,32 +678,8 @@ public class PrecompiledContracts {
         return Pair.of(true, EMPTY_BYTE_ARRAY);
       }
 
-      int baseLen = parseLen(data, 0);
-      int expLen = parseLen(data, 1);
-      int modLen = parseLen(data, 2);
-
-      BigInteger base = parseArg(data, ARGS_OFFSET, baseLen);
-      BigInteger exp = parseArg(data, addSafely(ARGS_OFFSET, baseLen), expLen);
-      BigInteger mod = parseArg(data, addSafely(addSafely(ARGS_OFFSET, baseLen), expLen), modLen);
-
-      // check if modulus is zero
-      if (isZero(mod)) {
-        return Pair.of(true, EMPTY_BYTE_ARRAY);
-      }
-
-      byte[] res = stripLeadingZeroes(base.modPow(exp, mod).toByteArray());
-
-      // adjust result to the same length as the modulus has
-      if (res.length < modLen) {
-
-        byte[] adjRes = new byte[modLen];
-        System.arraycopy(res, 0, adjRes, modLen - res.length, res.length);
-
-        return Pair.of(true, adjRes);
-
-      } else {
-        return Pair.of(true, res);
-      }
+      byte[] res = ModExpArithmetric.modExp(data);
+      return Pair.of(true, res);
     }
 
     private long getMultComplexity(long x) {

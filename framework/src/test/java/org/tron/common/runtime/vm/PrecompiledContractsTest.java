@@ -26,13 +26,13 @@ import org.junit.Before;
 import org.junit.Test;
 import org.tron.common.BaseTest;
 import org.tron.common.crypto.ECKey.ECDSASignature;
+import org.tron.common.crypto.ModExpArithmetric;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.runtime.ProgramResult;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 import org.tron.common.utils.Commons;
-import org.tron.common.utils.PublicMethod;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.common.utils.StringUtil;
 import org.tron.core.Constant;
@@ -121,6 +121,8 @@ public class PrecompiledContractsTest extends BaseTest {
   //EcRecover
   private static final DataWord ecRecover = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000001");
+  private static final DataWord modExpAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000005");
 
   private static final String ACCOUNT_NAME = "account";
   private static final String OWNER_ADDRESS;
@@ -1195,6 +1197,57 @@ public class PrecompiledContractsTest extends BaseTest {
 
     SignUtils.setUseECKeyV2(false);
   }
+
+  @Test
+  public void modExpTest() throws Exception {
+    ModExpArithmetric.setUseModExpV2(false);
+    PrecompiledContract modExp = createPrecompiledContract(modExpAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("modExp.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = modExp.execute(input).getRight();
+      assertArrayEquals(String.format("modExp test %d failed", i), expected, actual);
+    }
+  }
+
+  @Test
+  public void modExpTestV2() throws Exception {
+    ModExpArithmetric.setUseModExpV2(true);
+    PrecompiledContract modExp = createPrecompiledContract(modExpAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("modExp.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      byte[] expected = Hex.decode(testCase.getString("Expected"));
+      byte[] actual = modExp.execute(input).getRight();
+      assertArrayEquals(String.format("modExpV2 test %d failed", i), expected, actual);
+    }
+    ModExpArithmetric.setUseModExpV2(false);
+  }
+
+  @Test
+  public void modExpBench() throws Exception {
+    PrecompiledContract modExp = createPrecompiledContract(modExpAddr, OWNER_ADDRESS);
+    JSONArray testCases = readJsonFile("modExp.json");
+    for (int i = 0; i < testCases.size(); i++) {
+      JSONObject testCase = testCases.getJSONObject(i);
+      byte[] input = Hex.decode(testCase.getString("Input"));
+      for (String s : java.util.Arrays.asList("modExp test: " + i,
+          "modExp test input: " + testCase.getString("Input"), "modExp bench")) {
+        logger.info(s);
+      }
+      ModExpArithmetric.setUseModExpV2(false);
+      bench(modExp, input, 10000);
+
+      logger.info("modExpV2 bench");
+      ModExpArithmetric.setUseModExpV2(true);
+      bench(modExp, input, 10000);
+    }
+    ModExpArithmetric.setUseModExpV2(false);
+  }
+
 
   @Test
   public void bn128AdditionTest() throws Exception {
