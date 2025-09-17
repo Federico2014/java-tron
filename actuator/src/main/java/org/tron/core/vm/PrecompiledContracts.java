@@ -621,6 +621,7 @@ public class PrecompiledContracts {
       } catch (Throwable any) {
       }
 
+      logExecutionResult("ECRecover", true);
       if (out == null) {
         return Pair.of(true, EMPTY_BYTE_ARRAY);
       } else {
@@ -753,7 +754,14 @@ public class PrecompiledContracts {
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
       }
-      return executeEIP196Operation(LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE, data);
+      Pair<Boolean, byte[]> result = executeEIP196Operation(
+          LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE, data);
+      if (result.getLeft()) {
+        logExecutionResult("BN128Addition", true);
+      } else {
+        logExecutionResult("BN128Addition", false);
+      }
+      return result;
     }
   }
 
@@ -787,7 +795,14 @@ public class PrecompiledContracts {
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
       }
-      return executeEIP196Operation(LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, data);
+      Pair<Boolean, byte[]> result = executeEIP196Operation(
+          LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, data);
+      if (result.getLeft()) {
+        logExecutionResult("BN128Multiplication", true);
+      } else {
+        logExecutionResult("BN128Multiplication", false);
+      }
+      return result;
     }
   }
 
@@ -835,9 +850,32 @@ public class PrecompiledContracts {
 
       // fail if input len is not a multiple of PAIR_SIZE
       if (data.length % PAIR_SIZE > 0) {
+        logExecutionResult("BN128Pairing", false);
         return Pair.of(false, EMPTY_BYTE_ARRAY);
       }
-      return executeEIP196Operation(LibGnarkEIP196.EIP196_PAIR_OPERATION_RAW_VALUE, data);
+      logExecutionResult("BN128Pairing", true);
+      Pair<Boolean, byte[]> result = executeEIP196Operation(
+          LibGnarkEIP196.EIP196_PAIR_OPERATION_RAW_VALUE, data);
+      if (result.getLeft()) {
+        logExecutionResult("BN128Pairing", true);
+      } else {
+        logExecutionResult("BN128Pairing", false);
+      }
+      return result;
+    }
+  }
+
+  private static void logExecutionResult(String precompiledContract, boolean success) {
+    try {
+      String logEntry = (success ? "success" : "fail") + "\n";
+      java.nio.file.Files.write(
+          java.nio.file.Paths.get( "logs/" + precompiledContract + ".log"),
+          logEntry.getBytes(),
+          java.nio.file.StandardOpenOption.CREATE,
+          java.nio.file.StandardOpenOption.APPEND
+      );
+    } catch (java.io.IOException e) {
+      logger.error("Failed to log execution result", e);
     }
   }
 
@@ -867,7 +905,7 @@ public class PrecompiledContracts {
 
       byte[][] signatures = extractBytesArray(
           words, words[3].intValueSafe() / WORD_SIZE, rawData);
-
+      logExecutionResult("ValidateMultiSign", true);
       if (signatures.length == 0 || signatures.length > MAX_SIZE) {
         return Pair.of(true, DATA_FALSE);
       }
@@ -954,6 +992,7 @@ public class PrecompiledContracts {
           words, words[1].intValueSafe() / WORD_SIZE, data);
       byte[][] addresses = extractBytes32Array(
           words, words[2].intValueSafe() / WORD_SIZE);
+      logExecutionResult("BatchValidateSign", true);
       int cnt = signatures.length;
       if (cnt == 0 || cnt > MAX_SIZE || signatures.length != addresses.length) {
         return Pair.of(true, DATA_FALSE);
