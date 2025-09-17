@@ -1,5 +1,6 @@
 package org.tron.common.crypto;
 
+import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.security.SignatureException;
 import lombok.extern.slf4j.Slf4j;
@@ -120,6 +121,45 @@ public class ECKeyV2Test {
     logger.info("ecdaaAddress: " + ByteArray.toHexString(ecdaaAddress));
     Assert.assertArrayEquals(address, ecdaaAddress);
   }
+
+  @Test
+  public void testSignatureMalleability() throws SignatureException {
+    ECKeyV2 key = new ECKeyV2();
+    byte[] randomBytes = new byte[128];
+    SecureRandom secureRandom = new SecureRandom();
+    secureRandom.nextBytes(randomBytes);
+    byte[] msgHash = Sha256Hash.hash(true, randomBytes);
+    ECDSASignature signature = key.sign(msgHash);
+
+    byte[] pubKeyBytes = ECKeyV2.signatureToKeyBytes(msgHash, signature.toBase64());
+    Assert.assertArrayEquals(pubKeyBytes, key.getPubKey());
+
+    BigInteger secp256K1N =
+        new BigInteger("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16);
+    Assert.assertTrue(signature.s.compareTo(ECKey.HALF_CURVE_ORDER) <= 0);
+
+    BigInteger flipS = secp256K1N.subtract(signature.s);
+    Assert.assertTrue(flipS.compareTo(ECKey.HALF_CURVE_ORDER) > 0);
+
+    byte[] flipPubKeyBytes = ECKeyV2.signatureToKeyBytes(msgHash,
+        ECDSASignature.fromComponents(signature.r.toByteArray(), flipS.toByteArray(), signature.v)
+            .toBase64());
+    Assert.assertNotEquals(ByteArray.toHexString(flipPubKeyBytes),
+        ByteArray.toHexString(key.getPubKey()));
+
+    byte flipV;
+    if (signature.v <= 28) {
+      flipV = signature.v == 27 ? (byte) 28 : (byte) 27;
+    } else {
+      flipV = signature.v == 29 ? (byte) 30 : (byte) 29;
+    }
+
+    flipPubKeyBytes = ECKeyV2.signatureToKeyBytes(msgHash,
+        ECDSASignature.fromComponents(signature.r.toByteArray(), flipS.toByteArray(), flipV)
+            .toBase64());
+    Assert.assertArrayEquals(flipPubKeyBytes, key.getPubKey());
+  }
+
 
   @Test
   public void ecKeySignBench() throws SignatureException {
