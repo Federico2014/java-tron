@@ -417,7 +417,7 @@ public class PrecompiledContracts {
     final byte[] error = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_ERROR_BYTES];
     final IntByReference errorLength = new IntByReference();
 
-    LibGnarkEIP196.eip196_perform_operation(
+    int ret = LibGnarkEIP196.eip196_perform_operation(
         operation,
         data,
         data.length,
@@ -426,14 +426,11 @@ public class PrecompiledContracts {
         error,
         errorLength);
 
-    byte[] result;
-    if (errorLength.getValue() > 0) {
-      result = ByteArray.subArray(error, 0, errorLength.getValue());
-      return Pair.of(false, result);
+    if (ret == 0) {
+      return Pair.of(true, ByteArray.subArray(output, 0, outputLength.getValue()));
+    } else {
+      return Pair.of(false, ByteArray.subArray(error, 0, errorLength.getValue()));
     }
-
-    result = ByteArray.subArray(output, 0, outputLength.getValue());
-    return Pair.of(true, result);
   }
 
   public abstract static class PrecompiledContract {
@@ -798,6 +795,7 @@ public class PrecompiledContracts {
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
       }
+
       Pair<Boolean, byte[]> result = executeEIP196Operation(
           LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, data);
       long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;

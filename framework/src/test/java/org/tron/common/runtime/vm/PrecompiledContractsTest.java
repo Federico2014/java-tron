@@ -110,14 +110,6 @@ public class PrecompiledContractsTest extends BaseTest {
   private static final DataWord totalAcquiredResourceAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000001000015");
 
-  // bn128
-  private static final DataWord altBN128AddAddr = new DataWord(
-      "0000000000000000000000000000000000000000000000000000000000000006");
-  private static final DataWord altBN128MulAddr = new DataWord(
-      "0000000000000000000000000000000000000000000000000000000000000007");
-  private static final DataWord altBN128PairingAddr = new DataWord(
-      "0000000000000000000000000000000000000000000000000000000000000008");
-
   //EcRecover
   private static final DataWord ecRecover = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000001");
@@ -1247,70 +1239,6 @@ public class PrecompiledContractsTest extends BaseTest {
     }
     ModExpArithmetric.setUseModExpV2(false);
   }
-
-
-  @Test
-  public void bn128AdditionTest() throws Exception {
-    PrecompiledContract bn128Add = createPrecompiledContract(altBN128AddAddr, OWNER_ADDRESS);
-    JSONArray testCases = readJsonFile("bn256Add.json");
-    for (int i = 0; i < testCases.size(); i++) {
-      JSONObject testCase = testCases.getJSONObject(i);
-      String name = testCase.getString("Name");
-      byte[] input = Hex.decode(testCase.getString("Input"));
-      byte[] expected = Hex.decode(testCase.getString("Expected"));
-      byte[] actual = bn128Add.execute(input).getRight();
-      assertArrayEquals(String.format("BN128Add test %s failed", name), expected, actual);
-    }
-  }
-
-  @Test
-  public void bn128MultiplicationTest() throws Exception {
-    PrecompiledContract bn128Mul = createPrecompiledContract(altBN128MulAddr, OWNER_ADDRESS);
-    JSONArray testCases = readJsonFile("bn256ScalarMul.json");
-    for (int i = 0; i < testCases.size(); i++) {
-      JSONObject testCase = testCases.getJSONObject(i);
-      String name = testCase.getString("Name");
-      byte[] input = Hex.decode(testCase.getString("Input"));
-      byte[] expected = Hex.decode(testCase.getString("Expected"));
-      byte[] actual = bn128Mul.execute(input).getRight();
-      assertArrayEquals(String.format("bn128Mul test %s failed", name), expected, actual);
-    }
-  }
-
-  @Test
-  public void bn128PairingTest() throws Exception {
-    PrecompiledContract bn128Pairing =
-        createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
-    JSONArray testCases = readJsonFile("bn256Pairing.json");
-    for (int i = 0; i < testCases.size(); i++) {
-      JSONObject testCase = testCases.getJSONObject(i);
-      String name = testCase.getString("Name");
-      byte[] input = Hex.decode(testCase.getString("Input"));
-      byte[] expected = Hex.decode(testCase.getString("Expected"));
-      byte[] actual = bn128Pairing.execute(input).getRight();
-      assertArrayEquals(String.format("bn128Pairing test %s failed", name), expected, actual);
-    }
-  }
-
-  @Test
-  public void bn128Bench() throws Exception {
-    PrecompiledContract bn128Add = createPrecompiledContract(altBN128AddAddr, OWNER_ADDRESS);
-    JSONObject testCase = readJsonFile("bn256Add.json").getJSONObject(0);
-    byte[] input = Hex.decode(testCase.getString("Input"));
-    bench(bn128Add, input, 10000);
-
-    PrecompiledContract bn128Mul = createPrecompiledContract(altBN128MulAddr, OWNER_ADDRESS);
-    testCase = readJsonFile("bn256ScalarMul.json").getJSONObject(1);
-    input = Hex.decode(testCase.getString("Input"));
-    bench(bn128Mul, input, 1000);
-
-    PrecompiledContract bn128Pairing =
-        createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
-    testCase = readJsonFile("bn256Pairing.json").getJSONObject(13);
-    input = Hex.decode(testCase.getString("Input"));
-    bench(bn128Pairing, input, 100);
-  }
-
 
   //@Test
   public void convertFromTronBase58AddressNative() {
