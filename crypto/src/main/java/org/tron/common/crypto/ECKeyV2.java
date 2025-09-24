@@ -10,7 +10,7 @@ import java.security.SignatureException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.hyperledger.besu.nativelib.secp256k1.LibSecp256k1;
-import org.tron.common.utils.ByteUtil;
+import org.tron.common.utils.ByteArray;
 
 @Slf4j(topic = "crypto")
 public class ECKeyV2 extends ECKey {
@@ -31,19 +31,16 @@ public class ECKeyV2 extends ECKey {
 
   public ECKeyV2() throws SignatureException {
     super();
-
     checkECKeyV2Available();
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
         LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
         == 0) {
       throw new SignatureException("Could not create public key from private key.");
     }
-
   }
 
-  public ECKeyV2(byte[] privateKye) throws SignatureException {
-    super(privateKye, true);
-
+  public ECKeyV2(byte[] privateKey) throws SignatureException {
+    super(privateKey, true);
     checkECKeyV2Available();
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
         LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
@@ -54,7 +51,6 @@ public class ECKeyV2 extends ECKey {
 
   public ECKeyV2(SecureRandom secureRandom) throws SignatureException {
     super(secureRandom);
-
     checkECKeyV2Available();
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
         LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
@@ -65,22 +61,19 @@ public class ECKeyV2 extends ECKey {
 
   public static ECKeyV2 fromECKey(ECKey key) throws SignatureException {
     checkECKeyV2Available();
-
     return new ECKeyV2(key.getPrivateKey());
   }
 
   public static ECKeyV2 fromPrivate(byte[] privateKey) {
     try {
       checkECKeyV2Available();
-
-      if (ByteUtil.isNullOrZeroArray(privateKey)) {
+      if (ByteArray.isEmpty(privateKey)) {
         return null;
       }
       return new ECKeyV2(privateKey);
     } catch (SignatureException e) {
       throw new RuntimeException("Failed to create ECKeyV2 from private key", e);
     }
-
   }
 
   public static void checkECKeyV2Available() throws SignatureException {
@@ -143,7 +136,7 @@ public class ECKeyV2 extends ECKey {
     if (v >= 0 && v <= 3) {
       v += 27;
     } else {
-      throw new RuntimeException("Invalid signature recId");
+      throw new RuntimeException(String.format("Invalid signature recId: %d", v));
     }
 
     return ECDSASignature.fromComponents(r, s, v);
@@ -183,7 +176,6 @@ public class ECKeyV2 extends ECKey {
     if (LibSecp256k1.secp256k1_ecdsa_recoverable_signature_parse_compact(
         LibSecp256k1.CONTEXT, signature, input, recId) == 0) {
       throw new SignatureException("Could not parse signature");
-
     }
 
     final LibSecp256k1.secp256k1_pubkey newPubKey = new LibSecp256k1.secp256k1_pubkey();
