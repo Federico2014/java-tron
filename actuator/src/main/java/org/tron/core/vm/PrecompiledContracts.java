@@ -753,9 +753,10 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
+      byte[] input = data.length > 128 ? Arrays.copyOfRange(data, 0, 128) : data;
       long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
       Pair<Boolean, byte[]> result = executeEIP196Operation(
-          LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE, data);
+          LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE, input);
       if (result.getLeft()) {
         logExecutionResult("BN128Addition", true, blockNum);
       } else {
@@ -796,8 +797,9 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
+      byte[] input = data.length > 96 ? Arrays.copyOfRange(data, 0, 96) : data;
       Pair<Boolean, byte[]> result = executeEIP196Operation(
-          LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, data);
+          LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, input);
       long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
       if (result.getLeft()) {
         logExecutionResult("BN128Multiplication", true, blockNum);
@@ -825,6 +827,8 @@ public class PrecompiledContracts {
   public static class BN128Pairing extends PrecompiledContract {
 
     private static final int PAIR_SIZE = 192;
+    // For security and to avoid tx timeout, limit the maximum number of pairs to 100
+    private static final int MAX_PAIR_SIZE_LIMIT = 192 * 100;
 
     @Override
     public long getEnergyForData(byte[] data) {
@@ -852,7 +856,7 @@ public class PrecompiledContracts {
 
       long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
       // fail if input len is not a multiple of PAIR_SIZE
-      if (data.length % PAIR_SIZE > 0) {
+      if (data.length > MAX_PAIR_SIZE_LIMIT || data.length % PAIR_SIZE > 0) {
         logExecutionResult("BN128Pairing", false, blockNum);
         return Pair.of(false, EMPTY_BYTE_ARRAY);
       }

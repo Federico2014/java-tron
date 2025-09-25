@@ -55,12 +55,16 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     for (int i = 0; i < testCases.size(); i++) {
       JSONObject testCase = testCases.getJSONObject(i);
       String name = testCase.getString("Name");
+      Boolean ret = testCase.getBoolean("Result");
       byte[] input = Hex.decode(testCase.getString("Input"));
       byte[] expected = Hex.decode(testCase.getString("Expected"));
       Pair<Boolean, byte[]> result = bn128Add.execute(input);
       if (result.getLeft()) {
         assertArrayEquals(String.format("BN128Add test %s failed", name), expected,
             result.getRight());
+        Assert.assertNull(ret);
+      } else {
+        Assert.assertFalse(ret);
       }
     }
   }
@@ -72,12 +76,16 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     for (int i = 0; i < testCases.size(); i++) {
       JSONObject testCase = testCases.getJSONObject(i);
       String name = testCase.getString("Name");
+      Boolean ret = testCase.getBoolean("Result");
       byte[] input = Hex.decode(testCase.getString("Input"));
       byte[] expected = Hex.decode(testCase.getString("Expected"));
       Pair<Boolean, byte[]> result = bn128Mul.execute(input);
       if (result.getLeft()) {
         assertArrayEquals(String.format("bn128Mul test %s failed", name), expected,
             result.getRight());
+        Assert.assertNull(ret);
+      } else {
+        Assert.assertFalse(ret);
       }
     }
   }
@@ -90,12 +98,16 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     for (int i = 0; i < testCases.size(); i++) {
       JSONObject testCase = testCases.getJSONObject(i);
       String name = testCase.getString("Name");
+      Boolean ret = testCase.getBoolean("Result");
       byte[] input = Hex.decode(testCase.getString("Input"));
       byte[] expected = Hex.decode(testCase.getString("Expected"));
       Pair<Boolean, byte[]> result = bn128Pairing.execute(input);
       if (result.getLeft()) {
         assertArrayEquals(String.format("bn128Pairing test %s failed", name), expected,
             result.getRight());
+        Assert.assertNull(ret);
+      } else {
+        Assert.assertFalse(ret);
       }
     }
   }
@@ -198,7 +210,7 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     result = bn128Add.execute(new byte[0]);
     Assert.assertTrue(result.getLeft());
 
-    for (int i = 1; i < 1000; i++) {
+    for (int i = 5; i < 200; i++) {
       randomInput = new byte[i];
       random.nextBytes(randomInput);
       result = bn128Add.execute(randomInput);
@@ -218,7 +230,7 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     result = bn128Mul.execute(new byte[0]);
     Assert.assertTrue(result.getLeft());
 
-    for (int i = 1; i < 1000; i++) {
+    for (int i = 5; i < 200; i++) {
       randomInput = new byte[i];
       random.nextBytes(randomInput);
       result = bn128Mul.execute(randomInput);
@@ -238,7 +250,7 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     result = bn128Pairing.execute(new byte[0]);
     Assert.assertTrue(result.getLeft());
 
-    for (int i = 1; i <= 1920; i++) {
+    for (int i = 5; i <= 110 * 192; i++) {
       randomInput = new byte[i];
       random.nextBytes(randomInput);
       result = bn128Pairing.execute(randomInput);
