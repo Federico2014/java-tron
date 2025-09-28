@@ -1,5 +1,7 @@
 package org.tron.common.crypto;
 
+import static org.junit.Assert.fail;
+
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.security.SignatureException;
@@ -116,11 +118,7 @@ public class ECKeyV2Test {
     byte[] pubKeyBytes = ECKeyV2.signatureToKeyBytes(msgHash, signature.toBase64());
     Assert.assertArrayEquals(pubKeyBytes, key.getPubKey());
 
-    BigInteger secp256K1N =
-        new BigInteger("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16);
-    Assert.assertTrue(signature.s.compareTo(ECKey.HALF_CURVE_ORDER) <= 0);
-
-    BigInteger flipS = secp256K1N.subtract(signature.s);
+    BigInteger flipS = ECKeyV2.CURVE.getN().subtract(signature.s);
     Assert.assertTrue(flipS.compareTo(ECKey.HALF_CURVE_ORDER) > 0);
 
     byte[] flipPubKeyBytes = ECKeyV2.signatureToKeyBytes(msgHash,
@@ -142,6 +140,74 @@ public class ECKeyV2Test {
     Assert.assertArrayEquals(flipPubKeyBytes, key.getPubKey());
   }
 
+  @Test
+  public void testPrivateKeyBytes() throws SignatureException {
+    ECKeyV2 ecKeyV2;
+    byte[] privateKey;
+    assertInvalidPrivateKey(null);
+    assertInvalidPrivateKey(new byte[0]);
+    assertInvalidPrivateKey(new byte[1]);
+    assertInvalidPrivateKey(new byte[32]);
+    assertInvalidPrivateKey(ECKey.CURVE.getN().toByteArray());
+    assertInvalidPrivateKey(ECKey.CURVE.getN().add(BigInteger.ONE).toByteArray());
+
+    privateKey = new byte[]{1};
+    ecKeyV2 = new ECKeyV2(privateKey);
+    Assert.assertEquals(0, ecKeyV2.getPrivKey().compareTo(BigInteger.ONE));
+
+    BigInteger nSubOne = ECKey.CURVE.getN().subtract(BigInteger.ONE);
+    privateKey = nSubOne.toByteArray();
+    ecKeyV2 = new ECKeyV2(privateKey);
+    Assert.assertEquals(0, ecKeyV2.getPrivKey().compareTo(nSubOne));
+  }
+
+  private void assertInvalidPrivateKey(byte[] privateKey)
+      throws SignatureException {
+    try {
+      new ECKeyV2(privateKey);
+      fail("Should throw IllegalArgumentException");
+    } catch (IllegalArgumentException e) {
+      Assert.assertEquals("Invalid private key.", e.getMessage());
+    }
+  }
+
+  @Test
+  public void testSignHash() throws SignatureException {
+    ECKeyV2 key = new ECKeyV2();
+    final String EXPECTED_ERROR_MESSAGE = "Hash must be 32 bytes array.";
+
+    try {
+      key.signHash(null);
+      fail("Should throw IllegalArgumentException");
+    } catch (IllegalArgumentException e) {
+      Assert.assertEquals(EXPECTED_ERROR_MESSAGE, e.getMessage());
+    }
+
+    try {
+      key.signHash(new byte[0]);
+      fail("Should throw IllegalArgumentException");
+    } catch (IllegalArgumentException e) {
+      Assert.assertEquals(EXPECTED_ERROR_MESSAGE, e.getMessage());
+    }
+
+    for (int i = 1; i < 32; i++) {
+      try {
+        key.signHash(new byte[i]);
+        fail("Should throw IllegalArgumentException for length " + i);
+      } catch (IllegalArgumentException e) {
+        Assert.assertEquals(EXPECTED_ERROR_MESSAGE, e.getMessage());
+      }
+    }
+
+    try {
+      key.signHash(new byte[33]);
+      fail("Should throw IllegalArgumentException");
+    } catch (IllegalArgumentException e) {
+      Assert.assertEquals(EXPECTED_ERROR_MESSAGE, e.getMessage());
+    }
+
+    key.signHash(new byte[32]);
+  }
 
   @Test
   public void ecKeySignBench() throws SignatureException {

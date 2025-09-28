@@ -4,13 +4,13 @@ import static org.hyperledger.besu.nativelib.secp256k1.LibSecp256k1.SECP256K1_EC
 
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.LongByReference;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.security.SignatureException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.hyperledger.besu.nativelib.secp256k1.LibSecp256k1;
-import org.tron.common.utils.ByteArray;
 
 @Slf4j(topic = "crypto")
 public class ECKeyV2 extends ECKey {
@@ -32,8 +32,14 @@ public class ECKeyV2 extends ECKey {
   public ECKeyV2() throws SignatureException {
     super();
     checkECKeyV2Available();
+
+    byte[] privateKeyBytes = getPrivateKey();
+    if (!isValidPrivateKey(privateKeyBytes)) {
+      throw new SignatureException("Invalid private key.");
+    }
+
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
-        LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
+        LibSecp256k1.CONTEXT, pubKey, privateKeyBytes)
         == 0) {
       throw new SignatureException("Could not create public key from private key.");
     }
@@ -42,6 +48,7 @@ public class ECKeyV2 extends ECKey {
   public ECKeyV2(byte[] privateKey) throws SignatureException {
     super(privateKey, true);
     checkECKeyV2Available();
+
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
         LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
         == 0) {
@@ -52,6 +59,12 @@ public class ECKeyV2 extends ECKey {
   public ECKeyV2(SecureRandom secureRandom) throws SignatureException {
     super(secureRandom);
     checkECKeyV2Available();
+
+    byte[] privateKeyBytes = getPrivateKey();
+    if (!isValidPrivateKey(privateKeyBytes)) {
+      throw new SignatureException("Invalid private key.");
+    }
+
     if (LibSecp256k1.secp256k1_ec_pubkey_create(
         LibSecp256k1.CONTEXT, pubKey, getPrivateKey())
         == 0) {
@@ -60,6 +73,10 @@ public class ECKeyV2 extends ECKey {
   }
 
   public static ECKeyV2 fromECKey(ECKey key) throws SignatureException {
+    if (key == null) {
+      return null;
+    }
+
     checkECKeyV2Available();
     return new ECKeyV2(key.getPrivateKey());
   }
@@ -67,10 +84,20 @@ public class ECKeyV2 extends ECKey {
   public static ECKeyV2 fromPrivate(byte[] privateKey) {
     try {
       checkECKeyV2Available();
-      if (ByteArray.isEmpty(privateKey)) {
-        return null;
-      }
       return new ECKeyV2(privateKey);
+    } catch (SignatureException e) {
+      throw new RuntimeException("Failed to create ECKeyV2 from private key", e);
+    }
+  }
+
+  public static ECKeyV2 fromPrivate(BigInteger privateKey) {
+    if (!isValidPrivateKey(privateKey)) {
+      throw new IllegalArgumentException("Invalid private key.");
+    }
+
+    try {
+      checkECKeyV2Available();
+      return new ECKeyV2(privateKey.toByteArray());
     } catch (SignatureException e) {
       throw new RuntimeException("Failed to create ECKeyV2 from private key", e);
     }
@@ -100,9 +127,12 @@ public class ECKeyV2 extends ECKey {
 
   @Override
   public String signHash(byte[] hash) {
+    if (hash == null || hash.length != 32) {
+      throw new IllegalArgumentException("Hash must be 32 bytes array.");
+    }
+
     final LibSecp256k1.secp256k1_ecdsa_recoverable_signature signature =
         new LibSecp256k1.secp256k1_ecdsa_recoverable_signature();
-
     if (LibSecp256k1.secp256k1_ecdsa_sign_recoverable(
         LibSecp256k1.CONTEXT,
         signature,
@@ -164,6 +194,14 @@ public class ECKeyV2 extends ECKey {
   public static byte[] signatureToKeyBytes(byte[] messageHash, byte[] signBytes)
       throws SignatureException {
     checkECKeyV2Available();
+
+    if (messageHash == null || messageHash.length != 32) {
+      throw new IllegalArgumentException("Hash must be 32 bytes array.");
+    }
+
+    if (signBytes == null || signBytes.length != 65) {
+      throw new IllegalArgumentException("Signature must be 65 bytes array.");
+    }
 
     byte[] input = new byte[64];
     System.arraycopy(signBytes, 0, input, 0, 64);

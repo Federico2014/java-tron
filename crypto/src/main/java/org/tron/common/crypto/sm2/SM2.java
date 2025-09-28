@@ -120,10 +120,18 @@ public class SM2 implements Serializable, SignInterface {
 
   public SM2(byte[] key, boolean isPrivateKey) {
     if (isPrivateKey) {
+      if (!ECKey.isValidPrivateKey(key)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
+
       BigInteger pk = new BigInteger(1, key);
       this.privKey = privateKeyFromBigInteger(pk);
       this.pub = ecc_param.getG().multiply(pk);
     } else {
+      if (!ECKey.isValidPublicKey(key)) {
+        throw new IllegalArgumentException("Invalid public key.");
+      }
+
       this.privKey = null;
       this.pub = ecc_param.getCurve().decodePoint(key);
     }
@@ -173,6 +181,10 @@ public class SM2 implements Serializable, SignInterface {
     if (priv == null) {
       return null;
     } else {
+      if (!ECKey.isValidPrivateKey(priv)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
+
       try {
         return ECKeyFactory
             .getInstance(TronCastleProvider.getInstance())
@@ -237,6 +249,10 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static SM2 fromPrivate(BigInteger privKey) {
+    if (!ECKey.isValidPrivateKey(privKey)) {
+      throw new IllegalArgumentException("Invalid private key.");
+    }
+
     return new SM2(privKey, ecc_param.getG().multiply(privKey));
   }
 
@@ -247,9 +263,10 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static SM2 fromPrivate(byte[] privKeyBytes) {
-    if (Objects.isNull(privKeyBytes)) {
-      return null;
+    if (!ECKey.isValidPrivateKey(privKeyBytes)) {
+      throw new IllegalArgumentException("Invalid private key.");
     }
+
     return fromPrivate(new BigInteger(1, privKeyBytes));
   }
 

@@ -232,9 +232,7 @@ public class ECKeyTest {
     Assert.assertArrayEquals(pubKeyBytes, key.getPubKey());
 
     Assert.assertTrue(signature.s.compareTo(ECKey.HALF_CURVE_ORDER) <= 0);
-    BigInteger secp256K1N =
-        new BigInteger("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16);
-    BigInteger flipS = secp256K1N.subtract(signature.s);
+    BigInteger flipS = ECKey.CURVE.getN().subtract(signature.s);
     Assert.assertTrue(flipS.compareTo(ECKey.HALF_CURVE_ORDER) > 0);
 
     byte[] flipPubKeyBytes = ECKey.signatureToKeyBytes(msgHash,

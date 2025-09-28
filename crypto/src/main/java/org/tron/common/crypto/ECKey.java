@@ -55,6 +55,7 @@ import org.tron.common.crypto.jce.ECKeyFactory;
 import org.tron.common.crypto.jce.ECKeyPairGenerator;
 import org.tron.common.crypto.jce.TronCastleProvider;
 import org.tron.common.utils.BIUtil;
+import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 
 @Slf4j(topic = "crypto")
@@ -163,10 +164,16 @@ public class ECKey implements Serializable, SignInterface {
 
   public ECKey(byte[] key, boolean isPrivateKey) {
     if (isPrivateKey) {
+      if (!isValidPrivateKey(key)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
       BigInteger pk = new BigInteger(1, key);
       this.privKey = privateKeyFromBigInteger(pk);
       this.pub = CURVE.getG().multiply(pk);
     } else {
+      if (!isValidPublicKey(key)) {
+        throw new IllegalArgumentException("Invalid public key.");
+      }
       this.privKey = null;
       this.pub = CURVE.getCurve().decodePoint(key);
     }
@@ -233,6 +240,10 @@ public class ECKey implements Serializable, SignInterface {
     if (priv == null) {
       return null;
     } else {
+      if (!isValidPrivateKey(priv)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
+
       try {
         return ECKeyFactory
             .getInstance(TronCastleProvider.getInstance())
@@ -242,6 +253,26 @@ public class ECKey implements Serializable, SignInterface {
         throw new AssertionError("Assumed correct key spec statically");
       }
     }
+  }
+
+  public static boolean isValidPrivateKey(byte[] keyBytes) {
+    if (ByteArray.isEmpty(keyBytes)) {
+      return false;
+    }
+
+    BigInteger key = new BigInteger(1, keyBytes);
+    return key.compareTo(BigInteger.ONE) >= 0 && key.compareTo(SECP256K1N) < 0;
+  }
+
+  public static boolean isValidPrivateKey(BigInteger privateKey) {
+    if (privateKey == null) {
+      return false;
+    }
+    return privateKey.compareTo(BigInteger.ONE) >= 0 && privateKey.compareTo(SECP256K1N) < 0;
+  }
+
+  public static boolean isValidPublicKey(byte[] keyBytes) {
+    return !ByteArray.isEmpty(keyBytes);
   }
 
   /**
@@ -275,6 +306,10 @@ public class ECKey implements Serializable, SignInterface {
    * @return -
    */
   public static ECKey fromPrivate(BigInteger privKey) {
+    if (!isValidPrivateKey(privKey)) {
+      throw new IllegalArgumentException("Invalid private key.");
+    }
+
     return new ECKey(privKey, CURVE.getG().multiply(privKey));
   }
 
@@ -285,8 +320,8 @@ public class ECKey implements Serializable, SignInterface {
    * @return -
    */
   public static ECKey fromPrivate(byte[] privKeyBytes) {
-    if (Objects.isNull(privKeyBytes)) {
-      return null;
+    if (!isValidPrivateKey(privKeyBytes)) {
+      throw new IllegalArgumentException("Invalid private key.");
     }
     return fromPrivate(new BigInteger(1, privKeyBytes));
   }
@@ -987,12 +1022,14 @@ public class ECKey implements Serializable, SignInterface {
 
     public static ECDSASignature parseBase64Signature(String signatureBase64)
         throws SignatureException {
+      if (signatureBase64 == null) {
+        throw new SignatureException("Invalid base64 signature.");
+      }
+
       byte[] signatureEncoded;
       try {
         signatureEncoded = Base64.decode(signatureBase64);
       } catch (RuntimeException e) {
-        // This is what you getData back from Bouncy Castle if base64 doesn't
-        // decode :(
         throw new SignatureException("Could not decode base64", e);
       }
       // Parse the signature bytes into r/s and the selector value.
@@ -1012,7 +1049,6 @@ public class ECKey implements Serializable, SignInterface {
       if (v >= 31) {
         v -= 4;
       }
-      v -= 27;
 
       return ECDSASignature.fromComponents(r, s, v);
     }
