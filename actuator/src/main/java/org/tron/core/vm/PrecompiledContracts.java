@@ -13,14 +13,15 @@ import static org.tron.common.utils.ByteUtil.longTo32Bytes;
 import static org.tron.common.utils.ByteUtil.merge;
 import static org.tron.common.utils.ByteUtil.numberOfLeadingZeros;
 import static org.tron.common.utils.ByteUtil.parseBytes;
-import static org.tron.common.utils.ByteUtil.parseWord;
 import static org.tron.common.utils.ByteUtil.stripLeadingZeroes;
 import static org.tron.core.config.Parameter.ChainConstant.TRX_PRECISION;
 
 import com.google.protobuf.ByteString;
 
+import com.sun.jna.ptr.IntByReference;
 import java.lang.reflect.Constructor;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,22 +40,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
+import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
 import org.tron.common.crypto.Blake2bfMessageDigest;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
-import org.tron.common.crypto.zksnark.BN128;
 import org.tron.common.crypto.zksnark.BN128Fp;
-import org.tron.common.crypto.zksnark.BN128G1;
 import org.tron.common.crypto.zksnark.BN128G2;
-import org.tron.common.crypto.zksnark.Fp;
 import org.tron.common.crypto.zksnark.PairingCheck;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.runtime.ProgramResult;
 import org.tron.common.runtime.vm.DataWord;
-import org.tron.common.utils.BIUtil;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 import org.tron.common.utils.Sha256Hash;
@@ -742,25 +740,16 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
-      byte[] x1 = parseWord(data, 0);
-      byte[] y1 = parseWord(data, 1);
-
-      byte[] x2 = parseWord(data, 2);
-      byte[] y2 = parseWord(data, 3);
-
-      BN128<Fp> p1 = BN128Fp.create(x1, y1);
-      if (p1 == null) {
-        return Pair.of(false, EMPTY_BYTE_ARRAY);
+      byte[] input = data.length > 128 ? Arrays.copyOfRange(data, 0, 128) : data;
+      long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
+      Pair<Boolean, byte[]> result = executeEIP196Operation(
+          LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE, input);
+      if (result.getLeft()) {
+        logExecutionResult("BN128Addition", true, blockNum);
+      } else {
+        logExecutionResult("BN128Addition", false, blockNum);
       }
-
-      BN128<Fp> p2 = BN128Fp.create(x2, y2);
-      if (p2 == null) {
-        return Pair.of(false, EMPTY_BYTE_ARRAY);
-      }
-
-      BN128<Fp> res = p1.add(p2).toEthNotation();
-
-      return Pair.of(true, encodeRes(res.x().bytes(), res.y().bytes()));
+      return result;
     }
   }
 
@@ -791,24 +780,20 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
       }
 
-      byte[] x = parseWord(data, 0);
-      byte[] y = parseWord(data, 1);
-
-      byte[] s = parseWord(data, 2);
-
-      BN128<Fp> p = BN128Fp.create(x, y);
-      if (p == null) {
-        return Pair.of(false, EMPTY_BYTE_ARRAY);
+      byte[] input = data.length > 96 ? Arrays.copyOfRange(data, 0, 96) : data;
+      Pair<Boolean, byte[]> result = executeEIP196Operation(
+          LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, input);
+      long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
+      if (result.getLeft()) {
+        logExecutionResult("BN128Multiplication", true, blockNum);
+      } else {
+        logExecutionResult("BN128Multiplication", false, blockNum);
       }
-
-      BN128<Fp> res = p.mul(BIUtil.toBI(s)).toEthNotation();
-
-      return Pair.of(true, encodeRes(res.x().bytes(), res.y().bytes()));
+      return result;
     }
   }
 
@@ -829,6 +814,8 @@ public class PrecompiledContracts {
   public static class BN128Pairing extends PrecompiledContract {
 
     private static final int PAIR_SIZE = 192;
+    // For security and to avoid tx timeout, limit the maximum number of pairs to 100
+    private static final int MAX_PAIR_SIZE_LIMIT = 192 * 100;
 
     @Override
     public long getEnergyForData(byte[] data) {
@@ -850,65 +837,67 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
       }
 
+      long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
       // fail if input len is not a multiple of PAIR_SIZE
-      if (data.length % PAIR_SIZE > 0) {
+      if (data.length > MAX_PAIR_SIZE_LIMIT || data.length % PAIR_SIZE > 0) {
+        logExecutionResult("BN128Pairing", false, blockNum);
         return Pair.of(false, EMPTY_BYTE_ARRAY);
       }
-
-      PairingCheck check = PairingCheck.create();
-
-      // iterating over all pairs
-      for (int offset = 0; offset < data.length; offset += PAIR_SIZE) {
-
-        Pair<BN128G1, BN128G2> pair = decodePair(data, offset);
-
-        // fail if decoding has failed
-        if (pair == null) {
-          return Pair.of(false, EMPTY_BYTE_ARRAY);
-        }
-
-        check.addPair(pair.getLeft(), pair.getRight());
+      Pair<Boolean, byte[]> result = executeEIP196Operation(
+          LibGnarkEIP196.EIP196_PAIR_OPERATION_RAW_VALUE, data);
+      if (result.getLeft()) {
+        logExecutionResult("BN128Pairing", true, blockNum);
+      } else {
+        logExecutionResult("BN128Pairing", false, blockNum);
       }
+      return result;
+    }
+  }
 
-      check.run();
-      int result = check.result();
-
-      return Pair.of(true, new DataWord(result).getData());
+  private static Pair<Boolean, byte[]> executeEIP196Operation(byte operation, byte[] data) {
+    if (!LibGnarkEIP196.ENABLED) {
+      byte[] errorMessage = "EIP-196 operation is not available".getBytes(StandardCharsets.UTF_8);
+      return Pair.of(false, errorMessage);
     }
 
-    private Pair<BN128G1, BN128G2> decodePair(byte[] in, int offset) {
+    final byte[] output = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_RESULT_BYTES];
+    final IntByReference outputLength = new IntByReference();
+    final byte[] error = new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_ERROR_BYTES];
+    final IntByReference errorLength = new IntByReference();
 
-      byte[] x = parseWord(in, offset, 0);
-      byte[] y = parseWord(in, offset, 1);
+    int ret = LibGnarkEIP196.eip196_perform_operation(
+        operation,
+        data,
+        data.length,
+        output,
+        outputLength,
+        error,
+        errorLength);
 
-      BN128G1 p1 = BN128G1.create(x, y);
+    if (ret == 0) {
+      return Pair.of(true, ByteArray.subArray(output, 0, outputLength.getValue()));
+    } else {
+      return Pair.of(false, ByteArray.subArray(error, 0, errorLength.getValue()));
+    }
+  }
 
-      // fail if point is invalid
-      if (p1 == null) {
-        return null;
-      }
-
-      // (b, a)
-      byte[] b = parseWord(in, offset, 2);
-      byte[] a = parseWord(in, offset, 3);
-
-      // (d, c)
-      byte[] d = parseWord(in, offset, 4);
-      byte[] c = parseWord(in, offset, 5);
-
-      BN128G2 p2 = BN128G2.create(a, b, c, d);
-
-      // fail if point is invalid
-      if (p2 == null) {
-        return null;
-      }
-
-      return Pair.of(p1, p2);
+  private static void logExecutionResult(String precompiledContract, boolean success,
+      long blockNum) {
+    try {
+      String logEntry =
+          System.currentTimeMillis() + " " + blockNum + " " + (success ? "success" : "fail") + "\n";
+      java.nio.file.Files.write(
+          java.nio.file.Paths.get("logs/" + precompiledContract + ".log"),
+          logEntry.getBytes(),
+          java.nio.file.StandardOpenOption.CREATE,
+          java.nio.file.StandardOpenOption.APPEND
+      );
+    } catch (java.io.IOException e) {
+      logger.error("Failed to log execution result", e);
     }
   }
 

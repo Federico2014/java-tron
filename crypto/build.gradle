@@ -12,6 +12,8 @@ repositories {
 
 dependencies {
     api project(":common")
+    api 'net.java.dev.jna:jna:5.12.1'
+    api 'com.github.federico2014.besu-native:gnark:1.3.9'
 }
 
 jacocoTestReport {
