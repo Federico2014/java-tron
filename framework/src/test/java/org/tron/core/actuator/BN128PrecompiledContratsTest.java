@@ -241,8 +241,8 @@ public class BN128PrecompiledContratsTest extends BaseTest {
 
   @Test
   public void bn128PairingRandomTest() {
-    PrecompiledContract bn128Pairing = createPrecompiledContract(altBN128PairingAddr, OWNER_ADDRESS);
-
+    PrecompiledContract bn128Pairing = createPrecompiledContract(altBN128PairingAddr,
+        OWNER_ADDRESS);
     SecureRandom random = new SecureRandom();
     byte[] randomInput;
     Pair<Boolean, byte[]> result;

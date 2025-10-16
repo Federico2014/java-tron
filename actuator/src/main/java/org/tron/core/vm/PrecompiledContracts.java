@@ -582,6 +582,8 @@ public class PrecompiledContracts {
       } catch (Throwable any) {
       }
 
+      long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
+      logExecutionResult("ECRecover", true, blockNum);
       if (out == null) {
         return Pair.of(true, EMPTY_BYTE_ARRAY);
       } else {
@@ -927,7 +929,8 @@ public class PrecompiledContracts {
 
       byte[][] signatures = extractBytesArray(
           words, words[3].intValueSafe() / WORD_SIZE, rawData);
-
+      long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
+      logExecutionResult("ValidateMultiSign", true, blockNum);
       if (signatures.length == 0 || signatures.length > MAX_SIZE) {
         return Pair.of(true, DATA_FALSE);
       }
