@@ -2,15 +2,34 @@ package org.tron.common.crypto;
 
 import java.security.SecureRandom;
 import java.security.SignatureException;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2.SM2Signature;
 
+@Slf4j(topic = "crypto")
 public class SignUtils {
+
+  private static final String ECKEYV2_NOT_AVAILABLE = "ECKeyV2 is not available";
+
+  @Setter
+  private static boolean useECKeyV2 = true;
+
+  private static void logECKeyV2NotAvailable() {
+    logger.warn(ECKEYV2_NOT_AVAILABLE);
+  }
 
   public static SignInterface getGeneratedRandomSign(
       SecureRandom secureRandom, boolean isECKeyCryptoEngine) {
     if (isECKeyCryptoEngine) {
+      if (useECKeyV2 && ECKeyV2.isECKeyV2Available()) {
+        try {
+          return new ECKeyV2(secureRandom);
+        } catch (SignatureException e) {
+          logECKeyV2NotAvailable();
+        }
+      }
       return new ECKey(secureRandom);
     }
     return new SM2(secureRandom);
@@ -18,6 +37,9 @@ public class SignUtils {
 
   public static SignInterface fromPrivate(byte[] privKeyBytes, boolean isECKeyCryptoEngine) {
     if (isECKeyCryptoEngine) {
+      if (useECKeyV2 && ECKeyV2.isECKeyV2Available()) {
+        return ECKeyV2.fromPrivate(privKeyBytes);
+      }
       return ECKey.fromPrivate(privKeyBytes);
     }
     return SM2.fromPrivate(privKeyBytes);
@@ -28,6 +50,13 @@ public class SignUtils {
       throws SignatureException {
     try {
       if (isECKeyCryptoEngine) {
+        if (useECKeyV2 && ECKeyV2.isECKeyV2Available()) {
+          try {
+            return ECKeyV2.signatureToAddress(messageHash, signatureBase64);
+          } catch (SignatureException e) {
+            logECKeyV2NotAvailable();
+          }
+        }
         return ECKey.signatureToAddress(messageHash, signatureBase64);
       }
       return SM2.signatureToAddress(messageHash, signatureBase64);
@@ -48,6 +77,13 @@ public class SignUtils {
       byte[] messageHash, SignatureInterface signatureInterface, boolean isECKeyCryptoEngine)
       throws SignatureException {
     if (isECKeyCryptoEngine) {
+      if (useECKeyV2 && ECKeyV2.isECKeyV2Available()) {
+        try {
+          return ECKeyV2.signatureToAddress(messageHash, (ECDSASignature) signatureInterface);
+        } catch (SignatureException e) {
+          logECKeyV2NotAvailable();
+        }
+      }
       return ECKey.signatureToAddress(messageHash, (ECDSASignature) signatureInterface);
     }
     return SM2.signatureToAddress(messageHash, (SM2Signature) signatureInterface);

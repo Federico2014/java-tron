@@ -15,7 +15,6 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
-import java.util.Objects;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.ASN1InputStream;
@@ -41,7 +40,6 @@ import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignatureInterface;
 import org.tron.common.crypto.jce.ECKeyFactory;
 import org.tron.common.crypto.jce.TronCastleProvider;
-import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 
 /**
@@ -63,10 +61,10 @@ public class SM2 implements Serializable, SignInterface {
   private static BigInteger SM2_GY = new BigInteger(
       "BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0", 16);
 
-  private static ECDomainParameters ecc_param;
-  private static ECParameterSpec ecc_spec;
-  private static ECCurve.Fp curve;
-  private static ECPoint ecc_point_g;
+  private static final ECDomainParameters eccParam;
+  private static final ECParameterSpec eccSpec;
+  private static final ECCurve.Fp curve;
+  private static final ECPoint eccPointG;
 
   private static final SecureRandom secureRandom;
 
@@ -74,9 +72,9 @@ public class SM2 implements Serializable, SignInterface {
   static {
     secureRandom = new SecureRandom();
     curve = new ECCurve.Fp(SM2_P, SM2_A, SM2_B, null, null);
-    ecc_point_g = curve.createPoint(SM2_GX, SM2_GY);
-    ecc_param = new ECDomainParameters(curve, ecc_point_g, SM2_N);
-    ecc_spec = new ECParameterSpec(curve, ecc_point_g, SM2_N);
+    eccPointG = curve.createPoint(SM2_GX, SM2_GY);
+    eccParam = new ECDomainParameters(curve, eccPointG, SM2_N);
+    eccSpec = new ECParameterSpec(curve, eccPointG, SM2_N);
   }
 
   protected final ECPoint pub;
@@ -106,7 +104,7 @@ public class SM2 implements Serializable, SignInterface {
    */
   public SM2(SecureRandom secureRandom) {
 
-    ECKeyGenerationParameters ecKeyGenerationParameters = new ECKeyGenerationParameters(ecc_param,
+    ECKeyGenerationParameters ecKeyGenerationParameters = new ECKeyGenerationParameters(eccParam,
         secureRandom);
     ECKeyPairGenerator keyPairGenerator = new ECKeyPairGenerator();
     keyPairGenerator.init(ecKeyGenerationParameters);
@@ -121,12 +119,20 @@ public class SM2 implements Serializable, SignInterface {
 
   public SM2(byte[] key, boolean isPrivateKey) {
     if (isPrivateKey) {
+      if (!ECKey.isValidPrivateKey(key)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
+
       BigInteger pk = new BigInteger(1, key);
       this.privKey = privateKeyFromBigInteger(pk);
-      this.pub = ecc_param.getG().multiply(pk);
+      this.pub = eccParam.getG().multiply(pk);
     } else {
+      if (!ECKey.isValidPublicKey(key)) {
+        throw new IllegalArgumentException("Invalid public key.");
+      }
+
       this.privKey = null;
-      this.pub = ecc_param.getCurve().decodePoint(key);
+      this.pub = eccParam.getCurve().decodePoint(key);
     }
   }
 
@@ -174,11 +180,15 @@ public class SM2 implements Serializable, SignInterface {
     if (priv == null) {
       return null;
     } else {
+      if (!ECKey.isValidPrivateKey(priv)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
+
       try {
         return ECKeyFactory
             .getInstance(TronCastleProvider.getInstance())
             .generatePrivate(new ECPrivateKeySpec(priv,
-                ecc_spec));
+                eccSpec));
       } catch (InvalidKeySpecException ex) {
         throw new AssertionError("Assumed correct key spec statically");
       }
@@ -203,7 +213,7 @@ public class SM2 implements Serializable, SignInterface {
     final BigInteger xCoord = publicPointW.getAffineX();
     final BigInteger yCoord = publicPointW.getAffineY();
 
-    return ecc_param.getCurve().createPoint(xCoord, yCoord);
+    return eccParam.getCurve().createPoint(xCoord, yCoord);
   }
 
 
@@ -216,7 +226,7 @@ public class SM2 implements Serializable, SignInterface {
    * @deprecated per-point compression property will be removed in Bouncy Castle
    */
   public static ECPoint compressPoint(ECPoint uncompressed) {
-    return ecc_param.getCurve().decodePoint(uncompressed.getEncoded(true));
+    return eccParam.getCurve().decodePoint(uncompressed.getEncoded(true));
   }
 
   /**
@@ -228,7 +238,7 @@ public class SM2 implements Serializable, SignInterface {
    * @deprecated per-point compression property will be removed in Bouncy Castle
    */
   public static ECPoint decompressPoint(ECPoint compressed) {
-    return ecc_param.getCurve().decodePoint(compressed.getEncoded(false));
+    return eccParam.getCurve().decodePoint(compressed.getEncoded(false));
   }
 
   /**
@@ -238,7 +248,11 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static SM2 fromPrivate(BigInteger privKey) {
-    return new SM2(privKey, ecc_param.getG().multiply(privKey));
+    if (!ECKey.isValidPrivateKey(privKey)) {
+      throw new IllegalArgumentException("Invalid private key.");
+    }
+
+    return new SM2(privKey, eccParam.getG().multiply(privKey));
   }
 
   /**
@@ -248,9 +262,10 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static SM2 fromPrivate(byte[] privKeyBytes) {
-    if (ByteArray.isEmpty(privKeyBytes)) {
-      return null;
+    if (!ECKey.isValidPrivateKey(privKeyBytes)) {
+      throw new IllegalArgumentException("Invalid private key.");
     }
+
     return fromPrivate(new BigInteger(1, privKeyBytes));
   }
 
@@ -281,7 +296,7 @@ public class SM2 implements Serializable, SignInterface {
       pub) {
     check(priv != null, "Private key must not be null");
     check(pub != null, "Public key must not be null");
-    return new SM2(new BigInteger(1, priv), ecc_param.getCurve()
+    return new SM2(new BigInteger(1, priv), eccParam.getCurve()
         .decodePoint(pub));
   }
 
@@ -304,7 +319,7 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static SM2 fromPublicOnly(byte[] pub) {
-    return new SM2((PrivateKey) null, ecc_param.getCurve().decodePoint(pub));
+    return new SM2((PrivateKey) null, eccParam.getCurve().decodePoint(pub));
   }
 
   /**
@@ -317,7 +332,7 @@ public class SM2 implements Serializable, SignInterface {
    */
   public static byte[] publicKeyFromPrivate(BigInteger privKey, boolean
       compressed) {
-    ECPoint point = ecc_param.getG().multiply(privKey);
+    ECPoint point = eccParam.getG().multiply(privKey);
     return point.getEncoded(compressed);
   }
 
@@ -590,7 +605,7 @@ public class SM2 implements Serializable, SignInterface {
   private SM2Signer getSigner() {
     SM2Signer signer = new SM2Signer();
     BigInteger d = getPrivKey();
-    ECPrivateKeyParameters privateKeyParameters = new ECPrivateKeyParameters(d, ecc_param);
+    ECPrivateKeyParameters privateKeyParameters = new ECPrivateKeyParameters(d, eccParam);
     signer.init(true, privateKeyParameters);
     return signer;
   }
@@ -600,7 +615,7 @@ public class SM2 implements Serializable, SignInterface {
    */
   public SM2Signer getSM2SignerForHash() {
     SM2Signer signer = new SM2Signer();
-    ECPublicKeyParameters publicKeyParameters = new ECPublicKeyParameters(pub, ecc_param);
+    ECPublicKeyParameters publicKeyParameters = new ECPublicKeyParameters(pub, eccParam);
     signer.init(false, publicKeyParameters);
     return signer;
   }
@@ -621,7 +636,7 @@ public class SM2 implements Serializable, SignInterface {
     // 1.0 For j from 0 to h   (h == recId here and the loop is outside
     // this function)
     //   1.1 Let x = r + jn
-    BigInteger n = ecc_param.getN();  // Curve order.
+    BigInteger n = eccParam.getN();  // Curve order.
     BigInteger prime = curve.getQ();
     BigInteger i = BigInteger.valueOf((long) recId / 2);
 
@@ -640,7 +655,7 @@ public class SM2 implements Serializable, SignInterface {
     //
     // More concisely, what these points mean is to use X as a compressed
     // public key.
-    ECCurve.Fp curve = (ECCurve.Fp) ecc_param.getCurve();
+    ECCurve.Fp curve = (ECCurve.Fp) eccParam.getCurve();
     // Bouncy Castle is not consistent
     // about the letter it uses for the prime.
     if (x.compareTo(prime) >= 0) {
@@ -663,7 +678,7 @@ public class SM2 implements Serializable, SignInterface {
     BigInteger sNeg = BigInteger.ZERO.subtract(sig.s).mod(n);
     BigInteger coeff = srInv.multiply(sNeg).mod(n);
 
-    ECPoint.Fp q = (ECPoint.Fp) ECAlgorithms.sumOfTwoMultiplies(ecc_param
+    ECPoint.Fp q = (ECPoint.Fp) ECAlgorithms.sumOfTwoMultiplies(eccParam
         .getG(), coeff, R, srInv);
     return q.getEncoded(/* compressed */ false);
   }
@@ -678,10 +693,10 @@ public class SM2 implements Serializable, SignInterface {
 
   private static ECPoint decompressKey(BigInteger xBN, boolean yBit) {
     X9IntegerConverter x9 = new X9IntegerConverter();
-    byte[] compEnc = x9.integerToBytes(xBN, 1 + x9.getByteLength(ecc_param
+    byte[] compEnc = x9.integerToBytes(xBN, 1 + x9.getByteLength(eccParam
         .getCurve()));
     compEnc[0] = (byte) (yBit ? 0x03 : 0x02);
-    return ecc_param.getCurve().decodePoint(compEnc);
+    return eccParam.getCurve().decodePoint(compEnc);
   }
 
   private static void check(boolean test, String message) {
@@ -703,8 +718,8 @@ public class SM2 implements Serializable, SignInterface {
   public static boolean verify(byte[] data, SM2Signature signature,
       byte[] pub) {
     SM2Signer signer = new SM2Signer();
-    ECPublicKeyParameters params = new ECPublicKeyParameters(ecc_param
-        .getCurve().decodePoint(pub), ecc_param);
+    ECPublicKeyParameters params = new ECPublicKeyParameters(eccParam
+        .getCurve().decodePoint(pub), eccParam);
     signer.init(false, params);
     try {
       return signer.verifyHashSignature(data, signature.r, signature.s);
@@ -741,8 +756,8 @@ public class SM2 implements Serializable, SignInterface {
   public static boolean verifyMessage(byte[] msg, SM2Signature signature,
       byte[] pub, @Nullable String userID) {
     SM2Signer signer = new SM2Signer();
-    ECPublicKeyParameters params = new ECPublicKeyParameters(ecc_param
-        .getCurve().decodePoint(pub), ecc_param);
+    ECPublicKeyParameters params = new ECPublicKeyParameters(eccParam
+        .getCurve().decodePoint(pub), eccParam);
     signer.init(false, params);
     try {
       return signer.verifySignature(msg, signature.r, signature.s, userID);

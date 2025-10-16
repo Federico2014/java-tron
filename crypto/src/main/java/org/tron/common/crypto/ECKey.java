@@ -31,7 +31,6 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
-import java.util.Objects;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.sec.SECNamedCurves;
@@ -164,10 +163,16 @@ public class ECKey implements Serializable, SignInterface {
 
   public ECKey(byte[] key, boolean isPrivateKey) {
     if (isPrivateKey) {
+      if (!isValidPrivateKey(key)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
       BigInteger pk = new BigInteger(1, key);
       this.privKey = privateKeyFromBigInteger(pk);
       this.pub = CURVE.getG().multiply(pk);
     } else {
+      if (!isValidPublicKey(key)) {
+        throw new IllegalArgumentException("Invalid public key.");
+      }
       this.privKey = null;
       this.pub = CURVE.getCurve().decodePoint(key);
     }
@@ -234,6 +239,10 @@ public class ECKey implements Serializable, SignInterface {
     if (priv == null) {
       return null;
     } else {
+      if (!isValidPrivateKey(priv)) {
+        throw new IllegalArgumentException("Invalid private key.");
+      }
+
       try {
         return ECKeyFactory
             .getInstance(TronCastleProvider.getInstance())
@@ -243,6 +252,26 @@ public class ECKey implements Serializable, SignInterface {
         throw new AssertionError("Assumed correct key spec statically");
       }
     }
+  }
+
+  public static boolean isValidPrivateKey(byte[] keyBytes) {
+    if (ByteArray.isEmpty(keyBytes)) {
+      return false;
+    }
+
+    BigInteger key = new BigInteger(1, keyBytes);
+    return key.compareTo(BigInteger.ONE) >= 0 && key.compareTo(SECP256K1N) < 0;
+  }
+
+  public static boolean isValidPrivateKey(BigInteger privateKey) {
+    if (privateKey == null) {
+      return false;
+    }
+    return privateKey.compareTo(BigInteger.ONE) >= 0 && privateKey.compareTo(SECP256K1N) < 0;
+  }
+
+  public static boolean isValidPublicKey(byte[] keyBytes) {
+    return !ByteArray.isEmpty(keyBytes);
   }
 
   /**
@@ -276,6 +305,10 @@ public class ECKey implements Serializable, SignInterface {
    * @return -
    */
   public static ECKey fromPrivate(BigInteger privKey) {
+    if (!isValidPrivateKey(privKey)) {
+      throw new IllegalArgumentException("Invalid private key.");
+    }
+
     return new ECKey(privKey, CURVE.getG().multiply(privKey));
   }
 
@@ -286,8 +319,8 @@ public class ECKey implements Serializable, SignInterface {
    * @return -
    */
   public static ECKey fromPrivate(byte[] privKeyBytes) {
-    if (ByteArray.isEmpty(privKeyBytes)) {
-      return null;
+    if (!isValidPrivateKey(privKeyBytes)) {
+      throw new IllegalArgumentException("Invalid private key.");
     }
     return fromPrivate(new BigInteger(1, privKeyBytes));
   }
@@ -984,6 +1017,39 @@ public class ECKey implements Serializable, SignInterface {
           ByteUtil.bigIntegerToBytes(this.r, 32),
           ByteUtil.bigIntegerToBytes(this.s, 32),
           new byte[]{fixedV});
+    }
+
+    public static ECDSASignature parseBase64Signature(String signatureBase64)
+        throws SignatureException {
+      if (signatureBase64 == null) {
+        throw new SignatureException("Invalid base64 signature.");
+      }
+
+      byte[] signatureEncoded;
+      try {
+        signatureEncoded = Base64.decode(signatureBase64);
+      } catch (RuntimeException e) {
+        throw new SignatureException("Could not decode base64", e);
+      }
+      // Parse the signature bytes into r/s and the selector value.
+      if (signatureEncoded.length < 65) {
+        throw new SignatureException("Signature truncated, expected 65 " +
+            "bytes and got " + signatureEncoded.length);
+      }
+
+      byte[] r = new byte[32];
+      byte[] s = new byte[32];
+      System.arraycopy(signatureEncoded, 1, r, 0, 32);
+      System.arraycopy(signatureEncoded, 33, s, 0, 32);
+      byte v = signatureEncoded[0];
+      if (v < 27 || v > 34) {
+        throw new SignatureException("signature v byte out of range: " + v);
+      }
+      if (v >= 31) {
+        v -= 4;
+      }
+
+      return ECDSASignature.fromComponents(r, s, v);
     }
 
     public String toHex() {

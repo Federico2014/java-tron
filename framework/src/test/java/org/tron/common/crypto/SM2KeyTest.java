@@ -4,7 +4,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.tron.common.utils.client.utils.AbiUtil.generateOccupationConstantPrivateKey;
@@ -54,9 +54,9 @@ public class SM2KeyTest {
     assertTrue(key.isPubKeyCanonical());
     assertNotNull(key.getPubKey());
     assertNotNull(key.getPrivKeyBytes());
-    logger.info(Hex.toHexString(key.getPrivKeyBytes()) + " :Generated privkey");
-    logger.info(Hex.toHexString(key.getPubKey()) + " :Generated pubkey");
-    logger.info("private key in bigInteger form: " + key.getPrivKey());
+    logger.info("{} :Generated privkey", Hex.toHexString(key.getPrivKeyBytes()));
+    logger.info("{} :Generated pubkey", Hex.toHexString(key.getPubKey()));
+    logger.info("private key in bigInteger form: {}", key.getPrivKey());
   }
 
   @Test
@@ -66,10 +66,8 @@ public class SM2KeyTest {
     assertTrue(key.hasPrivKey());
     assertArrayEquals(pubKey, key.getPubKey());
 
-    key =  SM2.fromPrivate((byte[]) null);
-    assertNull(key);
-    key = SM2.fromPrivate(new byte[0]);
-    assertNull(key);
+    assertThrows(IllegalArgumentException.class, () -> SM2.fromPrivate((byte[]) null));
+    assertThrows(IllegalArgumentException.class, () -> SM2.fromPrivate(new byte[0]));
   }
 
   @Test(expected = IllegalArgumentException.class)
