@@ -1,5 +1,6 @@
 package org.tron.common.crypto;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.math.BigInteger;
@@ -21,6 +22,11 @@ public class ECKeyV2Test {
 
   private String privString;
   private SecureRandom secureRandom = new SecureRandom();
+
+  @Test
+  public void testLibraryLoading() {
+    assertTrue("Native ECKeyV2 library should be loaded", ECKeyV2.isECKeyV2Available());
+  }
 
   @Test
   public void testECKeyV2() throws Exception {

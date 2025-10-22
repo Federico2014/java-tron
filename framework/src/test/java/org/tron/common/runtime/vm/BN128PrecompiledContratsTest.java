@@ -1,6 +1,7 @@
-package org.tron.core.actuator;
+package org.tron.common.runtime.vm;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertTrue;
 import static org.tron.core.db.TransactionTrace.convertToTronAddress;
 
 import com.alibaba.fastjson.JSONArray;
@@ -14,12 +15,12 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bouncycastle.util.encoders.Hex;
+import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.tron.common.BaseTest;
 import org.tron.common.runtime.ProgramResult;
-import org.tron.common.runtime.vm.DataWord;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 import org.tron.core.Constant;
@@ -47,6 +48,11 @@ public class BN128PrecompiledContratsTest extends BaseTest {
   static {
     Args.setParam(new String[]{"--output-directory", dbPath(), "--debug"}, Constant.TEST_CONF);
     OWNER_ADDRESS = Wallet.getAddressPreFixString() + "abd4b9367799eaa3197fecb144eb71de1e049abc";
+  }
+
+  @Test
+  public void testLibraryLoading() {
+    assertTrue("Native LibGnarkEIP196 library should be loaded", LibGnarkEIP196.ENABLED);
   }
 
   @Test
@@ -188,7 +194,7 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     byte[] intput = validPointsByte();
     Pair<Boolean, byte[]> result = bn128Pairing.execute(intput);
 
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
     Assert.assertArrayEquals(ByteArray.fromHexString(
         "0x0000000000000000000000000000000000000000000000000000000000000001"), result.getRight());
 
@@ -207,9 +213,9 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     byte[] randomInput;
     Pair<Boolean, byte[]> result;
     result = bn128Add.execute(null);
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
     result = bn128Add.execute(new byte[0]);
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
 
     for (int i = 5; i < 200; i++) {
       randomInput = new byte[i];
@@ -227,9 +233,9 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     byte[] randomInput;
     Pair<Boolean, byte[]> result;
     result = bn128Mul.execute(null);
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
     result = bn128Mul.execute(new byte[0]);
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
 
     for (int i = 5; i < 200; i++) {
       randomInput = new byte[i];
@@ -247,9 +253,9 @@ public class BN128PrecompiledContratsTest extends BaseTest {
     byte[] randomInput;
     Pair<Boolean, byte[]> result;
     result = bn128Pairing.execute(null);
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
     result = bn128Pairing.execute(new byte[0]);
-    Assert.assertTrue(result.getLeft());
+    assertTrue(result.getLeft());
 
     for (int i = 5; i <= 110 * 192; i++) {
       randomInput = new byte[i];
