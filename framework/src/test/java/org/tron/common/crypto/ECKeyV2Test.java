@@ -235,7 +235,7 @@ public class ECKeyV2Test {
       new ECKeyV2(privateKey);
       fail("Should throw IllegalArgumentException");
     } catch (IllegalArgumentException e) {
-      Assert.assertEquals("Invalid private key.", e.getMessage());
+      Assert.assertTrue(e.getMessage().contains("Invalid private key"));
     }
   }
 

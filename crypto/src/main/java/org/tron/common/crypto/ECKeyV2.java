@@ -18,7 +18,7 @@ public class ECKeyV2 extends ECKey {
   private final LibSecp256k1.secp256k1_pubkey pubKey = new LibSecp256k1.secp256k1_pubkey();
 
   @Getter
-  private static final boolean isECKeyV2Available;
+  private static boolean isECKeyV2Available;
 
   private static final String ECKeyV2_NOT_AVAILABLE = "ECKeyV2 is not available!";
 
@@ -82,6 +82,10 @@ public class ECKeyV2 extends ECKey {
   }
 
   public static ECKeyV2 fromPrivate(byte[] privateKey) {
+    if (!isValidPrivateKey(privateKey)) {
+      throw new IllegalArgumentException("Invalid private key in ECKey2.");
+    }
+
     try {
       checkECKeyV2Available();
       return new ECKeyV2(privateKey);
@@ -92,7 +96,7 @@ public class ECKeyV2 extends ECKey {
 
   public static ECKeyV2 fromPrivate(BigInteger privateKey) {
     if (!isValidPrivateKey(privateKey)) {
-      throw new IllegalArgumentException("Invalid private key.");
+      throw new IllegalArgumentException("Invalid private key in ECKeyV2.");
     }
 
     try {
@@ -243,5 +247,12 @@ public class ECKeyV2 extends ECKey {
       ECDSASignature signature) throws
       SignatureException {
     return Hash.computeAddress(signatureToKeyBytes(messageHash, signature.toByteArray()));
+  }
+
+  public static void destroy() {
+    if (isECKeyV2Available) {
+      LibSecp256k1.secp256k1_context_destroy(LibSecp256k1.CONTEXT);
+      isECKeyV2Available = false;
+    }
   }
 }

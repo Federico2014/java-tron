@@ -4,6 +4,7 @@ import java.util.concurrent.CountDownLatch;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.tron.common.crypto.ECKeyV2;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.config.args.Args;
 import org.tron.core.consensus.ConsensusService;
@@ -58,6 +59,7 @@ public class ApplicationImpl implements Application {
     consensusService.stop();
     eventService.close();
     dbManager.close();
+    ECKeyV2.destroy();
     shutdown.countDown();
   }
 

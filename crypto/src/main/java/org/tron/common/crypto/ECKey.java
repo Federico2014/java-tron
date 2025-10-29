@@ -164,14 +164,14 @@ public class ECKey implements Serializable, SignInterface {
   public ECKey(byte[] key, boolean isPrivateKey) {
     if (isPrivateKey) {
       if (!isValidPrivateKey(key)) {
-        throw new IllegalArgumentException("Invalid private key.");
+        throw new IllegalArgumentException("Invalid private key in ECKey.");
       }
       BigInteger pk = new BigInteger(1, key);
       this.privKey = privateKeyFromBigInteger(pk);
       this.pub = CURVE.getG().multiply(pk);
     } else {
-      if (!isValidPublicKey(key)) {
-        throw new IllegalArgumentException("Invalid public key.");
+      if (ByteArray.isEmpty(key)) {
+        throw new IllegalArgumentException("Empty public key in ECKey.");
       }
       this.privKey = null;
       this.pub = CURVE.getCurve().decodePoint(key);
@@ -254,26 +254,6 @@ public class ECKey implements Serializable, SignInterface {
     }
   }
 
-  public static boolean isValidPrivateKey(byte[] keyBytes) {
-    if (ByteArray.isEmpty(keyBytes)) {
-      return false;
-    }
-
-    BigInteger key = new BigInteger(1, keyBytes);
-    return key.compareTo(BigInteger.ONE) >= 0 && key.compareTo(SECP256K1N) < 0;
-  }
-
-  public static boolean isValidPrivateKey(BigInteger privateKey) {
-    if (privateKey == null) {
-      return false;
-    }
-    return privateKey.compareTo(BigInteger.ONE) >= 0 && privateKey.compareTo(SECP256K1N) < 0;
-  }
-
-  public static boolean isValidPublicKey(byte[] keyBytes) {
-    return !ByteArray.isEmpty(keyBytes);
-  }
-
   /**
    * Utility for compressing an elliptic curve point. Returns the same point if it's already
    * compressed. See the ECKey class docs for a discussion of point compression.
@@ -323,6 +303,22 @@ public class ECKey implements Serializable, SignInterface {
       throw new IllegalArgumentException("Invalid private key.");
     }
     return fromPrivate(new BigInteger(1, privKeyBytes));
+  }
+
+  public static boolean isValidPrivateKey(byte[] keyBytes) {
+    if (ByteArray.isEmpty(keyBytes)) {
+      return false;
+    }
+
+    BigInteger key = new BigInteger(1, keyBytes);
+    return key.compareTo(BigInteger.ONE) >= 0 && key.compareTo(SECP256K1N) < 0;
+  }
+
+  public static boolean isValidPrivateKey(BigInteger privateKey) {
+    if (privateKey == null) {
+      return false;
+    }
+    return privateKey.compareTo(BigInteger.ONE) >= 0 && privateKey.compareTo(SECP256K1N) < 0;
   }
 
   /**
