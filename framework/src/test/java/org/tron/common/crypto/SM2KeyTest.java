@@ -16,9 +16,13 @@ import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.crypto.digests.SM3Digest;
 import org.bouncycastle.util.encoders.Hex;
+import org.junit.Assert;
 import org.junit.Test;
+import org.tron.common.crypto.curveparams.Secp256k1Params;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2Signer;
+import org.tron.common.utils.ByteArray;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Wallet;
 
 /**
@@ -280,5 +284,26 @@ public class SM2KeyTest {
 
     assertEquals("b524f552cd82b8b028476e005c377fb19a87e6fc682d48bb5d42e3d9b9effe76",
         Hex.toHexString(eHash));
+  }
+
+  @Test
+  public void testSignature() throws SignatureException {
+    SM2 sm2 = new SM2();
+    String msg = "transaction raw data";
+    byte[] hash = Sha256Hash.hash(false, msg.getBytes());
+    String sig = sm2.signHash(hash);
+    byte[] address = SignUtils.signatureToAddress(hash, sig, false);
+    Assert.assertArrayEquals(sm2.getAddress(),address);
+  }
+
+  @Test
+  public void testLargeHashSignature() throws SignatureException {
+    SM2 sm2 = new SM2();
+    byte[] hash = Secp256k1Params.getInstance().getN().add(BigInteger.TEN).toByteArray();
+    Assert.assertTrue(hash.length == 33);
+    byte[] hash32 = ByteArray.subArray(hash, 1, 33); // remove leading 0x00
+    String sig = sm2.signHash(hash32);
+    byte[] address = SignUtils.signatureToAddress(hash32, sig, false);
+    Assert.assertArrayEquals(sm2.getAddress(),address);
   }
 }

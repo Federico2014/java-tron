@@ -41,10 +41,13 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.tron.common.crypto.Blake2bfMessageDigest;
+import org.tron.common.crypto.ECKey;
+import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
+import org.tron.common.crypto.curveparams.Secp256r1Params;
 import org.tron.common.crypto.zksnark.BN128;
 import org.tron.common.crypto.zksnark.BN128Fp;
 import org.tron.common.crypto.zksnark.BN128G1;
@@ -106,6 +109,8 @@ public class PrecompiledContracts {
 
   private static final EthRipemd160 ethRipemd160 = new EthRipemd160();
   private static final Blake2F blake2F = new Blake2F();
+
+  private static final Secp256R1 secp256R1 = new Secp256R1();
 
   // FreezeV2 PrecompileContracts
   private static final GetChainParameter getChainParameter = new GetChainParameter();
@@ -200,6 +205,9 @@ public class PrecompiledContracts {
   private static final DataWord blake2FAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000020009");
 
+  private static final DataWord secp256R1Addr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000100");
+
   public static PrecompiledContract getOptimizedContractForConstant(PrecompiledContract contract) {
     try {
       Constructor<?> constructor = contract.getClass().getDeclaredConstructor();
@@ -280,6 +288,9 @@ public class PrecompiledContracts {
     }
     if (VMConfig.allowTvmCompatibleEvm() && address.equals(blake2FAddr)) {
       return blake2F;
+    }
+    if (address.equals(secp256R1Addr)) {
+      return secp256R1;
     }
 
     if (VMConfig.allowTvmFreezeV2()) {
@@ -2214,4 +2225,44 @@ public class PrecompiledContracts {
     }
   }
 
+  public static class Secp256R1 extends PrecompiledContract {
+
+    @Override
+    public long getEnergyForData(byte[] data) {
+      return 6900;
+    }
+
+    @Override
+    public Pair<Boolean, byte[]> execute(byte[] data) {
+
+      if (data == null || data.length != 160) {
+        return Pair.of(true, EMPTY_BYTE_ARRAY);
+      }
+
+      byte[] h = new byte[32];
+      byte[] r = new byte[32];
+      byte[] s = new byte[32];
+      byte[] pubKey = new byte[65];
+      pubKey[0] = 0x04; // uncompressed public key
+
+      boolean result = false;
+
+      try {
+        System.arraycopy(data, 0, h, 0, 32);
+        System.arraycopy(data, 32, r, 0, 32);
+        System.arraycopy(data, 64, s, 0, 32);
+        System.arraycopy(data, 96, pubKey, 1, 64);
+
+        ECDSASignature sig = new ECDSASignature(new BigInteger(1, r), new BigInteger(1, s));
+        result = ECKey.verify(Secp256r1Params.getInstance(), h, sig, pubKey);
+      } catch (Throwable any) {
+      }
+
+      if (result) {
+        return Pair.of(true, dataOne());
+      } else {
+        return Pair.of(true, EMPTY_BYTE_ARRAY);
+      }
+    }
+  }
 }

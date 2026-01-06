@@ -17,8 +17,13 @@ import java.security.SignatureException;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
+import org.junit.Assert;
 import org.junit.Test;
 import org.tron.common.crypto.ECKey.ECDSASignature;
+import org.tron.common.crypto.curveparams.Secp256k1Params;
+import org.tron.common.crypto.curveparams.Secp256r1Params;
+import org.tron.common.utils.ByteArray;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Wallet;
 
 /**
@@ -227,5 +232,36 @@ public class ECKeyTest {
     ECKey key = ECKey.fromPublicOnly(pubKey);
 
     assertEquals(key, ECKey.fromNodeId(key.getNodeId()));
+  }
+
+  @Test
+  public void testSignature() throws SignatureException {
+    ECKey ecKey = new ECKey();
+    String msg = "transaction raw data";
+    byte[] hash = Sha256Hash.hash(true, msg.getBytes());
+    String sig = ecKey.signHash(hash);
+    byte[] address = SignUtils.signatureToAddress(hash, sig, true);
+    Assert.assertArrayEquals(ecKey.getAddress(),address);
+  }
+
+  @Test
+  public void testLargeHashSignature() throws SignatureException {
+    ECKey ecKey = new ECKey();
+    byte[] hash = Secp256k1Params.getInstance().getN().add(BigInteger.TEN).toByteArray();
+    Assert.assertTrue(hash.length == 33);
+    byte[] hash32 = ByteArray.subArray(hash, 1, 33); // remove leading 0x00
+    String sig = ecKey.signHash(hash32);
+    byte[] address = SignUtils.signatureToAddress(hash32, sig, true);
+    Assert.assertArrayEquals(ecKey.getAddress(),address);
+  }
+
+  @Test
+  public void testSignAndVerify() {
+    ECKey key = new ECKey();
+    byte[] message = "Raw Transaction".getBytes();
+    byte[] hash = Sha256Hash.hash(true, message);
+    ECDSASignature signature = key.doSign(hash);
+    Assert.assertTrue(
+        ECKey.verify(Secp256k1Params.getInstance(), hash, signature, key.getPubKey()));
   }
 }
