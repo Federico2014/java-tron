@@ -398,10 +398,6 @@ public class ECKey implements Serializable, SignInterface {
   }
 
   public static byte[] signatureToKeyBytes(byte[] messageHash,
-      ECDSASignature sig) throws SignatureException {
-    return signatureToKeyBytes(messageHash, sig, Secp256k1Params.getInstance());
-  }
-  public static byte[] signatureToKeyBytes(byte[] messageHash,
       ECDSASignature sig, CurveParams curveParams) throws SignatureException {
     check(messageHash.length == 32, "messageHash argument has length " +
         messageHash.length);
@@ -452,7 +448,13 @@ public class ECKey implements Serializable, SignInterface {
   public static byte[] signatureToAddress(byte[] messageHash,
       ECDSASignature sig) throws
       SignatureException {
-    return Hash.computeAddress(signatureToKeyBytes(messageHash, sig));
+    return signatureToAddress(messageHash, sig, Secp256k1Params.getInstance());
+  }
+
+  public static byte[] signatureToAddress(byte[] messageHash,
+      ECDSASignature sig, CurveParams curveParams) throws
+      SignatureException {
+    return Hash.computeAddress(signatureToKeyBytes(messageHash, sig, curveParams));
   }
 
   /**
@@ -686,6 +688,7 @@ public class ECKey implements Serializable, SignInterface {
     return sign(hash).toBase64();
   }
 
+
   public byte[] Base64toBytes(String signature) {
     byte[] signData = Base64.decode(signature);
     byte first = (byte) (signData[0] - 27);
@@ -774,10 +777,6 @@ public class ECKey implements Serializable, SignInterface {
    * @return ECDSASignature signature that contains the R and S components
    */
   public ECDSASignature doSign(byte[] input) {
-    return doSign(input, Secp256k1Params.getInstance());
-  }
-
-  public ECDSASignature doSign(byte[] input, CurveParams curveParams) {
     if (input.length != 32) {
       throw new IllegalArgumentException("Expected 32 byte input to " +
           "ECDSA signature, not " + input.length);
@@ -789,37 +788,15 @@ public class ECKey implements Serializable, SignInterface {
     if (privKey instanceof BCECPrivateKey) {
       ECDSASigner signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest()));
       ECPrivateKeyParameters privKeyParams = new ECPrivateKeyParameters
-          (((BCECPrivateKey) privKey).getD(), curveParams.getCurve());
+          (((BCECPrivateKey) privKey).getD(), this.curveParams.getCurve());
       signer.init(true, privKeyParams);
       BigInteger[] components = signer.generateSignature(input);
       return new ECDSASignature(components[0], components[1])
-          .toCanonicalised(curveParams);
+          .toCanonicalised(this.curveParams);
     } else {
       throw new RuntimeException("ECKey signing error");
     }
   }
-
-//  public ECDSASignature doSign2(byte[] input, CurveParams curveParams) {
-//    if (input.length != 32) {
-//      throw new IllegalArgumentException("Expected 32 byte input to " +
-//          "ECDSA signature, not " + input.length);
-//    }
-//    // No decryption of private key required.
-//    if (privKey == null) {
-//      throw new MissingPrivateKeyException();
-//    }
-//    if (privKey instanceof BCECPrivateKey) {
-//      ECDSASigner signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest()));
-//      ECPrivateKeyParameters privKeyParams = new ECPrivateKeyParameters
-//          (((BCECPrivateKey) privKey).getD(), curveParams.getCurve());
-//      signer.init(true, privKeyParams);
-//      BigInteger[] components = signer.generateSignature(input);
-//      return new ECDSASignature(components[0], components[1])
-//          .toCanonicalised(curveParams);
-//    } else {
-//      throw new RuntimeException("ECKey signing error");
-//    }
-//  }
 
   /**
    * Takes the keccak hash (32 bytes) of data and returns the ECDSA signature
@@ -829,17 +806,13 @@ public class ECKey implements Serializable, SignInterface {
    * @throws IllegalStateException if this ECKey does not have the private part.
    */
   public ECDSASignature sign(byte[] messageHash) {
-    return sign(messageHash, Secp256k1Params.getInstance());
-  }
-
-  public ECDSASignature sign(byte[] messageHash, CurveParams curveParams) {
-    ECDSASignature sig = doSign(messageHash, curveParams);
+    ECDSASignature sig = doSign(messageHash);
     // Now we have to work backwards to figure out the recId needed to
     // recover the signature.
     int recId = -1;
     byte[] thisKey = this.pub.getEncoded(/* compressed */ false);
     for (int i = 0; i < 4; i++) {
-      byte[] k = ECKey.recoverPubBytesFromSignature(i, sig, messageHash, curveParams);
+      byte[] k = ECKey.recoverPubBytesFromSignature(i, sig, messageHash, this.curveParams);
       if (k != null && Arrays.equals(k, thisKey)) {
         recId = i;
         break;

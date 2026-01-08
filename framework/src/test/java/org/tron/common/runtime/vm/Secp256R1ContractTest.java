@@ -9,9 +9,10 @@ import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import java.io.File;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bouncycastle.util.encoders.Hex;
-import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.tron.common.BaseTest;
 import org.tron.common.runtime.ProgramResult;
@@ -23,7 +24,8 @@ import org.tron.core.vm.PrecompiledContracts;
 import org.tron.core.vm.PrecompiledContracts.PrecompiledContract;
 import org.tron.core.vm.repository.RepositoryImpl;
 
-public class Secp256R1PrecompiledContractTest extends BaseTest {
+@Slf4j
+public class Secp256R1ContractTest extends BaseTest {
 
   private static final DataWord secp256R1Addr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000100");
@@ -52,6 +54,15 @@ public class Secp256R1PrecompiledContractTest extends BaseTest {
     }
   }
 
+  @Ignore
+  @Test
+  public void secp256R1Bench() throws Exception {
+    PrecompiledContract secp256R1 = createPrecompiledContract(secp256R1Addr, OWNER_ADDRESS);
+    JSONObject testCase = readJsonFile("secp256r1-test-vectors.json").getJSONObject(0);
+    byte[] input = Hex.decode(testCase.getString("Input"));
+    bench(secp256R1, input, 10000);
+  }
+
   private PrecompiledContract createPrecompiledContract(DataWord addr, String ownerAddress) {
     PrecompiledContract contract = PrecompiledContracts.getContractForAddress(addr);
     contract.setCallerAddress(convertToTronAddress(Hex.decode(ownerAddress)));
@@ -62,12 +73,25 @@ public class Secp256R1PrecompiledContractTest extends BaseTest {
   }
 
   private JSONArray readJsonFile(String fileName) throws Exception {
-    String file1 = Secp256R1PrecompiledContractTest.class.getClassLoader()
+    String file1 = Secp256R1ContractTest.class.getClassLoader()
         .getResource("json" + File.separator + fileName).getFile();
     List<String> readLines = Files.readLines(new File(file1),
         Charsets.UTF_8);
 
     return JSONArray
         .parseArray(readLines.stream().reduce((s, s2) -> s + s2).get());
+  }
+
+  private static void bench(PrecompiledContract contract, byte[] input, int itersCount) {
+    int MATH_WARMUP = 1000;
+    for (int i = 0; i < MATH_WARMUP; i++) {
+      contract.execute(input);
+    }
+    long start = System.nanoTime();
+    for (int i = 0; i < itersCount; i++) {
+      contract.execute(input);
+    }
+    long end = System.nanoTime();
+    logger.info("{} cost {} ns", contract.getClass().getSimpleName(), (end - start) / itersCount);
   }
 }
