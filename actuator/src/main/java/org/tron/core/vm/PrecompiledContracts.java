@@ -597,8 +597,6 @@ public class PrecompiledContracts {
       } catch (Throwable any) {
       }
 
-      long blockNum = getDeposit().getDynamicPropertiesStore().getLatestBlockHeaderNumber() + 1;
-      logExecutionResult("ECRecover", true, blockNum);
       if (out == null) {
         return Pair.of(true, EMPTY_BYTE_ARRAY);
       } else {
