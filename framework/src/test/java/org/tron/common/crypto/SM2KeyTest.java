@@ -281,4 +281,61 @@ public class SM2KeyTest {
     assertEquals("b524f552cd82b8b028476e005c377fb19a87e6fc682d48bb5d42e3d9b9effe76",
         Hex.toHexString(eHash));
   }
+
+  /**
+   * Verifies SM2 signatures are deterministic with HMacDSAKCalculator (RFC 6979).
+   */
+  @Test
+  public void testDeterministicSignature() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    byte[] hash = Hex.decode("B524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE76");
+
+    SM2.SM2Signature signature1 = key.sign(hash);
+    SM2.SM2Signature signature2 = key.sign(hash);
+    SM2.SM2Signature signature3 = key.sign(hash);
+
+    assertEquals(signature1.r, signature2.r);
+    assertEquals(signature1.s, signature2.s);
+    assertEquals(signature2.r, signature3.r);
+    assertEquals(signature2.s, signature3.s);
+  }
+
+  /**
+   * Test that different messages produce different signatures.
+   */
+  @Test
+  public void testDifferentMessagesProduceDifferentSignatures() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    byte[] hash1 = Hex.decode("B524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE76");
+    byte[] hash2 = Hex.decode("C524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE77");
+
+    SM2.SM2Signature signature1 = key.sign(hash1);
+    SM2.SM2Signature signature2 = key.sign(hash2);
+
+    // Different messages should produce different signatures
+    // (with overwhelming probability)
+    assertFalse("Different messages should produce different signatures",
+        signature1.r.equals(signature2.r) && signature1.s.equals(signature2.s));
+  }
+
+  /**
+   * Test that signature verification still works correctly with deterministic signatures.
+   */
+  @Test
+  public void testDeterministicSignatureVerification() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    String message = "Hello, SM2 deterministic signature test!";
+    byte[] hash = key.getSM2SignerForHash().generateSM3Hash(message.getBytes());
+
+    SM2.SM2Signature signature = key.sign(hash);
+
+    // Verify the signature
+    SM2Signer verifier = key.getSM2SignerForHash();
+    boolean isValid = verifier.verifyHashSignature(hash, signature.r, signature.s);
+
+    assertTrue("Signature should be valid", isValid);
+  }
 }

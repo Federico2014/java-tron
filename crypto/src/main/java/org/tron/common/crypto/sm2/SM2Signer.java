@@ -1,7 +1,6 @@
 package org.tron.common.crypto.sm2;
 
 import java.math.BigInteger;
-import java.security.SecureRandom;
 import javax.annotation.Nullable;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.Digest;
@@ -11,9 +10,8 @@ import org.bouncycastle.crypto.params.ECKeyParameters;
 import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
 import org.bouncycastle.crypto.params.ParametersWithID;
-import org.bouncycastle.crypto.params.ParametersWithRandom;
 import org.bouncycastle.crypto.signers.DSAKCalculator;
-import org.bouncycastle.crypto.signers.RandomDSAKCalculator;
+import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
 import org.bouncycastle.math.ec.ECConstants;
 import org.bouncycastle.math.ec.ECFieldElement;
 import org.bouncycastle.math.ec.ECMultiplier;
@@ -24,7 +22,7 @@ import org.bouncycastle.util.BigIntegers;
 public class SM2Signer
     implements ECConstants {
 
-  private final DSAKCalculator kCalculator = new RandomDSAKCalculator();
+  private final DSAKCalculator kCalculator = new HMacDSAKCalculator(new SM3Digest());
 
   private byte[] userID;
 
@@ -32,8 +30,6 @@ public class SM2Signer
   private ECDomainParameters ecParams;
   private ECPoint pubPoint;
   private ECKeyParameters ecKey;
-
-  private SecureRandom random;
 
   public void init(boolean forSigning, CipherParameters param) {
     CipherParameters baseParam;
@@ -46,22 +42,12 @@ public class SM2Signer
       userID = new byte[0];
     }
 
-    if (forSigning) {
-      if (baseParam instanceof ParametersWithRandom) {
-        ParametersWithRandom rParam = (ParametersWithRandom) baseParam;
+    ecKey = (ECKeyParameters) baseParam;
+    ecParams = ecKey.getParameters();
 
-        ecKey = (ECKeyParameters) rParam.getParameters();
-        ecParams = ecKey.getParameters();
-        kCalculator.init(ecParams.getN(), rParam.getRandom());
-      } else {
-        ecKey = (ECKeyParameters) baseParam;
-        ecParams = ecKey.getParameters();
-        kCalculator.init(ecParams.getN(), new SecureRandom());
-      }
+    if (forSigning) {
       pubPoint = ecParams.getG().multiply(((ECPrivateKeyParameters) ecKey).getD()).normalize();
     } else {
-      ecKey = (ECKeyParameters) baseParam;
-      ecParams = ecKey.getParameters();
       pubPoint = ((ECPublicKeyParameters) ecKey).getQ();
     }
 
@@ -113,6 +99,9 @@ public class SM2Signer
     BigInteger r, s;
 
     ECMultiplier basePointMultiplier = createBasePointMultiplier();
+
+    // Initialize the deterministic K calculator with the private key and message hash
+    kCalculator.init(n, d, hash);
 
     // 5.2.1 Draft RFC:  SM2 Public Key Algorithms
     do // generate s
