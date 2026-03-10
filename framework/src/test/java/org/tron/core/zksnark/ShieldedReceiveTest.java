@@ -2378,7 +2378,7 @@ public class ShieldedReceiveTest extends BaseTest {
     chainBaseManager.addWitness(ByteString.copyFrom(witnessAddress));
 
     //sometimes generate block failed, try several times.
-    long time = System.currentTimeMillis();
+    long time = System.currentTimeMillis() / 3000 * 3000;
     Block block = getSignedBlock(witnessCapsule.getAddress(), time, privateKey);
     dbManager.pushBlock(new BlockCapsule(block));
 

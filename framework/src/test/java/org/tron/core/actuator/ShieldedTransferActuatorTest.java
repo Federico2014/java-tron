@@ -1145,23 +1145,11 @@ public class ShieldedTransferActuatorTest extends BaseTest {
       PaymentAddress paymentAddress = incomingViewingKey.address(DiversifierT.random()).get();
       builder.addOutput(fullViewingKey.getOvk(), paymentAddress, AMOUNT, new byte[512]);
       builder.addOutput(fullViewingKey.getOvk(), paymentAddress, Long.MAX_VALUE, new byte[512]);
-      TransactionCapsule transactionCap = builder.build();
-
-      Contract contract =
-          transactionCap.getInstance().toBuilder().getRawDataBuilder().getContract(0);
-      ShieldedTransferActuator actuator = new ShieldedTransferActuator();
-      actuator.setChainBaseManager(dbManager.getChainBaseManager()).setContract(contract)
-          .setTx(transactionCap);
-      TransactionResultCapsule ret = new TransactionResultCapsule();
-
-      actuator.validate();
-      actuator.execute(ret);
-      Assert.assertTrue(false);
-    } catch (ContractValidateException e) {
-      Assert.assertTrue(e instanceof ContractValidateException);
-      Assert.assertEquals("librustzcashSaplingFinalCheck error", e.getMessage());
+      Assert.fail("Expected ArithmeticException for value overflow");
+    } catch (ArithmeticException e) {
+      Assert.assertTrue(e.getMessage().contains("overflow"));
     } catch (Exception e) {
-      Assert.assertTrue(false);
+      Assert.fail("Unexpected exception: " + e.getMessage());
     }
   }
 

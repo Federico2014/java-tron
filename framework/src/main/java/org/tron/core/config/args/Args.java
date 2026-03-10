@@ -190,7 +190,7 @@ public class Args extends CommonParameter {
     PARAMETER.maxHttpConnectNumber = 50;
     PARAMETER.allowMultiSign = 0;
     PARAMETER.trxExpirationTimeInMilliseconds = 0;
-    PARAMETER.allowShieldedTransactionApi = true;
+    PARAMETER.allowShieldedTransactionApi = false;
     PARAMETER.zenTokenId = "000000";
     PARAMETER.allowProtoFilterNum = 0;
     PARAMETER.allowAccountStateRoot = 0;
@@ -975,7 +975,7 @@ public class Args extends CommonParameter {
       logger.warn("Configuring [node.fullNodeAllowShieldedTransaction] will be deprecated. "
           + "Please use [node.allowShieldedTransactionApi] instead.");
     } else {
-      PARAMETER.allowShieldedTransactionApi = true;
+      PARAMETER.allowShieldedTransactionApi = false;
     }
 
     PARAMETER.zenTokenId = config.hasPath(ConfigKey.NODE_ZEN_TOKENID)
