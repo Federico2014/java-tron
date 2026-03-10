@@ -651,9 +651,9 @@ public class Wallet {
           byte[] hash = Sha256Hash.hash(CommonParameter
               .getInstance().isECKeyCryptoEngine(), trx.getRawData().toByteArray());
           for (ByteString sig : trx.getSignatureList()) {
-            if (sig.size() < 65) {
+            if (sig == null || sig.size() < 65) {
               throw new SignatureFormatException(
-                  "Signature size is " + sig.size());
+                  "Signature is " + (sig == null ? "null" : "invalid with size " + sig.size()));
             }
             String base64 = TransactionCapsule.getBase64FromByteString(sig);
             byte[] address = SignUtils.signatureToAddress(hash, base64, Args.getInstance()
@@ -780,7 +780,7 @@ public class Wallet {
     if (limit > WITNESS_COUNT_LIMIT_MAX) {
       limit = WITNESS_COUNT_LIMIT_MAX;
     }
-    
+
     /*
       In the maintenance period, the VoteStores will be cleared.
       To avoid the race condition of VoteStores deleted but Witness vote counts not updated,
@@ -1502,8 +1502,8 @@ public class Wallet {
     builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
         .setKey("getAllowTvmSelfdestructRestriction")
         .setValue(dbManager.getDynamicPropertiesStore().getAllowTvmSelfdestructRestriction())
-        .build());                      
-    
+        .build());
+
     builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
         .setKey("getProposalExpireTime")
         .setValue(dbManager.getDynamicPropertiesStore().getProposalExpireTime())

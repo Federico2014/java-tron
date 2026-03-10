@@ -228,9 +228,6 @@ public class WitnessInitializerTest {
       mockedByteArray.when(() -> ByteArray.fromHexString(anyString())).thenReturn(keyBytes);
 
       witnessInitializer = new WitnessInitializer(mockConfig);
-      Field localWitnessField = WitnessInitializer.class.getDeclaredField("localWitnesses");
-      localWitnessField.setAccessible(true);
-      localWitnessField.set(witnessInitializer, new LocalWitnesses(privateKey));
       LocalWitnesses localWitnesses = witnessInitializer.initLocalWitnesses();
       assertFalse(localWitnesses.getPrivateKeys().isEmpty());
     }

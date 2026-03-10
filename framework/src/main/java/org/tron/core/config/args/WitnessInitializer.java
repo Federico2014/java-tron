@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Commons;
@@ -111,8 +112,12 @@ public class WitnessInitializer {
       Credentials credentials = WalletUtils
           .loadCredentials(password, new File(fileName));
       SignInterface sign = credentials.getSignInterface();
-      String prikey = ByteArray.toHexString(sign.getPrivateKey());
-      privateKeys.add(prikey);
+      byte[] privateKeyBytes = sign.getPrivateKey();
+      if (!ECKey.isValidPrivateKey(privateKeyBytes)) {
+        throw new TronError("Private key from keystore is invalid",
+            TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+      }
+      privateKeys.add(ByteArray.toHexString(privateKeyBytes));
     } catch (IOException | CipherException e) {
       logger.error("Witness node start failed!");
       throw new TronError(e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);

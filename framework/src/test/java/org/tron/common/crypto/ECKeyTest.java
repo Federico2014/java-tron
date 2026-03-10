@@ -5,7 +5,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.tron.common.utils.client.utils.AbiUtil.generateOccupationConstantPrivateKey;
@@ -69,10 +69,8 @@ public class ECKeyTest {
     assertTrue(key.hasPrivKey());
     assertArrayEquals(pubKey, key.getPubKey());
 
-    key =  ECKey.fromPrivate((byte[]) null);
-    assertNull(key);
-    key = ECKey.fromPrivate(new byte[0]);
-    assertNull(key);
+    assertThrows(IllegalArgumentException.class, () -> ECKey.fromPrivate((byte[]) null));
+    assertThrows(IllegalArgumentException.class, () -> ECKey.fromPrivate(new byte[0]));
   }
 
   @Test(expected = IllegalArgumentException.class)

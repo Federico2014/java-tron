@@ -237,9 +237,9 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     }
     HashMap addMap = new HashMap();
     for (ByteString sig : sigs) {
-      if (sig.size() < 65) {
+      if (sig == null || sig.size() < 65) {
         throw new SignatureFormatException(
-            "Signature size is " + sig.size());
+            "Signature is " + (sig == null ? "null" : "invalid with size " + sig.size()));
       }
       String base64 = TransactionCapsule.getBase64FromByteString(sig);
       byte[] address = SignUtils
@@ -617,7 +617,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
         .signHash(getTransactionId().getBytes())));
     this.transaction = this.transaction.toBuilder().addSignature(sig).build();
   }
-  
+
   private static void checkPermission(int permissionId, Permission permission, Transaction.Contract contract) throws PermissionException {
     if (permissionId != 0) {
       if (permission.getType() != PermissionType.Active) {
@@ -684,7 +684,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
         }
       }
       isVerified = true;
-    }  
+    }
     return true;
   }
 
