@@ -19,6 +19,7 @@ import static org.tron.core.config.Parameter.ChainConstant.TRX_PRECISION;
 import static org.tron.core.vm.VMConstant.SIG_LENGTH;
 
 import com.google.protobuf.ByteString;
+import com.sun.jna.ptr.IntByReference;
 
 import java.lang.reflect.Constructor;
 import java.math.BigInteger;
@@ -40,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
+import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
 import org.tron.common.crypto.Blake2bfMessageDigest;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.Rsv;
@@ -752,9 +754,17 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
+      }
+      if (VMConfig.allowOptimizedBn128()) {
+        byte[] input = data.length > 128
+            ? Arrays.copyOfRange(data, 0, 128) : data;
+        Pair<Boolean, byte[]> result = executeEIP196Operation(
+            LibGnarkEIP196.EIP196_ADD_OPERATION_RAW_VALUE, input);
+        if (result != null) {
+          return result;
+        }
       }
 
       byte[] x1 = parseWord(data, 0);
@@ -806,9 +816,17 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
+      }
+      if (VMConfig.allowOptimizedBn128()) {
+        byte[] input = data.length > 96
+            ? Arrays.copyOfRange(data, 0, 96) : data;
+        Pair<Boolean, byte[]> result = executeEIP196Operation(
+            LibGnarkEIP196.EIP196_MUL_OPERATION_RAW_VALUE, input);
+        if (result != null) {
+          return result;
+        }
       }
 
       byte[] x = parseWord(data, 0);
@@ -844,6 +862,8 @@ public class PrecompiledContracts {
   public static class BN128Pairing extends PrecompiledContract {
 
     private static final int PAIR_SIZE = 192;
+    // Limit to 100 pairs (19,200 bytes) in optimized mode to prevent timeout attacks
+    private static final int MAX_PAIR_SIZE_LIMIT = 192 * 100;
 
     @Override
     public long getEnergyForData(byte[] data) {
@@ -865,9 +885,20 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-
       if (data == null) {
         data = EMPTY_BYTE_ARRAY;
+      }
+
+      if (VMConfig.allowOptimizedBn128()) {
+        if (data.length > MAX_PAIR_SIZE_LIMIT
+            || data.length % PAIR_SIZE > 0) {
+          return Pair.of(false, EMPTY_BYTE_ARRAY);
+        }
+        Pair<Boolean, byte[]> result = executeEIP196Operation(
+            LibGnarkEIP196.EIP196_PAIR_OPERATION_RAW_VALUE, data);
+        if (result != null) {
+          return result;
+        }
       }
 
       // fail if input len is not a multiple of PAIR_SIZE
@@ -924,6 +955,33 @@ public class PrecompiledContracts {
       }
 
       return Pair.of(p1, p2);
+    }
+  }
+
+  private static Pair<Boolean, byte[]> executeEIP196Operation(
+      byte operation, byte[] data) {
+    if (!LibGnarkEIP196.ENABLED) {
+      logger.warn("Native BN128 library not available, "
+          + "cannot execute optimized path");
+      return null;
+    }
+
+    final byte[] output =
+        new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_RESULT_BYTES];
+    final IntByReference outputLength = new IntByReference();
+    final byte[] error =
+        new byte[LibGnarkEIP196.EIP196_PREALLOCATE_FOR_ERROR_BYTES];
+    final IntByReference errorLength = new IntByReference();
+
+    int ret = LibGnarkEIP196.eip196_perform_operation(
+        operation, data, data.length,
+        output, outputLength, error, errorLength);
+
+    if (ret == 0) {
+      return Pair.of(true,
+          ByteArray.subArray(output, 0, outputLength.getValue()));
+    } else {
+      return Pair.of(false, EMPTY_BYTE_ARRAY);
     }
   }
 

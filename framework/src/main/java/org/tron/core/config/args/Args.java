@@ -255,6 +255,7 @@ public class Args extends CommonParameter {
     PARAMETER.consensusLogicOptimization = 0;
     PARAMETER.allowTvmCancun = 0;
     PARAMETER.allowTvmBlob = 0;
+    PARAMETER.allowOptimizedBn128 = 0;
     PARAMETER.rpcMaxRstStream = 0;
     PARAMETER.rpcSecondsPerWindow = 0;
   }
@@ -1288,6 +1289,11 @@ public class Args extends CommonParameter {
     PARAMETER.allowTvmBlob =
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_TVM_BLOB) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_TVM_BLOB) : 0;
+
+    PARAMETER.allowOptimizedBn128 =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_OPTIMIZED_BN128)
+            ? config.getInt(
+            ConfigKey.COMMITTEE_ALLOW_OPTIMIZED_BN128) : 0;
 
     logConfig();
   }

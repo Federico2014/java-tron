@@ -61,6 +61,8 @@ public class VMConfig {
 
   private static boolean ALLOW_TVM_SELFDESTRUCT_RESTRICTION = false;
 
+  private static boolean ALLOW_OPTIMIZED_BN128 = false;
+
   private VMConfig() {
   }
 
@@ -172,6 +174,10 @@ public class VMConfig {
     ALLOW_TVM_SELFDESTRUCT_RESTRICTION = allow == 1;
   }
 
+  public static void initAllowOptimizedBn128(long allow) {
+    ALLOW_OPTIMIZED_BN128 = allow == 1;
+  }
+
   public static boolean getEnergyLimitHardFork() {
     return CommonParameter.ENERGY_LIMIT_HARD_FORK;
   }
@@ -270,5 +276,9 @@ public class VMConfig {
 
   public static boolean allowTvmSelfdestructRestriction() {
     return ALLOW_TVM_SELFDESTRUCT_RESTRICTION;
+  }
+
+  public static boolean allowOptimizedBn128() {
+    return ALLOW_OPTIMIZED_BN128;
   }
 }

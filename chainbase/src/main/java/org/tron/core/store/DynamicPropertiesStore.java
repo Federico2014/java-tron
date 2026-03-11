@@ -238,6 +238,9 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
   private static final byte[] ALLOW_TVM_SELFDESTRUCT_RESTRICTION =
       "ALLOW_TVM_SELFDESTRUCT_RESTRICTION".getBytes();
 
+  private static final byte[] ALLOW_OPTIMIZED_BN128 =
+      "ALLOW_OPTIMIZED_BN128".getBytes();
+
   @Autowired
   private DynamicPropertiesStore(@Value("properties") String dbName) {
     super(dbName);
@@ -2968,6 +2971,23 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
     return getAllowTvmSelfdestructRestriction() == 1L;
   }
   
+  public void saveAllowOptimizedBn128(long allowOptimizedBn128) {
+    this.put(ALLOW_OPTIMIZED_BN128,
+        new BytesCapsule(ByteArray.fromLong(allowOptimizedBn128)));
+  }
+
+  public long getAllowOptimizedBn128() {
+    return Optional.ofNullable(getUnchecked(ALLOW_OPTIMIZED_BN128))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance()
+            .getAllowOptimizedBn128());
+  }
+
+  public boolean allowOptimizedBn128() {
+    return getAllowOptimizedBn128() == 1L;
+  }
+
   public void saveProposalExpireTime(long proposalExpireTime) {
     this.put(PROPOSAL_EXPIRE_TIME, new BytesCapsule(ByteArray.fromLong(proposalExpireTime)));
   }

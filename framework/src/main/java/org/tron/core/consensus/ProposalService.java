@@ -392,6 +392,10 @@ public class ProposalService extends ProposalUtil {
           manager.getDynamicPropertiesStore().saveProposalExpireTime(entry.getValue());
           break;
         }
+        case ALLOW_OPTIMIZED_BN128: {
+          manager.getDynamicPropertiesStore().saveAllowOptimizedBn128(entry.getValue());
+          break;
+        }
         default:
           find = false;
           break;
