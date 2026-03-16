@@ -232,6 +232,8 @@ public class ParameterTest {
     assertNull(parameter.getEventFilter());
     parameter.setCryptoEngine(ECKey_ENGINE);
     assertEquals(ECKey_ENGINE, parameter.getCryptoEngine());
+    parameter.setUseECKeyV2(false);
+    assertFalse(parameter.isUseECKeyV2());
     parameter.setFullNodeHttpEnable(false);
     assertFalse(parameter.isFullNodeHttpEnable());
     parameter.setSolidityNodeHttpEnable(false);

@@ -491,6 +491,9 @@ public class CommonParameter {
   @Getter
   @Setter
   public String cryptoEngine = Constant.ECKey_ENGINE;
+  @Getter
+  @Setter
+  public boolean useECKeyV2 = false;
 
   @Getter
   @Setter

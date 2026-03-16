@@ -19,6 +19,7 @@ import org.bouncycastle.util.encoders.Hex;
 import org.junit.Test;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2Signer;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Wallet;
 
 /**
@@ -156,6 +157,17 @@ public class SM2KeyTest {
     byte[] addr = SM2.signatureToAddress(hash, sign);
     addr = Arrays.copyOfRange(addr, 1, addr.length);
     assertEquals(address, Hex.toHexString(addr));
+  }
+
+  @Test
+  public void testSignatureToAddress2() throws SignatureException {
+    String transaction = "raw transaction data";
+    SM2 key = new SM2();
+    byte[] txHash = Sha256Hash.of(false, transaction.getBytes()).getBytes();
+
+    SM2.SM2Signature sign = key.sign(txHash);
+    byte[] addr = SM2.signatureToAddress(txHash, sign);
+    assertArrayEquals(addr, key.getAddress());
   }
 
   @Test

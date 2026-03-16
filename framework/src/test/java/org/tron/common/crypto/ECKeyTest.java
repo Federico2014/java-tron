@@ -12,13 +12,17 @@ import static org.tron.common.utils.client.utils.AbiUtil.generateOccupationConst
 
 import java.math.BigInteger;
 import java.security.KeyPairGenerator;
+import java.security.SecureRandom;
 import java.security.Security;
 import java.security.SignatureException;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
+import org.junit.Assert;
 import org.junit.Test;
 import org.tron.common.crypto.ECKey.ECDSASignature;
+import org.tron.common.utils.ByteArray;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Wallet;
 
 /**
@@ -221,6 +225,40 @@ public class ECKeyTest {
     assertTrue(key1.equals(key2));
   }
 
+  @Test
+  public void testSignatureMalleability() throws SignatureException {
+    ECKey key = new ECKey();
+    byte[] randomBytes = new byte[128];
+    SecureRandom secureRandom = new SecureRandom();
+    secureRandom.nextBytes(randomBytes);
+    byte[] msgHash = Sha256Hash.hash(true, randomBytes);
+    ECDSASignature signature = key.sign(msgHash);
+
+    byte[] pubKeyBytes = ECKey.signatureToKeyBytes(msgHash, signature.toBase64());
+    Assert.assertArrayEquals(pubKeyBytes, key.getPubKey());
+
+    Assert.assertTrue(signature.s.compareTo(ECKey.HALF_CURVE_ORDER) <= 0);
+    BigInteger flipS = ECKey.CURVE.getN().subtract(signature.s);
+    Assert.assertTrue(flipS.compareTo(ECKey.HALF_CURVE_ORDER) > 0);
+
+    byte[] flipPubKeyBytes = ECKey.signatureToKeyBytes(msgHash,
+        ECDSASignature.fromComponents(signature.r.toByteArray(), flipS.toByteArray(), signature.v)
+            .toBase64());
+    Assert.assertNotEquals(ByteArray.toHexString(flipPubKeyBytes),
+        ByteArray.toHexString(key.getPubKey()));
+
+    byte flipV;
+    if (signature.v <= 28) {
+      flipV = signature.v == 27 ? (byte) 28 : (byte) 27;
+    } else {
+      flipV = signature.v == 29 ? (byte) 30 : (byte) 29;
+    }
+
+    flipPubKeyBytes = ECKey.signatureToKeyBytes(msgHash,
+        ECDSASignature.fromComponents(signature.r.toByteArray(), flipS.toByteArray(), flipV)
+            .toBase64());
+    Assert.assertArrayEquals(flipPubKeyBytes, key.getPubKey());
+  }
 
   @Test
   public void testNodeId() {

@@ -16,6 +16,7 @@ final class ConfigKey {
 
   // crypto
   public static final String CRYPTO_ENGINE = "crypto.engine";
+  public static final String ECKEY_VERSION = "crypto.useECKeyV2";
 
   // vm
   public static final String VM_SUPPORT_CONSTANT = "vm.supportConstant";

@@ -986,6 +986,39 @@ public class ECKey implements Serializable, SignInterface {
           new byte[]{fixedV});
     }
 
+    public static ECDSASignature parseBase64Signature(String signatureBase64)
+        throws SignatureException {
+      if (signatureBase64 == null) {
+        throw new SignatureException("Invalid base64 signature.");
+      }
+
+      byte[] signatureEncoded;
+      try {
+        signatureEncoded = Base64.decode(signatureBase64);
+      } catch (RuntimeException e) {
+        throw new SignatureException("Could not decode base64", e);
+      }
+      // Parse the signature bytes into r/s and the selector value.
+      if (signatureEncoded.length < 65) {
+        throw new SignatureException("Signature truncated, expected 65 " +
+            "bytes and got " + signatureEncoded.length);
+      }
+
+      byte[] r = new byte[32];
+      byte[] s = new byte[32];
+      System.arraycopy(signatureEncoded, 1, r, 0, 32);
+      System.arraycopy(signatureEncoded, 33, s, 0, 32);
+      byte v = signatureEncoded[0];
+      if (v < 27 || v > 34) {
+        throw new SignatureException("signature v byte out of range: " + v);
+      }
+      if (v >= 31) {
+        v -= 4;
+      }
+
+      return ECDSASignature.fromComponents(r, s, v);
+    }
+
     public String toHex() {
       return Hex.toHexString(toByteArray());
     }

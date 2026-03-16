@@ -56,6 +56,7 @@ import org.tron.common.args.GenesisBlock;
 import org.tron.common.args.Witness;
 import org.tron.common.config.DbBackupConfig;
 import org.tron.common.cron.CronExpression;
+import org.tron.common.crypto.SignUtils;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.logsfilter.FilterQuery;
 import org.tron.common.logsfilter.TriggerConfig;
@@ -106,6 +107,8 @@ public class Args extends CommonParameter {
     PARAMETER.help = false;
     PARAMETER.witness = false;
     PARAMETER.seedNodes = new ArrayList<>();
+    PARAMETER.cryptoEngine = Constant.ECKey_ENGINE;;
+    PARAMETER.useECKeyV2 = false;
     PARAMETER.privateKey = "";
     PARAMETER.witnessAddress = "";
     PARAMETER.storageDbDirectory = "";
@@ -420,6 +423,9 @@ public class Args extends CommonParameter {
 
     PARAMETER.cryptoEngine = config.hasPath(ConfigKey.CRYPTO_ENGINE) ? config
         .getString(ConfigKey.CRYPTO_ENGINE) : Constant.ECKey_ENGINE;
+    PARAMETER.useECKeyV2 = config.hasPath(ConfigKey.ECKEY_VERSION) && config
+        .getBoolean(ConfigKey.ECKEY_VERSION);
+    SignUtils.setUseECKeyV2(PARAMETER.useECKeyV2);
 
     localWitnesses = new WitnessInitializer(config).initLocalWitnesses();
     if (PARAMETER.isWitness()
