@@ -61,6 +61,12 @@ public class VMConfig {
 
   private static boolean ALLOW_TVM_SELFDESTRUCT_RESTRICTION = false;
 
+  private static boolean ALLOW_OPTIMIZED_BN128 = false;
+
+  private static int BN128_CLIENT_PORT = 9001;
+
+  private static int BN128_SOCKET_TIMEOUT = 30;
+
   private VMConfig() {
   }
 
@@ -172,6 +178,18 @@ public class VMConfig {
     ALLOW_TVM_SELFDESTRUCT_RESTRICTION = allow == 1;
   }
 
+  public static void initAllowOptimizedBN128(long allow) {
+    ALLOW_OPTIMIZED_BN128 = allow == 1;
+  }
+
+  public static void initBN128Port(int port) {
+    BN128_CLIENT_PORT = port;
+  }
+
+  public static void initBN128SocketTimeout(int timeout) {
+    BN128_SOCKET_TIMEOUT = timeout;
+  }
+
   public static boolean getEnergyLimitHardFork() {
     return CommonParameter.ENERGY_LIMIT_HARD_FORK;
   }
@@ -270,5 +288,17 @@ public class VMConfig {
 
   public static boolean allowTvmSelfdestructRestriction() {
     return ALLOW_TVM_SELFDESTRUCT_RESTRICTION;
+  }
+
+  public static boolean allowOptimizedBn128() {
+    return ALLOW_OPTIMIZED_BN128;
+  }
+
+  public static int getBN128ClientPort() {
+    return BN128_CLIENT_PORT;
+  }
+
+  public static int getBN128SocketTimeout() {
+    return BN128_SOCKET_TIMEOUT;
   }
 }

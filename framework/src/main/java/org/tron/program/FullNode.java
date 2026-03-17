@@ -6,6 +6,7 @@ import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
 import org.tron.common.arch.Arch;
+import org.tron.common.crypto.bn128.SocketBn128Server;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.log.LogService;
 import org.tron.common.parameter.CommonParameter;
@@ -36,6 +37,33 @@ public class FullNode {
       KeystoreFactory.start();
       return;
     }
+    if (parameter.launchBN128Server) {
+      logger.info("Starting BN128 Server...");
+      int bn128Port = Args.getInstance().getBn128ServerPort();
+      logger.info("BN128 Server config: port={}", bn128Port);
+      SocketBn128Server server = new SocketBn128Server(bn128Port);
+      try {
+        server.start();
+        logger.info("BN128 Socket Server started successfully");
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+          try {
+            logger.info("Shutting down BN128 Socket Server...");
+            server.stop();
+            logger.info("BN128 Socket Server stopped successfully");
+          } catch (Exception e) {
+            logger.error("Error occurred while stopping BN128 Socket Server", e);
+          }
+        }));
+
+        Thread.currentThread().join();
+      } catch (Exception e) {
+        logger.error("Failed to start BN128 Socket Server", e);
+        System.exit(1);
+      }
+      return;
+    }
+
     logger.info("Full node running.");
     if (Args.getInstance().isDebug()) {
       logger.info("in debug mode, it won't check energy time");

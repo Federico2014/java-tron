@@ -246,6 +246,7 @@ final class ConfigKey {
       "committee.consensusLogicOptimization";
   public static final String COMMITTEE_ALLOW_TVM_CANCUN = "committee.allowTvmCancun";
   public static final String COMMITTEE_ALLOW_TVM_BLOB = "committee.allowTvmBlob";
+  public static final String COMMITTEE_ALLOW_OPTIMIZED_BN128 = "committee.allowOptimizedBn128";
   public static final String COMMITTEE_PROPOSAL_EXPIRE_TIME = "committee.proposalExpireTime";
   public static final String ALLOW_ACCOUNT_ASSET_OPTIMIZATION =
       "committee.allowAccountAssetOptimization";
@@ -312,6 +313,8 @@ final class ConfigKey {
       "node.metrics.influxdb.metricsReportInterval";
   public static final String METRICS_PROMETHEUS_ENABLE = "node.metrics.prometheus.enable";
   public static final String METRICS_PROMETHEUS_PORT = "node.metrics.prometheus.port";
+  public static final String BN128_SERVER_PORT = "node.bn128.serverPort";
+  public static final String BN128_SOCKET_TIMEOUT = "node.bn128.socketTimeout";
 
   // seed
   public static final String SEED_NODE_IP_LIST = "seed.node.ip.list";

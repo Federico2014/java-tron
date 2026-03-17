@@ -45,6 +45,8 @@ import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
+import org.tron.common.crypto.bn128.BN128Service;
+import org.tron.common.crypto.bn128.SocketBN128Client;
 import org.tron.common.crypto.zksnark.BN128;
 import org.tron.common.crypto.zksnark.BN128Fp;
 import org.tron.common.crypto.zksnark.BN128G1;
@@ -426,6 +428,39 @@ public class PrecompiledContracts {
     @Getter
     @Setter
     private long vmShouldEndInUs;
+    protected static BN128Service client;
+    // BN128 client connection pool size
+    private static final int BN128_CLIENT_POOL_SIZE = 8;
+
+    static {
+      if (VMConfig.allowOptimizedBn128()) {
+        try {
+          int bn128Port = VMConfig.getBN128ClientPort();
+          int bn128Timeout = VMConfig.getBN128SocketTimeout();
+          client = new SocketBN128Client(BN128_CLIENT_POOL_SIZE, bn128Port, bn128Timeout);
+          logger.info("SocketBn128Client initialized with pool size={}, port={}, timeout={}ms",
+              BN128_CLIENT_POOL_SIZE, bn128Port, bn128Timeout);
+
+          // Register shutdown hook for graceful cleanup
+          Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+              if (client != null) {
+                logger.info("Closing SocketBn128Client...");
+                client.close();
+                logger.info("SocketBn128Client closed successfully");
+              }
+            } catch (Exception e) {
+              logger.error("Error occurred while closing SocketBn128Client", e);
+            }
+          }));
+        } catch (Exception e) {
+          logger.warn(
+              "Failed to initialize SocketBn128Client, falling back to non-optimized mode: {}",
+              e.getMessage());
+          client = null;
+        }
+      }
+    }
 
     public abstract long getEnergyForData(byte[] data);
 
@@ -757,6 +792,18 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
+      if (VMConfig.allowOptimizedBn128() && client != null) {
+        byte[] input = data.length > 128 ? Arrays.copyOfRange(data, 0, 128) : data;
+        try {
+          return client.bn128Add(input);
+        } catch (Exception e) {
+          logger.warn(
+              "Optimized BN128 add failed for input length {}, falling back to non-optimized "
+                  + "implementation: {}",
+              data.length, e.getMessage());
+        }
+      }
+
       byte[] x1 = parseWord(data, 0);
       byte[] y1 = parseWord(data, 1);
 
@@ -811,6 +858,18 @@ public class PrecompiledContracts {
         data = EMPTY_BYTE_ARRAY;
       }
 
+      if (VMConfig.allowOptimizedBn128() && client != null) {
+        byte[] input = data.length > 96 ? Arrays.copyOfRange(data, 0, 96) : data;
+        try {
+          return client.bn128Mul(input);
+        } catch (Exception e) {
+          logger.warn(
+              "Optimized BN128 multiplication failed for input length {}, falling back to "
+                  + "non-optimized implementation: {}",
+              data.length, e.getMessage());
+        }
+      }
+
       byte[] x = parseWord(data, 0);
       byte[] y = parseWord(data, 1);
 
@@ -844,7 +903,8 @@ public class PrecompiledContracts {
   public static class BN128Pairing extends PrecompiledContract {
 
     private static final int PAIR_SIZE = 192;
-
+    // Limit to 100 pairs (19,200 bytes) in optimized mode to guarantee security
+    private static final int MAX_PAIR_SIZE_LIMIT = 192 * 100;
     @Override
     public long getEnergyForData(byte[] data) {
       if (VMConfig.allowTvmIstanbul()) {
@@ -873,6 +933,17 @@ public class PrecompiledContracts {
       // fail if input len is not a multiple of PAIR_SIZE
       if (data.length % PAIR_SIZE > 0) {
         return Pair.of(false, EMPTY_BYTE_ARRAY);
+      }
+
+      if (VMConfig.allowOptimizedBn128() && client != null && data.length <= MAX_PAIR_SIZE_LIMIT) {
+        try {
+          return client.bn128Pairing(data);
+        } catch (Exception e) {
+          logger.warn(
+              "Optimized BN128 pairing failed for input length {}, falling back to "
+                  + "non-optimized implementation: {}",
+              data.length, e.getMessage());
+        }
       }
 
       PairingCheck check = PairingCheck.create();

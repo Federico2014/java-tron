@@ -153,4 +153,7 @@ public class CLIParameter {
 
   @Parameter(names = {"--history-balance-lookup"})
   public boolean historyBalanceLookup;
+
+  @Parameter(names = {"--bn128-server"}, description = "Launch BN128 IPC server")
+  public boolean launchBN128Server;
 }
