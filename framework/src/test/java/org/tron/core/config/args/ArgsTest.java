@@ -130,8 +130,6 @@ public class ArgsTest {
     Assert.assertEquals(address,
         ByteArray.toHexString(Args.getLocalWitnesses()
             .getWitnessAccountAddress()));
-
-    Assert.assertTrue(parameter.isKeystoreFactory());
   }
 
   @Test

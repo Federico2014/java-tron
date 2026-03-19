@@ -182,14 +182,14 @@ public class TransactionExpireTest {
     transactionApprovedList = wallet.getTransactionApprovedList(transactionCapsule.getInstance());
     Assert.assertEquals("", transactionApprovedList.getResult().getMessage());
 
-    byte[] randomSig = org.tron.keystore.Wallet.generateRandomBytes(64);
+    byte[] randomSig = org.tron.common.crypto.keystore.Wallet.generateRandomBytes(64);
     Transaction transaction = transactionCapsule.getInstance().toBuilder().clearSignature()
         .addSignature(ByteString.copyFrom(randomSig)).build();
     transactionApprovedList = wallet.getTransactionApprovedList(transaction);
     Assert.assertEquals(TransactionApprovedList.Result.response_code.SIGNATURE_FORMAT_ERROR,
         transactionApprovedList.getResult().getCode());
 
-    randomSig = org.tron.keystore.Wallet.generateRandomBytes(65);
+    randomSig = org.tron.common.crypto.keystore.Wallet.generateRandomBytes(65);
     transaction = transactionCapsule.getInstance().toBuilder().clearSignature()
         .addSignature(ByteString.copyFrom(randomSig)).build();
     transactionApprovedList = wallet.getTransactionApprovedList(transaction);

@@ -47,9 +47,6 @@ public class CLIParameter {
   @Parameter(names = {"--solidity"}, description = "running a solidity node for java tron")
   public boolean solidityNode;
 
-  @Parameter(names = {"--keystore-factory"}, description = "running KeystoreFactory")
-  public boolean keystoreFactory;
-
   @Parameter(names = {"--fast-forward"})
   public boolean fastForward;
 
