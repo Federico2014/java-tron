@@ -632,6 +632,18 @@ public class CommonParameter {
   @Getter
   @Setter
   public long allowTvmBlob;
+  @Getter
+  @Setter
+  public long allowOptimizedBN128;
+  @Getter
+  @Setter
+  public boolean launchBN128Server = false;
+  @Getter
+  @Setter
+  public int bn128ServerPort = 9001;
+  @Getter
+  @Setter
+  public int bn128SocketTimeout = 30;
 
   private static double calcMaxTimeRatio() {
     return 5.0;

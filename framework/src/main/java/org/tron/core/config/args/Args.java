@@ -36,7 +36,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
@@ -985,6 +984,17 @@ public class Args extends CommonParameter {
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_TVM_BLOB) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_TVM_BLOB) : 0;
 
+    PARAMETER.allowOptimizedBN128 =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_OPTIMIZED_BN128)
+            ? config.getInt(
+            ConfigKey.COMMITTEE_ALLOW_OPTIMIZED_BN128) : 0;
+
+    // BN128 Socket configuration
+    PARAMETER.bn128ServerPort = config.hasPath(ConfigKey.BN128_SERVER_PORT)
+        ? config.getInt(ConfigKey.BN128_SERVER_PORT) : 9001;
+    PARAMETER.bn128SocketTimeout = config.hasPath(ConfigKey.BN128_SOCKET_TIMEOUT)
+        ? config.getInt(ConfigKey.BN128_SOCKET_TIMEOUT) : 30;
+
     logConfig();
   }
 
@@ -1097,6 +1107,9 @@ public class Args extends CommonParameter {
         seeds.add(NetUtil.parseInetSocketAddress(s));
       }
       PARAMETER.seedNode.setAddressList(seeds);
+    }
+    if (assigned.contains("--bn128-server")) {
+      PARAMETER.launchBN128Server = cmd.launchBN128Server;
     }
   }
 
