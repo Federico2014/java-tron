@@ -246,30 +246,6 @@ public class ECKey implements Serializable, SignInterface {
   }
 
   /**
-   * Utility for compressing an elliptic curve point. Returns the same point if it's already
-   * compressed. See the ECKey class docs for a discussion of point compression.
-   *
-   * @param uncompressed -
-   * @return -
-   * @deprecated per-point compression property will be removed in Bouncy Castle
-   */
-  public static ECPoint compressPoint(ECPoint uncompressed) {
-    return CURVE.getCurve().decodePoint(uncompressed.getEncoded(true));
-  }
-
-  /**
-   * Utility for decompressing an elliptic curve point. Returns the same point if it's already
-   * compressed. See the ECKey class docs for a discussion of point compression.
-   *
-   * @param compressed -
-   * @return -
-   * @deprecated per-point compression property will be removed in Bouncy Castle
-   */
-  public static ECPoint decompressPoint(ECPoint compressed) {
-    return CURVE.getCurve().decodePoint(compressed.getEncoded(false));
-  }
-
-  /**
    * Creates an ECKey given the private key only.
    *
    * @param privKey -

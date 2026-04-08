@@ -50,17 +50,17 @@ import org.tron.common.utils.ByteUtil;
 @Slf4j(topic = "crypto")
 public class SM2 implements Serializable, SignInterface {
 
-  private static BigInteger SM2_N = new BigInteger(
+  private static final BigInteger SM2_N = new BigInteger(
       "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123", 16);
-  private static BigInteger SM2_P = new BigInteger(
+  private static final BigInteger SM2_P = new BigInteger(
       "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF", 16);
-  private static BigInteger SM2_A = new BigInteger(
+  private static final BigInteger SM2_A = new BigInteger(
       "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC", 16);
-  private static BigInteger SM2_B = new BigInteger(
+  private static final BigInteger SM2_B = new BigInteger(
       "28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93", 16);
-  private static BigInteger SM2_GX = new BigInteger(
+  private static final BigInteger SM2_GX = new BigInteger(
       "32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7", 16);
-  private static BigInteger SM2_GY = new BigInteger(
+  private static final BigInteger SM2_GY = new BigInteger(
       "BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0", 16);
 
   private static ECDomainParameters ecc_param;
@@ -206,30 +206,6 @@ public class SM2 implements Serializable, SignInterface {
     return ecc_param.getCurve().createPoint(xCoord, yCoord);
   }
 
-
-  /**
-   * Utility for compressing an elliptic curve point. Returns the same point if it's already
-   * compressed. See the ECKey class docs for a discussion of point compression.
-   *
-   * @param uncompressed -
-   * @return -
-   * @deprecated per-point compression property will be removed in Bouncy Castle
-   */
-  public static ECPoint compressPoint(ECPoint uncompressed) {
-    return ecc_param.getCurve().decodePoint(uncompressed.getEncoded(true));
-  }
-
-  /**
-   * Utility for decompressing an elliptic curve point. Returns the same point if it's already
-   * compressed. See the ECKey class docs for a discussion of point compression.
-   *
-   * @param compressed -
-   * @return -
-   * @deprecated per-point compression property will be removed in Bouncy Castle
-   */
-  public static ECPoint decompressPoint(ECPoint compressed) {
-    return ecc_param.getCurve().decodePoint(compressed.getEncoded(false));
-  }
 
   /**
    * Creates an SM2 given the private key only.
