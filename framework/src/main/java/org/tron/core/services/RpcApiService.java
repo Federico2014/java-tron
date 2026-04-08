@@ -722,8 +722,9 @@ public class RpcApiService extends RpcService {
     public void scanShieldedTRC20NotesByIvk(IvkDecryptTRC20Parameters request,
         StreamObserver<DecryptNotesTRC20> responseObserver) {
       if (!request.getEventsList().isEmpty()) {
-        responseObserver.onError(getRunTimeException(
-            new IllegalArgumentException("'events' field is deprecated and no longer supported")));
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("'events' field is deprecated and no longer supported")
+            .asRuntimeException());
         return;
       }
       long startNum = request.getStartBlockIndex();
@@ -747,8 +748,9 @@ public class RpcApiService extends RpcService {
     public void scanShieldedTRC20NotesByOvk(OvkDecryptTRC20Parameters request,
         StreamObserver<DecryptNotesTRC20> responseObserver) {
       if (!request.getEventsList().isEmpty()) {
-        responseObserver.onError(getRunTimeException(
-            new IllegalArgumentException("'events' field is deprecated and no longer supported")));
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("'events' field is deprecated and no longer supported")
+            .asRuntimeException());
         return;
       }
       long startNum = request.getStartBlockIndex();
@@ -2418,8 +2420,9 @@ public class RpcApiService extends RpcService {
         IvkDecryptTRC20Parameters request,
         StreamObserver<org.tron.api.GrpcAPI.DecryptNotesTRC20> responseObserver) {
       if (!request.getEventsList().isEmpty()) {
-        responseObserver.onError(getRunTimeException(
-            new IllegalArgumentException("'events' field is deprecated and no longer supported")));
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("'events' field is deprecated and no longer supported")
+            .asRuntimeException());
         return;
       }
       long startNum = request.getStartBlockIndex();
@@ -2448,8 +2451,9 @@ public class RpcApiService extends RpcService {
         OvkDecryptTRC20Parameters request,
         StreamObserver<org.tron.api.GrpcAPI.DecryptNotesTRC20> responseObserver) {
       if (!request.getEventsList().isEmpty()) {
-        responseObserver.onError(getRunTimeException(
-            new IllegalArgumentException("'events' field is deprecated and no longer supported")));
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("'events' field is deprecated and no longer supported")
+            .asRuntimeException());
         return;
       }
       long startNum = request.getStartBlockIndex();

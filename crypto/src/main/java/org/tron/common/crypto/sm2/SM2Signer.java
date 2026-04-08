@@ -1,7 +1,6 @@
 package org.tron.common.crypto.sm2;
 
 import java.math.BigInteger;
-import java.security.SecureRandom;
 import javax.annotation.Nullable;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.Digest;
@@ -186,8 +185,9 @@ public class SM2Signer
    * verify the hash signature
    */
   public boolean verifyHashSignature(byte[] hash, BigInteger r, BigInteger s) {
-    if (ByteArray.isEmpty(hash)) {
-      throw new IllegalArgumentException("Hash cannot be empty");
+    if (ByteArray.isEmpty(hash) || hash.length != 32) {
+      throw new IllegalArgumentException("Expected 32 byte input to "
+          + "SM2 signature, not " + (hash == null ? "null" : hash.length));
     }
     if (r == null || s == null) {
       throw new IllegalArgumentException("R or S cannot be null");

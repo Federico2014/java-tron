@@ -17,7 +17,6 @@ import java.util.Arrays;
 import java.util.Objects;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
@@ -161,11 +160,10 @@ public class SM2 implements Serializable, SignInterface {
               + privKey.getAlgorithm());
     }
 
-    if (pub == null) {
-      throw new IllegalArgumentException("Public key should not be null");
-    } else {
-      this.pub = pub;
+    if (pub == null || pub.isInfinity() || !pub.isValid()) {
+      throw new IllegalArgumentException("Public key is not a valid point on SM2 curve.");
     }
+    this.pub = pub;
   }
 
   /**
@@ -286,7 +284,7 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static SM2 fromPublicOnly(byte[] pub) {
-    return new SM2((PrivateKey) null, eccParam.getCurve().decodePoint(pub));
+    return new SM2(pub, false);
   }
 
   /**
@@ -346,9 +344,9 @@ public class SM2 implements Serializable, SignInterface {
       throw new SignatureException("Could not decode base64", e);
     }
     // Parse the signature bytes into r/s and the selector value.
-    if (signatureEncoded.length < 65) {
-      throw new SignatureException("Signature truncated, expected 65 " +
-          "bytes and got " + signatureEncoded.length);
+    if (signatureEncoded.length != 65) {
+      throw new SignatureException("Invalid signature length, expected 65 bytes and got "
+          + signatureEncoded.length);
     }
 
     return signatureToKeyBytes(
@@ -721,42 +719,7 @@ public class SM2 implements Serializable, SignInterface {
     }
   }
 
-  /**
-   * Verifies a DER-encoded SM2 signature against the message bytes using the
-   * public key bytes.
-   *
-   * @param message   message bytes to verify
-   * @param signature DER-encoded signature
-   * @param pub       public key bytes to use
-   * @return false when the signature is malformed or invalid
-   */
-  public static boolean verifyMessage(byte[] message, byte[] signature, byte[] pub) {
-    return verifyMessage(message, signature, pub, null);
-  }
 
-  /**
-   * Verifies a DER-encoded SM2 signature against the message bytes using the
-   * public key bytes.
-   *
-   * @param message   message bytes to verify
-   * @param signature DER-encoded signature
-   * @param pub       public key bytes to use
-   * @param userID    optional user identifier
-   * @return false when the signature is malformed or invalid
-   */
-  public static boolean verifyMessage(byte[] message, byte[] signature, byte[] pub,
-      @Nullable String userID) {
-    if (message == null || signature == null || pub == null) {
-      return false;
-    }
-    try {
-      SM2 key = SM2.fromPublicOnly(pub);
-      byte[] messageHash = key.getSM2SignerForHash().generateSM3Hash(message);
-      return verify(messageHash, SM2Signature.decodeFromDER(signature), pub);
-    } catch (IllegalArgumentException | SignatureException e) {
-      return false;
-    }
-  }
 
   /**
    * Returns true if the given pubkey is canonical, i.e. the correct length taking
@@ -988,8 +951,8 @@ public class SM2 implements Serializable, SignInterface {
         throw new SignatureException("Invalid DER signature length");
       }
 
-      try (ASN1InputStream inputStream = new ASN1InputStream(signature)) {
-        ASN1Primitive primitive = inputStream.readObject();
+      try {
+        ASN1Primitive primitive = ASN1Primitive.fromByteArray(signature);
         if (!(primitive instanceof ASN1Sequence)) {
           throw new SignatureException("Invalid DER signature format");
         }

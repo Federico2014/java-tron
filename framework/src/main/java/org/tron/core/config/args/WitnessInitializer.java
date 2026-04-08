@@ -80,21 +80,25 @@ public class WitnessInitializer {
     }
 
     List<String> privateKeys = new ArrayList<>();
+    byte[] privKeyBytes = null;
     try {
       Credentials credentials = WalletUtils.loadCredentials(pwd, new File(fileName));
       SignInterface sign = credentials.getSignInterface();
-      byte[] privKeyBytes = sign.getPrivateKey();
-      if (!SignUtils.isValidPrivateKey(privKeyBytes, Args.getInstance().isECKeyCryptoEngine())) {
-        Arrays.fill(privKeyBytes, (byte) 0);
+      privKeyBytes = sign.getPrivateKey();
+      if (privKeyBytes == null
+          || !SignUtils.isValidPrivateKey(privKeyBytes, Args.getInstance().isECKeyCryptoEngine())) {
         throw new TronError(
             "Keystore contains an invalid private key",
             TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
       }
       privateKeys.add(ByteArray.toHexString(privKeyBytes));
-      Arrays.fill(privKeyBytes, (byte) 0);
     } catch (IOException | CipherException e) {
       logger.error("Witness node start failed!");
       throw new TronError(e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+    } finally {
+      if (privKeyBytes != null) {
+        Arrays.fill(privKeyBytes, (byte) 0);
+      }
     }
 
     LocalWitnesses witnesses = new LocalWitnesses();
