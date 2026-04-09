@@ -45,7 +45,16 @@ import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 
 /**
- * Implement Chinese Commercial Cryptographic Standard of SM2
+ * Blockchain-adapted SM2 signature implementation (GB/T 32918 / GM/T 0003).
+ *
+ * <p><b>Non-standard usage:</b> The SM2 standard computes signatures over
+ * {@code e = SM3(Z_A || M)}, where {@code Z_A} binds the signer's identity and public key to the
+ * message. This implementation omits the {@code Z_A} step and signs the 32-byte transaction hash
+ * directly, consistent with how ECDSA is used on TRON. This keeps both cryptographic engines
+ * interchangeable at the {@link org.tron.common.crypto.SignInterface} level.
+ *
+ * <p><b>Note:</b> Signatures produced here are not interoperable with standard SM2
+ * implementations that apply the {@code Z_A} pre-hash.
  */
 @Slf4j(topic = "crypto")
 public class SM2 implements Serializable, SignInterface {
@@ -385,11 +394,6 @@ public class SM2 implements Serializable, SignInterface {
     return key;
   }
 
-  public byte[] hash(byte[] message) {
-    SM2Signer signer = this.getSM2SignerForHash();
-    return signer.generateSM3Hash(message);
-  }
-
   @Override
   public byte[] getPrivateKey() {
     return getPrivKeyBytes();
@@ -507,40 +511,6 @@ public class SM2 implements Serializable, SignInterface {
     return ByteUtil.appendByte(temp, first);
   }
 
-  /**
-   * Takes the message of data and returns the SM2 signature
-   *
-   * @param message -
-   * @return -
-   * @throws IllegalStateException if this ECKey does not have the private part.
-   */
-  public SM2Signature signMessage(byte[] message, @Nullable String userID) {
-    SM2Signature sig = signMsg(message, userID);
-
-    SM2Signer signer = getSigner();
-    byte[] messageHash = signer.generateSM3Hash(message);
-    sig.v = (byte) (findRecId(sig, messageHash) + 27);
-    return sig;
-  }
-
-  /**
-   * Signs the given hash and returns the R and S components as BigIntegers and
-   * putData them in SM2Signature
-   *
-   * @param msg to sign
-   * @return SM2Signature signature that contains the R and S components
-   */
-  public SM2Signature signMsg(byte[] msg, @Nullable String userID) {
-    if (msg == null) {
-      throw new IllegalArgumentException("Expected signature message of " +
-          "SM2 is null");
-    }
-    // No decryption of private key required.
-    SM2Signer signer = getSigner();
-    BigInteger[] componets = signer.generateSignature(msg);
-    return new SM2Signature(componets[0], componets[1]);
-  }
-
   private int findRecId(SM2Signature sig, byte[] messageHash) {
     byte[] thisKey = this.pub.getEncoded(/* compressed */ false);
     for (int i = 0; i < 4; i++) {
@@ -557,17 +527,18 @@ public class SM2 implements Serializable, SignInterface {
     SM2Signer signer = new SM2Signer();
     BigInteger d = getPrivKey();
     ECPrivateKeyParameters privateKeyParameters = new ECPrivateKeyParameters(d, eccParam);
-    signer.init(true, privateKeyParameters);
+    signer.init(privateKeyParameters);
     return signer;
   }
 
   /**
-   * used to generate the SM3 hash for SM2 signature generation or verification
+   * Returns an {@link SM2Signer} initialized with this key's public key, ready to call
+   * {@link SM2Signer#verifyHashSignature}.
    */
-  public SM2Signer getSM2SignerForHash() {
+  public SM2Signer getVerifier() {
     SM2Signer signer = new SM2Signer();
     ECPublicKeyParameters publicKeyParameters = new ECPublicKeyParameters(pub, eccParam);
-    signer.init(false, publicKeyParameters);
+    signer.init(publicKeyParameters);
     return signer;
   }
 
@@ -686,7 +657,7 @@ public class SM2 implements Serializable, SignInterface {
     SM2Signer signer = new SM2Signer();
     ECPublicKeyParameters params = new ECPublicKeyParameters(eccParam
         .getCurve().decodePoint(pub), eccParam);
-    signer.init(false, params);
+    signer.init(params);
     try {
       return signer.verifyHashSignature(data, signature.r, signature.s);
     } catch (NullPointerException npe) {

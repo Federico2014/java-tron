@@ -22,6 +22,7 @@ import org.bouncycastle.util.encoders.Hex;
 import org.junit.Test;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2Signer;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Wallet;
 
 /**
@@ -116,17 +117,6 @@ public class SM2KeyTest {
     SM2.signatureToKey(messageHash, "abcdefg");
     fail("Expecting a SignatureException for invalid signature length");
   }
-
-  @Test
-  public void testSM3Hash() {
-    SM2 key = SM2.fromPublicOnly(pubKey);
-    SM2Signer signer = key.getSM2SignerForHash();
-    String message = "message digest";
-    byte[] hash = signer.generateSM3Hash(message.getBytes());
-    assertEquals("2A723761EAE35429DF643648FD69FB7787E7FC32F321BFAF7E294390F529BAF4",
-        Hex.toHexString(hash).toUpperCase());
-  }
-
 
   @Test
   public void testSignatureToKeyBytes() throws SignatureException {
@@ -329,12 +319,12 @@ public class SM2KeyTest {
   public void testSignatureVerification() {
     SM2 key = SM2.fromPrivate(privateKey);
     String message = "Hello, SM2 deterministic signature test!";
-    byte[] hash = key.getSM2SignerForHash().generateSM3Hash(message.getBytes());
+    byte[] hash = Sha256Hash.hash(false, message.getBytes());
 
     SM2.SM2Signature signature = key.sign(hash);
 
     // Verify the signature
-    SM2Signer verifier = key.getSM2SignerForHash();
+    SM2Signer verifier = key.getVerifier();
     boolean isValid = verifier.verifyHashSignature(hash, signature.r, signature.s);
 
     assertTrue("Signature should be valid", isValid);

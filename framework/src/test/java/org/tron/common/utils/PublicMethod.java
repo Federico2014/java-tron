@@ -80,12 +80,6 @@ public class PublicMethod {
     return SM2.publicKeyFromPrivate(tmpKey, true);
   }
 
-  public static byte[] getSM2HashByPubKey(byte[] pubKey, String message) {
-    SM2 key = SM2.fromPublicOnly(pubKey);
-    SM2Signer signer = key.getSM2SignerForHash();
-    return signer.generateSM3Hash(message.getBytes());
-  }
-
   /** constructor. */
   public static SmartContractOuterClass.SmartContract.ABI jsonStr2Abi(String jsonStr) {
     if (jsonStr == null) {
