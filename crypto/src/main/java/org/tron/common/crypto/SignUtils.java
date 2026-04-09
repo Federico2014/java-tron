@@ -51,14 +51,16 @@ public class SignUtils {
       if (!(signatureInterface instanceof ECDSASignature)) {
         throw new IllegalArgumentException(
             "Expected ECDSASignature for ECKey engine, got: "
-                + signatureInterface.getClass().getName());
+                + (signatureInterface == null ? "null"
+                    : signatureInterface.getClass().getName()));
       }
       return ECKey.signatureToAddress(messageHash, (ECDSASignature) signatureInterface);
     }
     if (!(signatureInterface instanceof SM2Signature)) {
       throw new IllegalArgumentException(
           "Expected SM2Signature for SM2 engine, got: "
-              + signatureInterface.getClass().getName());
+              + (signatureInterface == null ? "null"
+                  : signatureInterface.getClass().getName()));
     }
     return SM2.signatureToAddress(messageHash, (SM2Signature) signatureInterface);
   }
