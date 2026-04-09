@@ -57,29 +57,31 @@ import org.tron.common.utils.BIUtil;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 
+/**
+ * ECDSA key pair on the secp256k1 curve used by the TRON network.
+ * <p>
+ * ECDSA signatures are mutable: for a given (R, S) pair, both (R, S) and (R, N - S mod N) are
+ * valid. Canonical signatures satisfy 1 &lt;= S &lt;= N/2, where N is the curve order
+ * (SECP256K1N).
+ * <p>
+ * Reference: <a
+ * href="https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki#Low_S_values_in_signatures">
+ * BIP-62: Low S values in signatures</a>
+ * <p>
+ * For the TRON network, since the transaction ID does not include the signature and can still
+ * guarantee the transaction uniqueness, it is not necessary to strictly enforce signature
+ * canonicalization. Signature verification accepts both low-S and high-S forms.
+ * <p>
+ * Note: While not enforced by the protocol, using low-S signatures is recommended to prevent
+ * signature malleability.
+ */
 @Slf4j(topic = "crypto")
 public class ECKey implements Serializable, SignInterface {
 
-  /**
-   * The parameters of the secp256k1 curve.
-   */
+  //The parameters of the secp256k1 curve.
   public static final ECDomainParameters CURVE;
   public static final ECParameterSpec CURVE_SPEC;
 
-  /**
-   * ECDSA signatures are mutable: for a given (R, S) pair, both (R, S) and (R, N - S mod N) are
-   * valid. Canonical signatures satisfy 1 <= S <= N/2, where N is the curve order (SECP256K1N).
-   * <p>
-   * Reference:
-   * https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki#Low_S_values_in_signatures
-   * <p>
-   * For the TRON network, since the transaction ID does not include the signature and can still
-   * guarantee the transaction uniqueness, it is not necessary to strictly enforce signature
-   * canonicalization. Signature verification accepts both low-S and high-S forms.
-   * <p>
-   * Note: While not enforced by the protocol, using low-S signatures is recommended to prevent
-   * signature malleability.
-   */
   public static final BigInteger HALF_CURVE_ORDER;
   private static final BigInteger SECP256K1N;
   private static final SecureRandom secureRandom;
@@ -202,11 +204,11 @@ public class ECKey implements Serializable, SignInterface {
               + privKey.getAlgorithm());
     }
 
-    if (pub == null) {
-      throw new IllegalArgumentException("Public key should not be null");
-    } else {
-      this.pub = pub;
+    if (pub == null || pub.isInfinity() || !pub.isValid()) {
+      throw new IllegalArgumentException(
+          "Public key is not a valid point on secp256k1 curve.");
     }
+    this.pub = pub;
   }
 
   /**
@@ -264,6 +266,11 @@ public class ECKey implements Serializable, SignInterface {
 
   public static boolean isValidPrivateKey(byte[] keyBytes) {
     if (ByteArray.isEmpty(keyBytes)) {
+      return false;
+    }
+    // Accept a 33-byte array only when the leading byte is 0x00 (BigInteger sign-byte padding);
+    // reject anything longer or any non-canonical 33-byte encoding.
+    if (keyBytes.length > 33 || (keyBytes.length == 33 && keyBytes[0] != 0x00)) {
       return false;
     }
 
@@ -350,7 +357,15 @@ public class ECKey implements Serializable, SignInterface {
    * @return -
    */
   public static ECKey fromPublicOnly(byte[] pub) {
-    return new ECKey(null, CURVE.getCurve().decodePoint(pub));
+    if (ByteArray.isEmpty(pub)) {
+      throw new IllegalArgumentException("Public key bytes cannot be null or empty");
+    }
+    ECPoint point = CURVE.getCurve().decodePoint(pub);
+    if (point.isInfinity() || !point.isValid()) {
+      throw new IllegalArgumentException(
+          "Public key is not a valid point on secp256k1 curve.");
+    }
+    return new ECKey(null, point);
   }
 
   /**
@@ -362,6 +377,9 @@ public class ECKey implements Serializable, SignInterface {
    * @return -
    */
   public static byte[] publicKeyFromPrivate(BigInteger privKey, boolean compressed) {
+    if (!isValidPrivateKey(privKey)) {
+      throw new IllegalArgumentException("Invalid private key.");
+    }
     ECPoint point = CURVE.getG().multiply(privKey);
     return point.getEncoded(compressed);
   }
@@ -417,6 +435,9 @@ public class ECKey implements Serializable, SignInterface {
 
   public static byte[] signatureToKeyBytes(byte[] messageHash,
       ECDSASignature sig) throws SignatureException {
+    if (messageHash == null || sig == null) {
+      throw new IllegalArgumentException("messageHash and sig cannot be null");
+    }
     check(messageHash.length == 32, "messageHash argument has length " +
         messageHash.length);
     int header = sig.v;

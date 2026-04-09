@@ -215,8 +215,7 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Utility for compressing an elliptic curve point. Returns the same point if
-   * it's already
+   * Utility for compressing an elliptic curve point. Returns the same point if it's already
    * compressed. See the ECKey class docs for a discussion of point compression.
    *
    * @param uncompressed -
@@ -228,8 +227,7 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Utility for decompressing an elliptic curve point. Returns the same point if
-   * it's already
+   * Utility for decompressing an elliptic curve point. Returns the same point if it's already
    * compressed. See the ECKey class docs for a discussion of point compression.
    *
    * @param compressed -
@@ -272,6 +270,11 @@ public class SM2 implements Serializable, SignInterface {
     if (ByteArray.isEmpty(keyBytes)) {
       return false;
     }
+    // Accept a 33-byte array only when the leading byte is 0x00 (BigInteger sign-byte padding);
+    // reject anything longer or any non-canonical 33-byte encoding.
+    if (keyBytes.length > 33 || (keyBytes.length == 33 && keyBytes[0] != 0x00)) {
+      return false;
+    }
 
     BigInteger key = new BigInteger(1, keyBytes);
     return key.compareTo(BigInteger.ONE) >= 0 && key.compareTo(SM2_N) < 0;
@@ -285,8 +288,7 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Creates an SM2 that cannot be used for signing, only verifying signatures,
-   * from the given
+   * Creates an SM2 that cannot be used for signing, only verifying signatures, from the given
    * encoded point. The compression state of pub will be preserved.
    *
    * @param pub -
@@ -297,8 +299,7 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Returns public key bytes from the given private key. To convert a byte array
-   * into a BigInteger,
+   * Returns public key bytes from the given private key. To convert a byte array into a BigInteger,
    * use <tt> new BigInteger(1, bytes);</tt>
    *
    * @param privKey    -
@@ -306,6 +307,9 @@ public class SM2 implements Serializable, SignInterface {
    * @return -
    */
   public static byte[] publicKeyFromPrivate(BigInteger privKey, boolean compressed) {
+    if (!isValidPrivateKey(privKey)) {
+      throw new IllegalArgumentException("Invalid private key in SM2.");
+    }
     ECPoint point = eccParam.getG().multiply(privKey);
     return point.getEncoded(compressed);
   }
@@ -313,8 +317,7 @@ public class SM2 implements Serializable, SignInterface {
   /**
    * Compute the encoded X, Y coordinates of a public point.
    * <p>
-   * This is the encoded public key
-   * without the leading byte.
+   * This is the encoded public key without the leading byte.
    *
    * @param pubPoint a public point
    * @return 64-byte X,Y point pair
@@ -340,7 +343,8 @@ public class SM2 implements Serializable, SignInterface {
     return SM2.fromPublicOnly(pubBytes);
   }
 
-  public static byte[] signatureToKeyBytes(byte[] messageHash, String signatureBase64) throws SignatureException {
+  public static byte[] signatureToKeyBytes(byte[] messageHash, String signatureBase64)
+      throws SignatureException {
     if (messageHash == null || signatureBase64 == null) {
       throw new SignatureException("Message hash or signature cannot be null");
     }
@@ -429,7 +433,8 @@ public class SM2 implements Serializable, SignInterface {
    * @param signatureBase64 Base-64 encoded signature
    * @return 20-byte address
    */
-  public static byte[] signatureToAddress(byte[] messageHash, String signatureBase64) throws SignatureException {
+  public static byte[] signatureToAddress(byte[] messageHash, String signatureBase64)
+      throws SignatureException {
     return computeAddress(signatureToKeyBytes(messageHash,
         signatureBase64));
   }
@@ -453,7 +458,8 @@ public class SM2 implements Serializable, SignInterface {
    * @param signatureBase64 Base-64 encoded signature
    * @return ECKey
    */
-  public static SM2 signatureToKey(byte[] messageHash, String signatureBase64) throws SignatureException {
+  public static SM2 signatureToKey(byte[] messageHash, String signatureBase64)
+      throws SignatureException {
     final byte[] keyBytes = signatureToKeyBytes(messageHash,
         signatureBase64);
     return fromPublicOnly(keyBytes);
@@ -466,14 +472,14 @@ public class SM2 implements Serializable, SignInterface {
    * @param sig         -
    * @return ECKey
    */
-  public static SM2 signatureToKey(byte[] messageHash, SM2Signature sig) throws SignatureException {
+  public static SM2 signatureToKey(byte[] messageHash, SM2Signature sig)
+      throws SignatureException {
     final byte[] keyBytes = signatureToKeyBytes(messageHash, sig);
     return fromPublicOnly(keyBytes);
   }
 
   /**
-   * Takes the SM3 hash (32 bytes) of data and returns the SM2 signature which
-   * including the v
+   * Takes the SM3 hash (32 bytes) of data and returns the SM2 signature which including the v
    *
    * @param messageHash -
    * @return -
@@ -494,8 +500,8 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Signs the given hash and returns the R and S components as BigIntegers and
-   * putData them in SM2Signature
+   * Signs the given hash and returns the R and S components as BigIntegers and putData them in
+   * SM2Signature
    *
    * @param input to sign
    * @return SM2Signature signature that contains the R and S components
@@ -544,8 +550,8 @@ public class SM2 implements Serializable, SignInterface {
 
   /**
    * <p>
-   * Given the components of a signature and a selector value, recover and return
-   * the public key that generated the signature
+   * Given the components of a signature and a selector value, recover and return the public key
+   * that generated the signature
    */
   @Nullable
   public static byte[] recoverPubBytesFromSignature(int recId,
@@ -634,32 +640,24 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * <p>
-   * Verifies the given SM2 signature against the message bytes using the public
-   * key bytes.
-   * </p>
-   * <p>
-   * <p>
-   * When using native SM2 verification, data must be 32 bytes, and no element may
-   * be larger than 520 bytes.
-   * </p>
+   * Verifies the given SM2 signature against the 32-byte hash using the public key bytes.
    *
-   * @param data      Hash of the data to verify.
-   * @param signature signature.
-   * @param pub       The public key bytes to use.
-   * @return -
+   * @param hash      32-byte hash of the data to verify
+   * @param signature signature
+   * @param pub       public key bytes to use
+   * @return true if the signature is valid
    */
-  public static boolean verify(byte[] data, SM2Signature signature,
+  public static boolean verify(byte[] hash, SM2Signature signature,
       byte[] pub) {
-    if (ByteArray.isEmpty(data) || signature == null || ByteArray.isEmpty(pub)) {
-      throw new IllegalArgumentException("Data, signature, or public key cannot be null");
+    if (ByteArray.isEmpty(hash) || signature == null || ByteArray.isEmpty(pub)) {
+      throw new IllegalArgumentException("Hash, signature, or public key cannot be null");
     }
     SM2Signer signer = new SM2Signer();
     ECPublicKeyParameters params = new ECPublicKeyParameters(eccParam
         .getCurve().decodePoint(pub), eccParam);
     signer.init(params);
     try {
-      return signer.verifyHashSignature(data, signature.r, signature.s);
+      return signer.verifyHashSignature(hash, signature.r, signature.s);
     } catch (NullPointerException npe) {
       // Bouncy Castle contains a bug that can cause NPEs given
       // specially crafted signatures.
@@ -671,30 +669,28 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Verifies a DER-encoded SM2 signature against the provided hash using the
-   * public key bytes.
+   * Verifies a DER-encoded SM2 signature against the provided hash using the public key bytes.
    *
-   * @param data      hash of the data to verify
+   * @param hash      32-byte hash of the data to verify
    * @param signature DER-encoded signature
    * @param pub       public key bytes to use
    * @return false when the signature is malformed or invalid
    */
-  public static boolean verify(byte[] data, byte[] signature, byte[] pub) {
-    if (data == null || signature == null || pub == null) {
+  public static boolean verify(byte[] hash, byte[] signature, byte[] pub) {
+    if (hash == null || signature == null || pub == null) {
       return false;
     }
     try {
-      return verify(data, SM2Signature.decodeFromDER(signature), pub);
+      return verify(hash, SM2Signature.decodeFromDER(signature), pub);
     } catch (IllegalArgumentException | SignatureException e) {
       return false;
     }
   }
 
 
-
   /**
-   * Returns true if the given pubkey is canonical, i.e. the correct length taking
-   * into account compression.
+   * Returns true if the given pubkey is canonical, i.e. the correct length taking into account
+   * compression.
    *
    * @param pubkey -
    * @return -
@@ -719,8 +715,7 @@ public class SM2 implements Serializable, SignInterface {
    */
   @Nullable
   public static byte[] recoverAddressFromSignature(int recId,
-      SM2Signature sig,
-      byte[] messageHash) {
+      SM2Signature sig, byte[] messageHash) {
     final byte[] pubBytes = recoverPubBytesFromSignature(recId, sig,
         messageHash);
     if (pubBytes == null) {
@@ -749,9 +744,8 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Returns true if this key doesn't have access to private key bytes. This may
-   * be because it was never given any private key bytes to begin with (a watching
-   * key).
+   * Returns true if this key doesn't have access to private key bytes. This may be because it was
+   * never given any private key bytes to begin with (a watching key).
    *
    * @return -
    */
@@ -760,9 +754,8 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Returns true if this key has access to private key bytes. Does the opposite
-   * of {@link
-   * #isPubKeyOnly()}.
+   * Returns true if this key has access to private key bytes. Does the opposite of
+   * {@link #isPubKeyOnly()}.
    *
    * @return -
    */
@@ -771,8 +764,7 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Generates the NodeID based on this key, that is the public key without first
-   * format byte
+   * Generates the NodeID based on this key, that is the public key without first format byte
    */
   public byte[] getNodeId() {
     if (nodeId == null) {
@@ -782,8 +774,7 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Gets the public key in the form of an elliptic curve point object from Bouncy
-   * Castle.
+   * Gets the public key in the form of an elliptic curve point object from Bouncy Castle.
    *
    * @return -
    */
@@ -792,9 +783,8 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Gets the private key in the form of an integer field element. The public key
-   * is derived by performing EC point addition this number of times (i.e. point
-   * multiplying).
+   * Gets the private key in the form of an integer field element. The public key is derived by
+   * performing EC point addition this number of times (i.e. point multiplying).
    *
    * @return -
    * @throws IllegalStateException if the private key bytes are not available.
@@ -825,8 +815,8 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Returns true if this pubkey is canonical, i.e. the correct length taking into
-   * account compression.
+   * Returns true if this pubkey is canonical, i.e. the correct length taking into account
+   * compression.
    *
    * @return -
    */
@@ -835,8 +825,8 @@ public class SM2 implements Serializable, SignInterface {
   }
 
   /**
-   * Returns a 32 byte array containing the private key, or null if the key is
-   * encrypted or public only
+   * Returns a 32 byte array containing the private key, or null if the key is encrypted or public
+   * only
    *
    * @return -
    */
@@ -883,8 +873,8 @@ public class SM2 implements Serializable, SignInterface {
     public byte v;
 
     /**
-     * Constructs a signature with the given components. Does NOT automatically
-     * canonicalise the signature.
+     * Constructs a signature with the given components. Does NOT automatically canonicalise the
+     * signature.
      *
      * @param r -
      * @param s -
@@ -985,7 +975,7 @@ public class SM2 implements Serializable, SignInterface {
       return ByteUtil.merge(
           ByteUtil.bigIntegerToBytes(this.r, 32),
           ByteUtil.bigIntegerToBytes(this.s, 32),
-          new byte[] { fixedV });
+          new byte[]{fixedV});
     }
 
     public String toHex() {

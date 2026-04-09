@@ -35,6 +35,9 @@ public class ScanShieldedTRC20NotesByOvkServlet extends RateLimiterServlet {
               ovkDecryptTRC20Parameters.getShieldedTRC20ContractAddress().toByteArray());
       response.getWriter()
           .println(ScanShieldedTRC20NotesByIvkServlet.convertOutput(notes, params.isVisible()));
+    } catch (IllegalArgumentException e) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      Util.processError(e, response);
     } catch (Exception e) {
       Util.processError(e, response);
     }
@@ -60,6 +63,9 @@ public class ScanShieldedTRC20NotesByOvkServlet extends RateLimiterServlet {
 
       response.getWriter()
           .println(ScanShieldedTRC20NotesByIvkServlet.convertOutput(notes, visible));
+    } catch (IllegalArgumentException e) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      Util.processError(e, response);
     } catch (Exception e) {
       Util.processError(e, response);
     }
