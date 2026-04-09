@@ -29,7 +29,7 @@ import org.tron.core.exception.ZksnarkException;
 @Slf4j
 public class JLibrustzcash {
 
-  private static Librustzcash INSTANCE = LibrustzcashWrapper.getInstance();
+  private static final Librustzcash INSTANCE = LibrustzcashWrapper.getInstance();
 
   public static void librustzcashZip32XskMaster(Zip32XskMasterParams params) {
     INSTANCE.librustzcashZip32XskMaster(params.getData(), params.getSize(), params.getM_bytes());

@@ -251,6 +251,9 @@ public class ShieldedTRC20ParametersBuilder {
     ShieldedTRC20Parameters shieldedTRC20Parameters;
 
     long ctx = JLibrustzcash.librustzcashSaplingProvingCtxInit();
+    if (ctx == 0) {
+      throw new ZksnarkException("Failed to initialize proving context");
+    }
     try {
       switch (shieldedTRC20ParametersType) {
         case MINT:

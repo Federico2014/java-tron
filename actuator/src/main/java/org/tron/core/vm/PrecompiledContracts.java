@@ -1148,8 +1148,8 @@ public class PrecompiledContracts {
               new LibrustzcashParam.MerkleHashParams(
                   i, UNCOMMITTED[i], UNCOMMITTED[i], UNCOMMITTED[i + 1]));
         }
-      } catch (Throwable any) {
-        logger.info("Initialize UNCOMMITTED array failed:{}", any.getMessage());
+      } catch (ZksnarkException e) {
+        throw new RuntimeException("Failed to initialize UNCOMMITTED array", e);
       }
     }
 
@@ -1258,7 +1258,7 @@ public class PrecompiledContracts {
       if (success) {
         return Pair.of(true, merge(DataWord.ONE().getData(), result));
       } else {
-        return Pair.of(true, DataWord.ZERO().getData());
+        return Pair.of(false, EMPTY_BYTE_ARRAY);
       }
     }
   }
@@ -1282,6 +1282,10 @@ public class PrecompiledContracts {
       }
       boolean result;
       long ctx = JLibrustzcash.librustzcashSaplingVerificationCtxInit();
+      if (ctx == 0) {
+        logger.info("VerifyMintProof: failed to init verification context");
+        return Pair.of(false, EMPTY_BYTE_ARRAY);
+      }
       try {
         byte[] cm = new byte[32];
         byte[] cv = new byte[32];
@@ -1328,7 +1332,7 @@ public class PrecompiledContracts {
       } finally {
         JLibrustzcash.librustzcashSaplingVerificationCtxFree(ctx);
       }
-      return Pair.of(true, DataWord.ZERO().getData());
+      return Pair.of(false, EMPTY_BYTE_ARRAY);
     }
   }
 
@@ -1477,6 +1481,10 @@ public class PrecompiledContracts {
 
         boolean withNoTimeout = countDownLatch.await(getCPUTimeLeftInNanoSecond(),
             TimeUnit.NANOSECONDS);
+        if (!withNoTimeout) {
+          futures.forEach(f -> f.cancel(true));
+          return Pair.of(true, DataWord.ZERO().getData());
+        }
         boolean checkResult = true;
         for (Future<Boolean> future : futures) {
           boolean eachTaskResult = future.get();
@@ -1497,7 +1505,7 @@ public class PrecompiledContracts {
         }
         logger.info("VerifyTransferProof exception: " + errorMsg);
       }
-      return Pair.of(true, DataWord.ZERO().getData());
+      return Pair.of(false, EMPTY_BYTE_ARRAY);
     }
 
     private static class SaplingCheckSpendTask implements Callable<Boolean> {
@@ -1527,17 +1535,13 @@ public class PrecompiledContracts {
 
       @Override
       public Boolean call() throws ZksnarkException {
-        boolean result;
         try {
-          result = JLibrustzcash.librustzcashSaplingCheckSpendNew(
+          return JLibrustzcash.librustzcashSaplingCheckSpendNew(
               new LibrustzcashParam.CheckSpendNewParams(this.cv, this.anchor, this.nullifier,
                   this.rk, this.zkproof, this.spendAuthSig, this.signHash));
-        } catch (ZksnarkException e) {
-          throw e;
         } finally {
           countDownLatch.countDown();
         }
-        return result;
       }
     }
 
@@ -1561,17 +1565,13 @@ public class PrecompiledContracts {
 
       @Override
       public Boolean call() throws ZksnarkException {
-        boolean result;
         try {
-          result = JLibrustzcash.librustzcashSaplingCheckOutputNew(
+          return JLibrustzcash.librustzcashSaplingCheckOutputNew(
               new LibrustzcashParam.CheckOutputNewParams(this.cv, this.cm,
                   this.ephemeralKey, this.zkproof));
-        } catch (ZksnarkException e) {
-          throw e;
         } finally {
           countDownLatch.countDown();
         }
-        return result;
       }
     }
 
@@ -1602,18 +1602,14 @@ public class PrecompiledContracts {
 
       @Override
       public Boolean call() throws ZksnarkException {
-        boolean result;
         try {
-          result = JLibrustzcash.librustzcashSaplingFinalCheckNew(
+          return JLibrustzcash.librustzcashSaplingFinalCheckNew(
               new LibrustzcashParam.FinalCheckNewParams(this.valueBalance, this.bindingSig,
                   this.signHash, this.spendCvs, this.spendCvLen,
                   this.receiveCvs, this.receiveCvLen));
-        } catch (ZksnarkException e) {
-          throw e;
         } finally {
           countDownLatch.countDown();
         }
-        return result;
       }
     }
   }
@@ -1637,6 +1633,10 @@ public class PrecompiledContracts {
       }
       boolean result;
       long ctx = JLibrustzcash.librustzcashSaplingVerificationCtxInit();
+      if (ctx == 0) {
+        logger.info("VerifyBurnProof: failed to init verification context");
+        return Pair.of(false, EMPTY_BYTE_ARRAY);
+      }
       try {
         byte[] nullifier = new byte[32];
         byte[] anchor = new byte[32];

@@ -664,15 +664,21 @@ public class RpcApiService extends RpcService {
         StreamObserver<GrpcAPI.DecryptNotes> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] ivk = request.getIvk().toByteArray();
+      if (ivk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ivk must be 32 bytes").asRuntimeException());
+        return;
+      }
 
       try {
         DecryptNotes decryptNotes = wallet
-            .scanNoteByIvk(startNum, endNum, request.getIvk().toByteArray());
+            .scanNoteByIvk(startNum, endNum, ivk);
         responseObserver.onNext(decryptNotes);
+        responseObserver.onCompleted();
       } catch (BadItemException | ZksnarkException e) {
         responseObserver.onError(getRunTimeException(e));
       }
-      responseObserver.onCompleted();
     }
 
     @Override
@@ -680,18 +686,25 @@ public class RpcApiService extends RpcService {
         StreamObserver<GrpcAPI.DecryptNotesMarked> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] ivk = request.getIvk().toByteArray();
+      byte[] ak = request.getAk().toByteArray();
+      byte[] nk = request.getNk().toByteArray();
+      if (ivk.length != 32 || ak.length != 32 || nk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ivk, ak, nk must each be 32 bytes")
+            .asRuntimeException());
+        return;
+      }
 
       try {
         DecryptNotesMarked decryptNotes = wallet.scanAndMarkNoteByIvk(startNum, endNum,
-            request.getIvk().toByteArray(),
-            request.getAk().toByteArray(),
-            request.getNk().toByteArray());
+            ivk, ak, nk);
         responseObserver.onNext(decryptNotes);
+        responseObserver.onCompleted();
       } catch (BadItemException | ZksnarkException | InvalidProtocolBufferException
           | ItemNotFoundException e) {
         responseObserver.onError(getRunTimeException(e));
       }
-      responseObserver.onCompleted();
     }
 
     @Override
@@ -699,24 +712,30 @@ public class RpcApiService extends RpcService {
         StreamObserver<GrpcAPI.DecryptNotes> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] ovk = request.getOvk().toByteArray();
+      if (ovk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ovk must be 32 bytes").asRuntimeException());
+        return;
+      }
       try {
         DecryptNotes decryptNotes = wallet
-            .scanNoteByOvk(startNum, endNum, request.getOvk().toByteArray());
+            .scanNoteByOvk(startNum, endNum, ovk);
         responseObserver.onNext(decryptNotes);
+        responseObserver.onCompleted();
       } catch (BadItemException | ZksnarkException e) {
         responseObserver.onError(getRunTimeException(e));
       }
-      responseObserver.onCompleted();
     }
 
     @Override
     public void isSpend(NoteParameters request, StreamObserver<SpendResult> responseObserver) {
       try {
         responseObserver.onNext(wallet.isSpend(request));
+        responseObserver.onCompleted();
       } catch (Exception e) {
         responseObserver.onError(getRunTimeException(e));
       }
-      responseObserver.onCompleted();
     }
 
     @Override
@@ -728,17 +747,28 @@ public class RpcApiService extends RpcService {
       byte[] ivk = request.getIvk().toByteArray();
       byte[] ak = request.getAk().toByteArray();
       byte[] nk = request.getNk().toByteArray();
+      if (ivk.length != 32 || ak.length != 32 || nk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ivk, ak, nk must each be 32 bytes")
+            .asRuntimeException());
+        return;
+      }
+      if (contractAddress.length != 21) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("contractAddress must be 21 bytes")
+            .asRuntimeException());
+        return;
+      }
       ProtocolStringList topicsList = request.getEventsList();
 
       try {
         responseObserver.onNext(
             wallet.scanShieldedTRC20NotesByIvk(startNum, endNum, contractAddress, ivk, ak, nk,
                 topicsList));
-
+        responseObserver.onCompleted();
       } catch (Exception e) {
         responseObserver.onError(getRunTimeException(e));
       }
-      responseObserver.onCompleted();
     }
 
     @Override
@@ -748,15 +778,26 @@ public class RpcApiService extends RpcService {
       long endNum = request.getEndBlockIndex();
       byte[] contractAddress = request.getShieldedTRC20ContractAddress().toByteArray();
       byte[] ovk = request.getOvk().toByteArray();
+      if (ovk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ovk must be 32 bytes").asRuntimeException());
+        return;
+      }
+      if (contractAddress.length != 21) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("contractAddress must be 21 bytes")
+            .asRuntimeException());
+        return;
+      }
       ProtocolStringList topicList = request.getEventsList();
       try {
         responseObserver
             .onNext(wallet
                 .scanShieldedTRC20NotesByOvk(startNum, endNum, ovk, contractAddress, topicList));
+        responseObserver.onCompleted();
       } catch (Exception e) {
         responseObserver.onError(getRunTimeException(e));
       }
-      responseObserver.onCompleted();
     }
 
     @Override
@@ -2270,10 +2311,16 @@ public class RpcApiService extends RpcService {
         StreamObserver<GrpcAPI.DecryptNotes> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] ivk = request.getIvk().toByteArray();
+      if (ivk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ivk must be 32 bytes").asRuntimeException());
+        return;
+      }
 
       try {
         DecryptNotes decryptNotes = wallet
-            .scanNoteByIvk(startNum, endNum, request.getIvk().toByteArray());
+            .scanNoteByIvk(startNum, endNum, ivk);
         responseObserver.onNext(decryptNotes);
       } catch (BadItemException | ZksnarkException e) {
         responseObserver.onError(getRunTimeException(e));
@@ -2288,12 +2335,19 @@ public class RpcApiService extends RpcService {
         StreamObserver<GrpcAPI.DecryptNotesMarked> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] ivk = request.getIvk().toByteArray();
+      byte[] ak = request.getAk().toByteArray();
+      byte[] nk = request.getNk().toByteArray();
+      if (ivk.length != 32 || ak.length != 32 || nk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ivk, ak, nk must each be 32 bytes")
+            .asRuntimeException());
+        return;
+      }
 
       try {
         DecryptNotesMarked decryptNotes = wallet.scanAndMarkNoteByIvk(startNum, endNum,
-            request.getIvk().toByteArray(),
-            request.getAk().toByteArray(),
-            request.getNk().toByteArray());
+            ivk, ak, nk);
         responseObserver.onNext(decryptNotes);
       } catch (BadItemException | ZksnarkException | InvalidProtocolBufferException
           | ItemNotFoundException e) {
@@ -2308,10 +2362,16 @@ public class RpcApiService extends RpcService {
         StreamObserver<GrpcAPI.DecryptNotes> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] ovk = request.getOvk().toByteArray();
+      if (ovk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ovk must be 32 bytes").asRuntimeException());
+        return;
+      }
 
       try {
         DecryptNotes decryptNotes = wallet
-            .scanNoteByOvk(startNum, endNum, request.getOvk().toByteArray());
+            .scanNoteByOvk(startNum, endNum, ovk);
         responseObserver.onNext(decryptNotes);
       } catch (BadItemException | ZksnarkException e) {
         responseObserver.onError(getRunTimeException(e));
@@ -2414,13 +2474,25 @@ public class RpcApiService extends RpcService {
         StreamObserver<org.tron.api.GrpcAPI.DecryptNotesTRC20> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] contractAddress = request.getShieldedTRC20ContractAddress().toByteArray();
+      byte[] ivk = request.getIvk().toByteArray();
+      byte[] ak = request.getAk().toByteArray();
+      byte[] nk = request.getNk().toByteArray();
+      if (ivk.length != 32 || ak.length != 32 || nk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ivk, ak, nk must each be 32 bytes")
+            .asRuntimeException());
+        return;
+      }
+      if (contractAddress.length != 21) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("contractAddress must be 21 bytes")
+            .asRuntimeException());
+        return;
+      }
       try {
         DecryptNotesTRC20 decryptNotes = wallet.scanShieldedTRC20NotesByIvk(startNum, endNum,
-            request.getShieldedTRC20ContractAddress().toByteArray(),
-            request.getIvk().toByteArray(),
-            request.getAk().toByteArray(),
-            request.getNk().toByteArray(),
-            request.getEventsList());
+            contractAddress, ivk, ak, nk, request.getEventsList());
         responseObserver.onNext(decryptNotes);
       } catch (BadItemException | ZksnarkException e) {
         responseObserver.onError(getRunTimeException(e));
@@ -2440,11 +2512,22 @@ public class RpcApiService extends RpcService {
         StreamObserver<org.tron.api.GrpcAPI.DecryptNotesTRC20> responseObserver) {
       long startNum = request.getStartBlockIndex();
       long endNum = request.getEndBlockIndex();
+      byte[] contractAddress = request.getShieldedTRC20ContractAddress().toByteArray();
+      byte[] ovk = request.getOvk().toByteArray();
+      if (ovk.length != 32) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("ovk must be 32 bytes").asRuntimeException());
+        return;
+      }
+      if (contractAddress.length != 21) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("contractAddress must be 21 bytes")
+            .asRuntimeException());
+        return;
+      }
       try {
         DecryptNotesTRC20 decryptNotes = wallet.scanShieldedTRC20NotesByOvk(startNum, endNum,
-            request.getOvk().toByteArray(),
-            request.getShieldedTRC20ContractAddress().toByteArray(),
-            request.getEventsList());
+            ovk, contractAddress, request.getEventsList());
         responseObserver.onNext(decryptNotes);
       } catch (Exception e) {
         responseObserver.onError(getRunTimeException(e));
