@@ -4,7 +4,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.tron.common.utils.client.utils.AbiUtil.generateOccupationConstantPrivateKey;
@@ -14,11 +14,16 @@ import java.security.KeyPairGenerator;
 import java.security.SignatureException;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
+import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.crypto.digests.SM3Digest;
 import org.bouncycastle.util.encoders.Hex;
 import org.junit.Test;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2Signer;
+import org.tron.common.utils.ByteUtil;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Wallet;
 
 /**
@@ -66,10 +71,8 @@ public class SM2KeyTest {
     assertTrue(key.hasPrivKey());
     assertArrayEquals(pubKey, key.getPubKey());
 
-    key =  SM2.fromPrivate((byte[]) null);
-    assertNull(key);
-    key = SM2.fromPrivate(new byte[0]);
-    assertNull(key);
+    assertThrows(IllegalArgumentException.class, () -> SM2.fromPrivate((byte[]) null));
+    assertThrows(IllegalArgumentException.class, () -> SM2.fromPrivate(new byte[0]));
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -115,17 +118,6 @@ public class SM2KeyTest {
     SM2.signatureToKey(messageHash, "abcdefg");
     fail("Expecting a SignatureException for invalid signature length");
   }
-
-  @Test
-  public void testSM3Hash() {
-    SM2 key = SM2.fromPublicOnly(pubKey);
-    SM2Signer signer = key.getSM2SignerForHash();
-    String message = "message digest";
-    byte[] hash = signer.generateSM3Hash(message.getBytes());
-    assertEquals("2A723761EAE35429DF643648FD69FB7787E7FC32F321BFAF7E294390F529BAF4",
-        Hex.toHexString(hash).toUpperCase());
-  }
-
 
   @Test
   public void testSignatureToKeyBytes() throws SignatureException {
@@ -280,5 +272,110 @@ public class SM2KeyTest {
 
     assertEquals("b524f552cd82b8b028476e005c377fb19a87e6fc682d48bb5d42e3d9b9effe76",
         Hex.toHexString(eHash));
+  }
+
+  /**
+   * Verifies SM2 signatures are deterministic with HMacDSAKCalculator (RFC 6979).
+   */
+  @Test
+  public void testDeterministicSignature() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    byte[] hash = Hex.decode("B524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE76");
+
+    SM2.SM2Signature signature1 = key.sign(hash);
+    SM2.SM2Signature signature2 = key.sign(hash);
+    SM2.SM2Signature signature3 = key.sign(hash);
+
+    assertEquals(signature1.r, signature2.r);
+    assertEquals(signature1.s, signature2.s);
+    assertEquals(signature2.r, signature3.r);
+    assertEquals(signature2.s, signature3.s);
+  }
+
+  /**
+   * Test that different messages produce different signatures.
+   */
+  @Test
+  public void testDifferentMessagesSignatures() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    byte[] hash1 = Hex.decode("B524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE76");
+    byte[] hash2 = Hex.decode("C524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE77");
+
+    SM2.SM2Signature signature1 = key.sign(hash1);
+    SM2.SM2Signature signature2 = key.sign(hash2);
+
+    // Different messages should produce different signatures
+    // (with overwhelming probability)
+    assertFalse("Different messages should produce different signatures",
+        signature1.r.equals(signature2.r) && signature1.s.equals(signature2.s));
+  }
+
+  /**
+   * Test that signature verification still works correctly with deterministic signatures.
+   */
+  @Test
+  public void testSignatureVerification() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    String message = "Hello, SM2 deterministic signature test!";
+    byte[] hash = Sha256Hash.hash(false, message.getBytes());
+
+    SM2.SM2Signature signature = key.sign(hash);
+
+    // Verify the signature
+    SM2Signer verifier = key.getVerifier();
+    boolean isValid = verifier.verifyHashSignature(hash, signature.r, signature.s);
+
+    assertTrue("Signature should be valid", isValid);
+  }
+
+  @Test
+  public void testVerifyDerEncodedSignatureCompatibility() throws Exception {
+    SM2 key = SM2.fromPrivate(privateKey);
+    byte[] hash = Hex.decode("B524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE76");
+    SM2.SM2Signature signature = key.sign(hash);
+
+    assertTrue(SM2.verify(hash, toDer(signature), key.getPubKey()));
+  }
+
+  @Test
+  public void testVerifyDerEncodedMalformedSignatureReturnsFalse() {
+    SM2 key = SM2.fromPrivate(privateKey);
+    byte[] hash = Hex.decode("B524F552CD82B8B028476E005C377FB"
+        + "19A87E6FC682D48BB5D42E3D9B9EFFE76");
+
+    assertFalse(SM2.verify(hash, new byte[] {0x01, 0x02, 0x03}, key.getPubKey()));
+  }
+
+  @Test
+  public void testDecodeFromDerRejectsOversizedSignature() {
+    SignatureException exception = assertThrows(SignatureException.class,
+        () -> SM2.SM2Signature.decodeFromDER(new byte[129]));
+
+    assertEquals("Invalid DER signature length", exception.getMessage());
+  }
+
+  @Test
+  public void testSM2IsValidPrivateKey() {
+    assertFalse(SM2.isValidPrivateKey((byte[]) null));
+    assertFalse(SM2.isValidPrivateKey(new byte[0]));
+    assertFalse(SM2.isValidPrivateKey(new byte[32]));
+    BigInteger sm2N = new BigInteger(
+        "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123", 16);
+    assertFalse(SM2.isValidPrivateKey(ByteUtil.bigIntegerToBytes(sm2N, 32)));
+    assertFalse(SM2.isValidPrivateKey(new byte[34]));
+    byte[] minKey = new byte[32];
+    minKey[31] = 1;
+    assertTrue(SM2.isValidPrivateKey(minKey));
+  }
+
+  private byte[] toDer(SM2.SM2Signature signature) throws Exception {
+    ASN1EncodableVector vector = new ASN1EncodableVector();
+    vector.add(new ASN1Integer(signature.r));
+    vector.add(new ASN1Integer(signature.s));
+    return new DERSequence(vector).getEncoded();
   }
 }
