@@ -3,10 +3,12 @@ package org.tron.core.config.args;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.tron.common.crypto.SignInterface;
+import org.tron.common.crypto.SignUtils;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Commons;
 import org.tron.common.utils.LocalWitnesses;
@@ -78,14 +80,27 @@ public class WitnessInitializer {
     }
 
     List<String> privateKeys = new ArrayList<>();
+    byte[] privKeyBytes = null;
     try {
       Credentials credentials = WalletUtils.loadCredentials(pwd, new File(fileName));
       SignInterface sign = credentials.getSignInterface();
-      String prikey = ByteArray.toHexString(sign.getPrivateKey());
-      privateKeys.add(prikey);
+      privKeyBytes = sign.getPrivateKey();
+      if (privKeyBytes == null
+          || !SignUtils.isValidPrivateKey(privKeyBytes, Args.getInstance().isECKeyCryptoEngine())) {
+        throw new TronError(
+            "Keystore contains an invalid private key",
+            TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+      }
+      privateKeys.add(ByteArray.toHexString(privKeyBytes));
     } catch (IOException | CipherException e) {
       logger.error("Witness node start failed!");
       throw new TronError(e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+    } finally {
+      if (privKeyBytes != null) {
+        // Zeroize the raw key bytes. Note: the hex String already added to
+        // privateKeys is immutable and cannot be zeroed — a known JVM limitation.
+        Arrays.fill(privKeyBytes, (byte) 0);
+      }
     }
 
     LocalWitnesses witnesses = new LocalWitnesses();

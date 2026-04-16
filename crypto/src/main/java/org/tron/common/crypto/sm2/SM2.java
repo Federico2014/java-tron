@@ -254,6 +254,20 @@ public class SM2 implements Serializable, SignInterface {
     return fromPrivate(new BigInteger(1, privKeyBytes));
   }
 
+  public static boolean isValidPrivateKey(byte[] keyBytes) {
+    if (ByteArray.isEmpty(keyBytes)) {
+      return false;
+    }
+    // Accept a 33-byte array only when the leading byte is 0x00 (BigInteger sign-byte padding);
+    // reject anything longer or any non-canonical 33-byte encoding.
+    if (keyBytes.length > 33 || (keyBytes.length == 33 && keyBytes[0] != 0x00)) {
+      return false;
+    }
+
+    BigInteger key = new BigInteger(1, keyBytes);
+    return key.compareTo(BigInteger.ONE) >= 0 && key.compareTo(SM2_N) < 0;
+  }
+
   /**
    * Creates an SM2 that simply trusts the caller to ensure that point is really the result of
    * multiplying the generator point by the private key. This is used to speed things up when you

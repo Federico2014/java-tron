@@ -19,6 +19,7 @@ import org.bouncycastle.util.encoders.Hex;
 import org.junit.Test;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2Signer;
+import org.tron.common.utils.ByteUtil;
 import org.tron.core.Wallet;
 
 /**
@@ -280,5 +281,22 @@ public class SM2KeyTest {
 
     assertEquals("b524f552cd82b8b028476e005c377fb19a87e6fc682d48bb5d42e3d9b9effe76",
         Hex.toHexString(eHash));
+  }
+
+  @Test
+  public void testSM2IsValidPrivateKey() {
+    assertFalse(SM2.isValidPrivateKey(null));
+    assertFalse(SM2.isValidPrivateKey(new byte[0]));
+    assertFalse(SM2.isValidPrivateKey(new byte[32])); // all-zero = 0, below minimum
+    // SM2 curve order n — key must be strictly less than n
+    BigInteger sm2N = new BigInteger(
+        "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123", 16);
+    assertFalse(SM2.isValidPrivateKey(ByteUtil.bigIntegerToBytes(sm2N, 32)));
+    // oversized input (34 bytes)
+    assertFalse(SM2.isValidPrivateKey(new byte[34]));
+    // minimum valid value = 1
+    byte[] minKey = new byte[32];
+    minKey[31] = 1;
+    assertTrue(SM2.isValidPrivateKey(minKey));
   }
 }
