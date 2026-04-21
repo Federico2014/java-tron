@@ -49,6 +49,7 @@ import org.bouncycastle.jce.spec.ECPrivateKeySpec;
 import org.bouncycastle.math.ec.ECAlgorithms;
 import org.bouncycastle.math.ec.ECCurve;
 import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.util.BigIntegers;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.tron.common.crypto.jce.ECKeyFactory;
@@ -577,7 +578,10 @@ public class ECKey implements Serializable, SignInterface {
     // inverse of 3 modulo 11 is 8 because 3 + 8 mod 11 = 0, and -3 mod
     // 11 = 8.
     BigInteger eInv = BigInteger.ZERO.subtract(e).mod(n);
-    BigInteger rInv = sig.r.modInverse(n);
+     BigInteger rInv = sig.r.modInverse(n);
+    // BigInteger rInv = BigIntegers.modOddInverse(n, sig.r);
+    //  BigInteger rInv = BigIntegers.modOddInverseVar(n, sig.r);
+
     BigInteger srInv = rInv.multiply(sig.s).mod(n);
     BigInteger eInvrInv = rInv.multiply(eInv).mod(n);
     ECPoint.Fp q = (ECPoint.Fp) ECAlgorithms.sumOfTwoMultiplies(CURVE

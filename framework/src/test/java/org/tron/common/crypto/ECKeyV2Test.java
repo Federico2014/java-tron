@@ -8,6 +8,7 @@ import java.security.SecureRandom;
 import java.security.SignatureException;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
+import org.bouncycastle.util.encoders.Hex;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -367,4 +368,5 @@ public class ECKeyV2Test {
     logger.info("ECKeyV2 verify cost: " + nsPerIterationV2 + "ns per call");
     logger.info("ECKeyV1/ECKeyV2: " + nsPerIteration / nsPerIterationV2);
   }
+
 }

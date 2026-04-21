@@ -266,4 +266,90 @@ public class ECKeyTest {
 
     assertEquals(key, ECKey.fromNodeId(key.getNodeId()));
   }
+
+  /**
+   * Regression timing test for block #81993268 missed-block incident.
+   *
+   * <p>tx 73350db... contained a signature whose verification was pathologically slow on x86
+   * (reported >8 s), exceeding the 3-second block-production slot and causing a missed block.
+   * This test benchmarks the offending (r, s) pair so the cost is visible in CI logs.
+   */
+  @Test
+  public void testSignatureVerificationTimingBlock81993268() throws SignatureException {
+    byte[] txHash = Hex.decode(
+        "73350db08350056f128734ec26444ea549299256ea99e0aaab7f5ad60d0d552a");
+    byte[] r = Hex.decode(
+        "6f9ef9d226dc87bceb571c859614fa7dcdbe0be6e1dfea54fb99cb9970fa09af");
+    byte[] s = Hex.decode(
+        "91a945e3b0eb1eea559c89cc4bd16932bfabcf0e63a0e0848fbb7fa0db4dcfd6");
+
+    // v=0x00 on TronScan means recId 0 → header byte 27 (0x1B)
+    ECDSASignature sig = ECDSASignature.fromComponents(r, s, (byte) 27);
+    int iterations = 10;
+    long totalNs = 0;
+    long maxNs = 0;
+
+    for (int i = 0; i < iterations; i++) {
+      byte[] hash = new byte[32];
+      new java.util.Random().nextBytes(hash);
+      ECKey.signatureToAddress(hash, sig);
+    }
+
+    for (int i = 0; i < iterations; i++) {
+      long start = System.nanoTime();
+      try {
+        ECKey.signatureToAddress(txHash, sig);
+      } catch (SignatureException e) {
+        // ignored
+      }
+      long elapsed = System.nanoTime() - start;
+      totalNs += elapsed;
+      if (elapsed > maxNs) {
+        maxNs = elapsed;
+      }
+    }
+    long avgMs = totalNs / iterations / 1_000;
+    long maxMs = maxNs / 1_000;
+    logger.info("block81993268 sig recovery {}: avg={}us max={}us", iterations, avgMs, maxMs);
+    System.out.printf("block81993268 sig recovery x%d: avg=%dus max=%dus%n",
+        iterations, avgMs, maxMs);
+  }
+
+  @Test
+  public void testSignatureVerificationTimingRandom() throws SignatureException {
+    int iterations = 1000;
+    long maxMs = 0;
+    long totalMs = 0;
+
+    for (int i = 0; i < iterations; i++) {
+      ECKey key = new ECKey();
+      byte[] hash = new byte[32];
+      new java.util.Random().nextBytes(hash);
+      ECDSASignature sig = key.sign(hash);
+      ECKeyV2.signatureToAddress(hash, sig);
+    }
+
+    for (int i = 0; i < iterations; i++) {
+      ECKey key = new ECKey();
+      byte[] hash = new byte[32];
+      new java.util.Random().nextBytes(hash);
+      ECDSASignature sig = key.sign(hash);
+
+      long start = System.nanoTime();
+      ECKey.signatureToAddress(hash, sig);
+      long elapsedMs = (System.nanoTime() - start) / 1_000;
+
+      totalMs += elapsedMs;
+      if (elapsedMs > maxMs) {
+        maxMs = elapsedMs;
+      }
+//      assertTrue("Iteration " + i + " took " + elapsedMs + "us", elapsedMs < 1000);
+    }
+
+    logger.info("Random sig verification {}: avg={}us max={}us",
+        iterations, totalMs / iterations, maxMs);
+    System.out.printf("Random sig verification %d: avg=%dus max=%dus%n",
+        iterations, totalMs / iterations, maxMs);
+  }
+
 }
