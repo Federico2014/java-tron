@@ -44,7 +44,11 @@ import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
+import org.tron.common.crypto.pqc.PqAuthDigest;
+import org.tron.common.crypto.pqc.SignatureVerifier;
+import org.tron.common.crypto.pqc.SignatureVerifierRegistry;
 import org.tron.common.es.ExecutorServiceManager;
+import org.tron.common.math.StrictMathWrapper;
 import org.tron.common.overlay.message.Message;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
@@ -64,9 +68,11 @@ import org.tron.core.exception.TransactionExpirationException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.protos.Protocol.AuthWitness;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result;
@@ -484,6 +490,11 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       throw new PermissionException("permission isn't exit");
     }
     checkPermission(permissionId, permission, contract);
+    if (permission.getKeysCount() > 0
+        && permission.getKeysList().get(0).getScheme() != SignatureScheme.UNKNOWN_SIG_SCHEME) {
+      throw new PermissionException(
+          "permission uses PQ scheme, auth_witness is required");
+    }
     long weight = checkWeight(permission, transaction.getSignatureList(), hash, null);
     if (weight >= permission.getThreshold()) {
       return true;
@@ -637,12 +648,41 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       DynamicPropertiesStore dynamicPropertiesStore)
       throws ValidateSignatureException {
     if (!isVerified) {
-      if (this.transaction.getSignatureCount() <= 0
-              || this.transaction.getRawData().getContractCount() <= 0) {
+      int legacyCount = this.transaction.getSignatureCount();
+      int pqCount = this.transaction.getAuthWitnessCount();
+
+      if (pqCount > 0 && !dynamicPropertiesStore.allowMlDsa()) {
+        throw new ValidateSignatureException("auth_witness not allowed: ML-DSA not activated");
+      }
+      if (legacyCount > 0 && pqCount > 0) {
+        throw new ValidateSignatureException(
+            "signature and auth_witness are mutually exclusive");
+      }
+      if (legacyCount == 0 && pqCount == 0) {
         throw new ValidateSignatureException("miss sig or contract");
       }
-      if (this.transaction.getSignatureCount() > dynamicPropertiesStore
-              .getTotalSignNum()) {
+      if (this.transaction.getRawData().getContractCount() <= 0) {
+        throw new ValidateSignatureException("miss sig or contract");
+      }
+      if (pqCount > 0) {
+        if (pqCount > dynamicPropertiesStore.getTotalSignNum()) {
+          throw new ValidateSignatureException("too many signatures");
+        }
+        try {
+          if (!validateStructuredSignature(
+              this.transaction, accountStore, dynamicPropertiesStore)) {
+            isVerified = false;
+            throw new ValidateSignatureException("sig error");
+          }
+        } catch (PermissionException e) {
+          isVerified = false;
+          throw new ValidateSignatureException(e.getMessage());
+        }
+        isVerified = true;
+        return true;
+      }
+
+      if (legacyCount > dynamicPropertiesStore.getTotalSignNum()) {
         throw new ValidateSignatureException("too many signatures");
       }
 
@@ -660,6 +700,83 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       isVerified = true;
     }
     return true;
+  }
+
+  static boolean validateStructuredSignature(Transaction transaction,
+      AccountStore accountStore, DynamicPropertiesStore dynamicPropertiesStore)
+      throws PermissionException {
+    Transaction.Contract contract = transaction.getRawData().getContractList().get(0);
+    int permissionId = contract.getPermissionId();
+    byte[] owner = getOwner(contract);
+    AccountCapsule account = accountStore.get(owner);
+    Permission permission = null;
+    if (account == null) {
+      if (permissionId == 0) {
+        permission = AccountCapsule.getDefaultPermission(ByteString.copyFrom(owner));
+      }
+      if (permissionId == 2) {
+        permission = AccountCapsule
+            .createDefaultActivePermission(ByteString.copyFrom(owner), dynamicPropertiesStore);
+      }
+    } else {
+      permission = account.getPermissionById(permissionId);
+    }
+    if (permission == null) {
+      throw new PermissionException("permission isn't exit");
+    }
+    checkPermission(permissionId, permission, contract);
+
+    if (permission.getKeysCount() == 0
+        || permission.getKeysList().get(0).getScheme() == SignatureScheme.UNKNOWN_SIG_SCHEME) {
+      throw new PermissionException(
+          "permission uses legacy scheme, auth_witness is not allowed");
+    }
+
+    byte[] txid = computeRawHash(transaction).getBytes();
+    List<AuthWitness> witnesses = transaction.getAuthWitnessList();
+    java.util.Set<ByteString> seen = new java.util.HashSet<>();
+    long weight = 0L;
+    for (AuthWitness aw : witnesses) {
+      ByteString signer = aw.getSignerAddress();
+      if (!seen.add(signer)) {
+        throw new PermissionException("duplicate signer in auth_witness");
+      }
+      Key key = findKeyByAddress(permission, signer);
+      if (key == null) {
+        throw new PermissionException("signer is not in permission");
+      }
+      SignatureScheme scheme = key.getScheme();
+      if (!SignatureVerifierRegistry.contains(scheme)) {
+        throw new PermissionException("unsupported scheme: " + scheme);
+      }
+      SignatureVerifier verifier = SignatureVerifierRegistry.get(scheme);
+      byte[] digest = PqAuthDigest.tx(txid, permissionId, signer.toByteArray());
+      byte[] pk = key.getPublicKey().toByteArray();
+      byte[] sig = aw.getSignature().toByteArray();
+      if (pk.length != verifier.getPublicKeyLength()
+          || sig.length != verifier.getSignatureLength()) {
+        throw new PermissionException("public key or signature length mismatch");
+      }
+      if (!verifier.verify(pk, digest, sig)) {
+        throw new PermissionException("pq sig invalid");
+      }
+      weight = StrictMathWrapper.addExact(weight, key.getWeight());
+    }
+    return weight >= permission.getThreshold();
+  }
+
+  private static Sha256Hash computeRawHash(Transaction transaction) {
+    return Sha256Hash.of(CommonParameter.getInstance().isECKeyCryptoEngine(),
+        transaction.getRawData().toByteArray());
+  }
+
+  private static Key findKeyByAddress(Permission permission, ByteString address) {
+    for (Key k : permission.getKeysList()) {
+      if (k.getAddress().equals(address)) {
+        return k;
+      }
+    }
+    return null;
   }
 
   /**

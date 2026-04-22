@@ -240,6 +240,8 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
 
   private static final byte[] ALLOW_TVM_OSAKA = "ALLOW_TVM_OSAKA".getBytes();
 
+  private static final byte[] ALLOW_ML_DSA = "ALLOW_ML_DSA".getBytes();
+
   @Autowired
   private DynamicPropertiesStore(@Value("properties") String dbName) {
     super(dbName);
@@ -2991,6 +2993,21 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
 
   public void saveAllowTvmOsaka(long value) {
     this.put(ALLOW_TVM_OSAKA, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public long getAllowMlDsa() {
+    return Optional.ofNullable(getUnchecked(ALLOW_ML_DSA))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance().getAllowMlDsa());
+  }
+
+  public void saveAllowMlDsa(long value) {
+    this.put(ALLOW_ML_DSA, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public boolean allowMlDsa() {
+    return getAllowMlDsa() == 1L;
   }
 
   private static class DynamicResourceProperties {

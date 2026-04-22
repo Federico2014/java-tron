@@ -881,4 +881,122 @@ public class BandwidthProcessorTest extends BaseTest {
             .calculateGlobalNetLimitV2(accountCapsule.getAllFrozenBalanceForBandwidth());
     Assert.assertTrue(netLimitV2 > 0);
   }
+
+  @Test
+  public void pqAuthWitnessBytesSubtractedInCreateAccountCap() throws Exception {
+    chainBaseManager.getDynamicPropertiesStore().saveLatestBlockHeaderTimestamp(1526647838000L);
+    chainBaseManager.getDynamicPropertiesStore().saveTotalNetWeight(10_000_000L);
+
+    AccountCapsule ownerCapsule = new AccountCapsule(
+        ByteString.copyFromUtf8("owner"),
+        ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS)),
+        AccountType.Normal,
+        chainBaseManager.getDynamicPropertiesStore().getAssetIssueFee());
+    ownerCapsule.setBalance(10_000_000L);
+    long expireTime = DateTime.now().getMillis() + 6 * 86_400_000;
+    ownerCapsule.setFrozenForBandwidth(2_000_000L, expireTime);
+    chainBaseManager.getAccountStore().put(ownerCapsule.getAddress().toByteArray(), ownerCapsule);
+
+    chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(TO_ADDRESS));
+
+    TransferContract contract = TransferContract.newBuilder()
+        .setOwnerAddress(ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS)))
+        .setToAddress(ByteString.copyFrom(ByteArray.fromHexString(TO_ADDRESS)))
+        .setAmount(100L)
+        .build();
+
+    byte[] signerAddr = ByteArray.fromHexString(OWNER_ADDRESS);
+    byte[] fakeSig = new byte[3309];
+    Protocol.AuthWitness authWitness = Protocol.AuthWitness.newBuilder()
+        .setSignerAddress(ByteString.copyFrom(signerAddr))
+        .setSignature(ByteString.copyFrom(fakeSig))
+        .build();
+
+    TransactionCapsule baseTrx = new TransactionCapsule(contract,
+        chainBaseManager.getAccountStore());
+    Transaction withAuth = baseTrx.getInstance().toBuilder()
+        .addAuthWitness(authWitness)
+        .build();
+    TransactionCapsule trx = new TransactionCapsule(withAuth);
+    TransactionTrace trace = new TransactionTrace(trx, StoreFactory.getInstance(),
+        new RuntimeImpl());
+
+    long cap = chainBaseManager.getDynamicPropertiesStore().getMaxCreateAccountTxSize();
+    long rawSize = trx.getInstance().toBuilder().clearRet().build().getSerializedSize();
+    Assert.assertTrue("test precondition: raw tx must exceed cap with auth_witness",
+        rawSize > cap);
+
+    BandwidthProcessor processor = new BandwidthProcessor(chainBaseManager);
+    try {
+      processor.consume(trx, trace);
+    } catch (TooBigTransactionException e) {
+      Assert.fail("PQ auth_witness bytes should be deducted from create-account cap check");
+    } catch (AccountResourceInsufficientException
+        | ContractValidateException
+        | TooBigTransactionResultException e) {
+      // acceptable: other code paths — we only care about the cap check
+    } finally {
+      chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(OWNER_ADDRESS));
+      chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(TO_ADDRESS));
+    }
+  }
+
+  @Test
+  public void pqAuthWitnessCountedInBandwidthUsage() throws Exception {
+    chainBaseManager.getDynamicPropertiesStore().saveLatestBlockHeaderTimestamp(1526647838000L);
+    chainBaseManager.getDynamicPropertiesStore().saveTotalNetWeight(10_000_000L);
+
+    AccountCapsule ownerCapsule = new AccountCapsule(
+        ByteString.copyFromUtf8("owner"),
+        ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS)),
+        AccountType.Normal,
+        chainBaseManager.getDynamicPropertiesStore().getAssetIssueFee());
+    ownerCapsule.setBalance(10_000_000L);
+    long expireTime = DateTime.now().getMillis() + 6 * 86_400_000;
+    ownerCapsule.setFrozenForBandwidth(2_000_000L, expireTime);
+    chainBaseManager.getAccountStore().put(ownerCapsule.getAddress().toByteArray(), ownerCapsule);
+
+    AccountCapsule toAddressCapsule = new AccountCapsule(
+        ByteString.copyFromUtf8("to"),
+        ByteString.copyFrom(ByteArray.fromHexString(TO_ADDRESS)),
+        AccountType.Normal,
+        0L);
+    chainBaseManager.getAccountStore().put(toAddressCapsule.getAddress().toByteArray(),
+        toAddressCapsule);
+
+    TransferContract contract = TransferContract.newBuilder()
+        .setOwnerAddress(ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS)))
+        .setToAddress(ByteString.copyFrom(ByteArray.fromHexString(TO_ADDRESS)))
+        .setAmount(100L)
+        .build();
+
+    byte[] signerAddr = ByteArray.fromHexString(OWNER_ADDRESS);
+    byte[] fakeSig = new byte[3309];
+    Protocol.AuthWitness authWitness = Protocol.AuthWitness.newBuilder()
+        .setSignerAddress(ByteString.copyFrom(signerAddr))
+        .setSignature(ByteString.copyFrom(fakeSig))
+        .build();
+
+    TransactionCapsule baseTrx = new TransactionCapsule(contract,
+        chainBaseManager.getAccountStore());
+    Transaction withAuth = baseTrx.getInstance().toBuilder()
+        .addAuthWitness(authWitness)
+        .build();
+    TransactionCapsule trx = new TransactionCapsule(withAuth);
+    TransactionTrace trace = new TransactionTrace(trx, StoreFactory.getInstance(),
+        new RuntimeImpl());
+
+    long expectedBytes = trx.getInstance().toBuilder().clearRet().build().getSerializedSize()
+        + (chainBaseManager.getDynamicPropertiesStore().supportVM()
+            ? Constant.MAX_RESULT_SIZE_IN_TX : 0);
+
+    BandwidthProcessor processor = new BandwidthProcessor(chainBaseManager);
+    try {
+      processor.consume(trx, trace);
+      Assert.assertEquals(expectedBytes, trace.getReceipt().getNetUsage());
+    } finally {
+      chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(OWNER_ADDRESS));
+      chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(TO_ADDRESS));
+    }
+  }
 }

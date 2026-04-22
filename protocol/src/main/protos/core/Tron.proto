@@ -17,6 +17,20 @@ enum AccountType {
   Contract = 2;
 }
 
+// Signature scheme identifier used by Permission.Key and AuthWitness.
+// UNKNOWN_SIG_SCHEME (0) denotes legacy keys authenticated via the existing
+// Transaction.signature / BlockHeader.witness_signature paths (ECDSA secp256k1
+// on mainnet, SM2/SM3 where applicable). Post-quantum schemes use dedicated
+// auth_witness / witness_auth fields.
+enum SignatureScheme {
+  UNKNOWN_SIG_SCHEME = 0;
+  ECDSA_SECP256K1 = 1;
+  SM2_SM3 = 2;
+  ML_DSA_44 = 3;
+  ML_DSA_65 = 4;
+  reserved 5 to 15;
+}
+
 // AccountId, (name, address) use name, (null, address) use address, (name, null) use name,
 message AccountId {
   bytes name = 1;
@@ -243,6 +257,21 @@ message Account {
 message Key {
   bytes address = 1;
   int64 weight = 2;
+  // Signature scheme for this key. UNKNOWN_SIG_SCHEME = legacy; otherwise a
+  // post-quantum algorithm identifier requiring public_key to be populated.
+  SignatureScheme scheme = 3;
+  // Raw public key bytes. Empty for legacy keys. For ML-DSA-44 = 1312 bytes;
+  // for ML-DSA-65 = 1952 bytes. No SubjectPublicKeyInfo / PEM / Base64.
+  bytes public_key = 4;
+}
+
+// Per-signer post-quantum authentication witness for a transaction or block.
+// signer_address SHALL match a Permission.Key.address entry; signature SHALL
+// verify against that key's scheme + public_key over the domain-separated
+// digest defined in the PQ authentication spec.
+message AuthWitness {
+  bytes signer_address = 1;
+  bytes signature = 2;
 }
 
 message DelegatedResource {
@@ -449,6 +478,11 @@ message Transaction {
   // only support size = 1,  repeated list here for muti-sig extension
   repeated bytes signature = 2;
   repeated Result ret = 5;
+  // Post-quantum authentication witnesses. Mutually exclusive with signature:
+  // a transaction against a PQ Permission MUST use auth_witness and empty
+  // signature; a transaction against a legacy Permission MUST use signature
+  // and empty auth_witness.
+  repeated AuthWitness auth_witness = 6;
 }
 
 message TransactionInfo {
@@ -515,6 +549,11 @@ message BlockHeader {
   }
   raw raw_data = 1;
   bytes witness_signature = 2;
+  // Post-quantum witness authentication. When the producing SR has a
+  // Witness Permission with scheme = ML_DSA_65, witness_auth SHALL be
+  // present in addition to witness_signature (Dual-Sign). Otherwise this
+  // field SHALL be empty.
+  AuthWitness witness_auth = 3;
 }
 
 // block

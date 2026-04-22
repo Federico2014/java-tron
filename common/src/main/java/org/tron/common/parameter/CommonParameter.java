@@ -637,6 +637,10 @@ public class CommonParameter {
   @Setter
   public long allowTvmOsaka;
 
+  @Getter
+  @Setter
+  public long allowMlDsa;
+
   private static double calcMaxTimeRatio() {
     return 5.0;
   }

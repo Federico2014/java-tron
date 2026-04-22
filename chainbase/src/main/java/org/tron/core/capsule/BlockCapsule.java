@@ -31,6 +31,9 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
+import org.tron.common.crypto.pqc.PqAuthDigest;
+import org.tron.common.crypto.pqc.SignatureVerifier;
+import org.tron.common.crypto.pqc.SignatureVerifierRegistry;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
@@ -41,8 +44,12 @@ import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.protos.Protocol.AuthWitness;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.BlockHeader;
+import org.tron.protos.Protocol.Key;
+import org.tron.protos.Protocol.Permission;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
 
 @Slf4j(topic = "capsule")
@@ -173,6 +180,16 @@ public class BlockCapsule implements ProtoCapsule<Block> {
 
   }
 
+  public void setWitnessAuth(AuthWitness authWitness) {
+    BlockHeader blockHeader = this.block.getBlockHeader().toBuilder()
+        .setWitnessAuth(authWitness).build();
+    this.block = this.block.toBuilder().setBlockHeader(blockHeader).build();
+  }
+
+  public byte[] getRawHashBytes() {
+    return getRawHash().getBytes();
+  }
+
   private Sha256Hash getRawHash() {
     return Sha256Hash.of(CommonParameter.getInstance().isECKeyCryptoEngine(),
         this.block.getBlockHeader().getRawData().toByteArray());
@@ -180,25 +197,99 @@ public class BlockCapsule implements ProtoCapsule<Block> {
 
   public boolean validateSignature(DynamicPropertiesStore dynamicPropertiesStore,
       AccountStore accountStore) throws ValidateSignatureException {
+    BlockHeader header = block.getBlockHeader();
+    boolean hasLegacy = !header.getWitnessSignature().isEmpty();
+    AuthWitness witnessAuth = header.getWitnessAuth();
+    boolean hasAuth = witnessAuth != null
+        && witnessAuth.getSignature() != null
+        && !witnessAuth.getSignature().isEmpty();
+
+    if (hasLegacy && hasAuth) {
+      throw new ValidateSignatureException(
+          "witness_signature and witness_auth are mutually exclusive");
+    }
+    if (!hasLegacy && !hasAuth) {
+      throw new ValidateSignatureException("missing witness signature");
+    }
+
+    byte[] witnessAccountAddress = header.getRawData().getWitnessAddress().toByteArray();
+    if (hasAuth) {
+      return validateWitnessAuth(dynamicPropertiesStore, accountStore,
+          witnessAccountAddress, witnessAuth);
+    }
+    return validateLegacySignature(dynamicPropertiesStore, accountStore, witnessAccountAddress);
+  }
+
+  private boolean validateLegacySignature(DynamicPropertiesStore dynamicPropertiesStore,
+      AccountStore accountStore, byte[] witnessAccountAddress)
+      throws ValidateSignatureException {
+    if (dynamicPropertiesStore.allowMlDsa()) {
+      AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
+      if (accountCapsule != null && accountCapsule.getInstance().hasWitnessPermission()) {
+        Permission witnessPermission = accountCapsule.getInstance().getWitnessPermission();
+        if (witnessPermission.getKeysCount() > 0
+            && witnessPermission.getKeys(0).getScheme() == SignatureScheme.ML_DSA_65) {
+          throw new ValidateSignatureException(
+              "witness permission requires ML_DSA_65 but witness_signature is legacy");
+        }
+      }
+    }
     try {
       byte[] sigAddress = SignUtils.signatureToAddress(getRawHash().getBytes(),
           TransactionCapsule.getBase64FromByteString(
               block.getBlockHeader().getWitnessSignature()),
           CommonParameter.getInstance().isECKeyCryptoEngine());
-      byte[] witnessAccountAddress = block.getBlockHeader().getRawData().getWitnessAddress()
-          .toByteArray();
-
       if (dynamicPropertiesStore.getAllowMultiSign() != 1) {
         return Arrays.equals(sigAddress, witnessAccountAddress);
-      } else {
-        byte[] witnessPermissionAddress = accountStore.get(witnessAccountAddress)
-            .getWitnessPermissionAddress();
-        return Arrays.equals(sigAddress, witnessPermissionAddress);
       }
-
+      byte[] witnessPermissionAddress = accountStore.get(witnessAccountAddress)
+          .getWitnessPermissionAddress();
+      return Arrays.equals(sigAddress, witnessPermissionAddress);
     } catch (SignatureException e) {
       throw new ValidateSignatureException(e.getMessage());
     }
+  }
+
+  private boolean validateWitnessAuth(DynamicPropertiesStore dynamicPropertiesStore,
+      AccountStore accountStore, byte[] witnessAccountAddress, AuthWitness witnessAuth)
+      throws ValidateSignatureException {
+    if (!dynamicPropertiesStore.allowMlDsa()) {
+      throw new ValidateSignatureException(
+          "witness_auth present but ML-DSA is not activated");
+    }
+    AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
+    Permission witnessPermission = null;
+    if (accountCapsule != null && accountCapsule.getInstance().hasWitnessPermission()) {
+      witnessPermission = accountCapsule.getInstance().getWitnessPermission();
+    }
+    if (witnessPermission == null || witnessPermission.getKeysCount() == 0) {
+      throw new ValidateSignatureException(
+          "witness_auth present but witness permission is not configured");
+    }
+    SignatureScheme scheme = witnessPermission.getKeys(0).getScheme();
+    if (scheme != SignatureScheme.ML_DSA_65) {
+      throw new ValidateSignatureException(
+          "witness permission scheme " + scheme + " is not allowed for block signing");
+    }
+
+    byte[] signerAddr = witnessAuth.getSignerAddress().toByteArray();
+    Key matched = null;
+    for (Key k : witnessPermission.getKeysList()) {
+      if (Arrays.equals(k.getAddress().toByteArray(), signerAddr)) {
+        matched = k;
+        break;
+      }
+    }
+    if (matched == null) {
+      throw new ValidateSignatureException(
+          "witness_auth signer not found in witness permission");
+    }
+    SignatureVerifier verifier = SignatureVerifierRegistry.get(scheme);
+    byte[] publicKey = matched.getPublicKey().toByteArray();
+    byte[] signature = witnessAuth.getSignature().toByteArray();
+    byte[] rawHdrHash = getRawHash().getBytes();
+    byte[] digest = PqAuthDigest.block(rawHdrHash, signerAddr);
+    return verifier.verify(publicKey, digest, signature);
   }
 
   public BlockId getBlockId() {
@@ -308,7 +399,12 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   }
 
   public boolean hasWitnessSignature() {
-    return !getInstance().getBlockHeader().getWitnessSignature().isEmpty();
+    BlockHeader header = getInstance().getBlockHeader();
+    if (!header.getWitnessSignature().isEmpty()) {
+      return true;
+    }
+    AuthWitness auth = header.getWitnessAuth();
+    return auth != null && !auth.getSignature().isEmpty();
   }
 
   @Override

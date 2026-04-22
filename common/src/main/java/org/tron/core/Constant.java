@@ -60,6 +60,14 @@ public class Constant {
   // Crypto engine
   public static final String ECKey_ENGINE = "ECKey";
 
+  // Post-quantum (ML-DSA / FIPS 204) signature constants
+  public static final int ML_DSA_44_PUBLIC_KEY_LENGTH = 1312;
+  public static final int ML_DSA_44_SIGNATURE_LENGTH = 2420;
+  public static final int ML_DSA_65_PUBLIC_KEY_LENGTH = 1952;
+  public static final int ML_DSA_65_SIGNATURE_LENGTH = 3309;
+  public static final String PQ_TX_AUTH_DOMAIN = "TRON_TX_AUTH_V1";
+  public static final String PQ_BLOCK_AUTH_DOMAIN = "TRON_BLOCK_AUTH_V1";
+
   // Network
   public static final String LOCAL_HOST = "127.0.0.1";
 

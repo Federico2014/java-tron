@@ -16,9 +16,12 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.common.crypto.pqc.MLDSA44Verifier;
+import org.tron.common.crypto.pqc.MLDSA65Verifier;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result.code;
 import org.tron.protos.contract.AccountContract.AccountPermissionUpdateContract;
@@ -102,6 +105,23 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
       throw new ContractValidateException(
           "address should be distinct in permission " + permission.getType());
     }
+    validatePermissionScheme(permission);
+
+    List<ByteString> publicKeyList = permission.getKeysList()
+        .stream()
+        .map(Key::getPublicKey)
+        .filter(pk -> !pk.isEmpty())
+        .distinct()
+        .collect(toList());
+    long nonEmptyPublicKeyCount = permission.getKeysList().stream()
+        .map(Key::getPublicKey)
+        .filter(pk -> !pk.isEmpty())
+        .count();
+    if (publicKeyList.size() != nonEmptyPublicKeyCount) {
+      throw new ContractValidateException(
+          "public_key should be distinct in permission " + permission.getType());
+    }
+
     for (Key key : permission.getKeysList()) {
       if (!DecodeUtil.addressValid(key.getAddress().toByteArray())) {
         throw new ContractValidateException("key is not a validate address");
@@ -236,5 +256,58 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
   @Override
   public long calcFee() {
     return chainBaseManager.getDynamicPropertiesStore().getUpdateAccountPermissionFee();
+  }
+
+  private void validatePermissionScheme(Permission permission) throws ContractValidateException {
+    DynamicPropertiesStore dynamicStore = chainBaseManager.getDynamicPropertiesStore();
+    boolean mlDsaAllowed = dynamicStore.allowMlDsa();
+
+    SignatureScheme first = permission.getKeysList().get(0).getScheme();
+    for (Key key : permission.getKeysList()) {
+      SignatureScheme scheme = key.getScheme();
+      if (scheme != first) {
+        throw new ContractValidateException(
+            "all keys in a permission must use the same scheme");
+      }
+      if (scheme == SignatureScheme.UNKNOWN_SIG_SCHEME) {
+        if (!key.getPublicKey().isEmpty()) {
+          throw new ContractValidateException(
+              "public_key must be empty when scheme is UNKNOWN_SIG_SCHEME");
+        }
+      } else {
+        if (!mlDsaAllowed) {
+          throw new ContractValidateException(
+              "ML-DSA is not activated, scheme " + scheme + " is not allowed");
+        }
+        int expected = expectedPublicKeyLength(scheme);
+        if (expected < 0) {
+          throw new ContractValidateException(
+              "unsupported signature scheme: " + scheme);
+        }
+        if (key.getPublicKey().size() != expected) {
+          throw new ContractValidateException(
+              "public_key length for " + scheme + " must be " + expected + " bytes, got "
+                  + key.getPublicKey().size());
+        }
+      }
+    }
+
+    if (permission.getType() == PermissionType.Witness
+        && first != SignatureScheme.UNKNOWN_SIG_SCHEME
+        && first != SignatureScheme.ML_DSA_65) {
+      throw new ContractValidateException(
+          "Witness permission only supports ML_DSA_65 or legacy scheme, got " + first);
+    }
+  }
+
+  private static int expectedPublicKeyLength(SignatureScheme scheme) {
+    switch (scheme) {
+      case ML_DSA_44:
+        return MLDSA44Verifier.PUBLIC_KEY_LENGTH;
+      case ML_DSA_65:
+        return MLDSA65Verifier.PUBLIC_KEY_LENGTH;
+      default:
+        return -1;
+    }
   }
 }

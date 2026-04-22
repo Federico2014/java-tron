@@ -140,8 +140,17 @@ public class BandwidthProcessor extends ResourceProcessor {
         if (optimizeTxs) {
           long maxCreateAccountTxSize = dynamicPropertiesStore.getMaxCreateAccountTxSize();
           int signatureCount = trx.getInstance().getSignatureCount();
+          long sigOverhead = signatureCount * PER_SIGN_LENGTH;
+          if (trx.getInstance().getAuthWitnessCount() > 0) {
+            long authWitnessBytes = 0L;
+            for (org.tron.protos.Protocol.AuthWitness aw
+                : trx.getInstance().getAuthWitnessList()) {
+              authWitnessBytes += aw.getSerializedSize();
+            }
+            sigOverhead = authWitnessBytes;
+          }
           long createAccountBytesSize = trx.getInstance().toBuilder().clearRet()
-              .build().getSerializedSize() - (signatureCount * PER_SIGN_LENGTH);
+              .build().getSerializedSize() - sigOverhead;
           if (createAccountBytesSize > maxCreateAccountTxSize) {
             throw new TooBigTransactionException(String.format(
                 "Too big new account transaction, TxId %s, the size is %d bytes, maxTxSize %d",

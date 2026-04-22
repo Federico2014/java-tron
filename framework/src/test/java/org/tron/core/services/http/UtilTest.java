@@ -15,6 +15,7 @@ import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.protos.Protocol;
+import org.tron.protos.Protocol.AuthWitness;
 import org.tron.protos.Protocol.Transaction;
 
 public class UtilTest extends BaseTest {
@@ -165,5 +166,36 @@ public class UtilTest extends BaseTest {
     Transaction transaction = Util.packTransaction(strTransaction, false);
     TransactionSignWeight txSignWeight = transactionUtil.getTransactionSignWeight(transaction);
     Assert.assertNotNull(txSignWeight);
+  }
+
+  @Test
+  public void roundtripAuthWitnessJson() throws Exception {
+    byte[] signer = ByteArray.fromHexString(OWNER_ADDRESS);
+    byte[] sig = new byte[3309];
+    for (int i = 0; i < sig.length; i++) {
+      sig[i] = (byte) (i & 0xff);
+    }
+    AuthWitness authWitness = AuthWitness.newBuilder()
+        .setSignerAddress(ByteString.copyFrom(signer))
+        .setSignature(ByteString.copyFrom(sig))
+        .build();
+    Transaction original = Transaction.newBuilder()
+        .setRawData(Transaction.raw.newBuilder().setTimestamp(1L).build())
+        .addAuthWitness(authWitness)
+        .build();
+
+    String json = Util.printTransactionToJSON(original, false).toJSONString();
+    Assert.assertTrue("JSON output should contain auth_witness field",
+        json.contains("auth_witness"));
+
+    Transaction.Builder rebuilt = Transaction.newBuilder();
+    JsonFormat.merge(json, rebuilt, false);
+    Transaction decoded = rebuilt.build();
+
+    Assert.assertEquals(1, decoded.getAuthWitnessCount());
+    Assert.assertEquals(authWitness.getSignerAddress(),
+        decoded.getAuthWitness(0).getSignerAddress());
+    Assert.assertEquals(authWitness.getSignature(),
+        decoded.getAuthWitness(0).getSignature());
   }
 }

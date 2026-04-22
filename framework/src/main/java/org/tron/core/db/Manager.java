@@ -54,6 +54,8 @@ import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
+import org.tron.common.crypto.pqc.MLDSA65Signer;
+import org.tron.common.crypto.pqc.PqAuthDigest;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.logsfilter.EventPluginLoader;
@@ -168,7 +170,9 @@ import org.tron.core.store.WitnessStore;
 import org.tron.core.utils.TransactionRegister;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
+import org.tron.protos.Protocol.AuthWitness;
 import org.tron.protos.Protocol.Permission;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract;
 import org.tron.protos.Protocol.TransactionInfo;
@@ -1738,7 +1742,7 @@ public class Manager {
     session.reset();
 
     blockCapsule.setMerkleRoot();
-    blockCapsule.sign(miner.getPrivateKey());
+    signBlockCapsule(blockCapsule, miner);
 
     BlockCapsule capsule = new BlockCapsule(blockCapsule.getInstance());
     capsule.generatedByMyself = true;
@@ -1752,6 +1756,50 @@ public class Manager {
         capsule.getSerializedSize());
 
     return capsule;
+  }
+
+  private void signBlockCapsule(BlockCapsule blockCapsule, Miner miner) {
+    SignatureScheme scheme = resolveWitnessScheme(miner);
+    if (scheme == SignatureScheme.ML_DSA_65) {
+      signWitnessAuth(blockCapsule, miner);
+    } else {
+      blockCapsule.sign(miner.getPrivateKey());
+    }
+  }
+
+  private SignatureScheme resolveWitnessScheme(Miner miner) {
+    if (!chainBaseManager.getDynamicPropertiesStore().allowMlDsa()) {
+      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+    }
+    byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
+    AccountCapsule accountCapsule = chainBaseManager.getAccountStore().get(witnessAddress);
+    if (accountCapsule == null || !accountCapsule.getInstance().hasWitnessPermission()) {
+      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+    }
+    Permission witnessPermission = accountCapsule.getInstance().getWitnessPermission();
+    if (witnessPermission.getKeysCount() == 0) {
+      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+    }
+    return witnessPermission.getKeys(0).getScheme();
+  }
+
+  private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner) {
+    byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
+    Permission witnessPermission = chainBaseManager.getAccountStore().get(witnessAddress)
+        .getInstance().getWitnessPermission();
+    byte[] pqPrivateKey = miner.getPqPrivateKey();
+    if (pqPrivateKey == null) {
+      throw new IllegalStateException(
+          "witness permission requires ML_DSA_65 but local PQ private key is not configured");
+    }
+    byte[] signerAddress = witnessPermission.getKeys(0).getAddress().toByteArray();
+    byte[] digest = PqAuthDigest.block(blockCapsule.getRawHashBytes(), signerAddress);
+    byte[] signature = MLDSA65Signer.sign(pqPrivateKey, digest);
+    AuthWitness witnessAuth = AuthWitness.newBuilder()
+        .setSignerAddress(ByteString.copyFrom(signerAddress))
+        .setSignature(ByteString.copyFrom(signature))
+        .build();
+    blockCapsule.setWitnessAuth(witnessAuth);
   }
 
   private void filterOwnerAddress(TransactionCapsule transactionCapsule, Set<String> result) {

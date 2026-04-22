@@ -67,6 +67,14 @@ public class Param {
     @Setter
     private ByteString witnessAddress;
 
+    @Getter
+    @Setter
+    private byte[] pqPrivateKey;
+
+    @Getter
+    @Setter
+    private byte[] pqPublicKey;
+
     public Miner(byte[] privateKey, ByteString privateKeyAddress, ByteString witnessAddress) {
       this.privateKey = privateKey;
       this.privateKeyAddress = privateKeyAddress;

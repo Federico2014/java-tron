@@ -396,6 +396,10 @@ public class ProposalService extends ProposalUtil {
           manager.getDynamicPropertiesStore().saveAllowTvmOsaka(entry.getValue());
           break;
         }
+        case ALLOW_ML_DSA: {
+          manager.getDynamicPropertiesStore().saveAllowMlDsa(entry.getValue());
+          break;
+        }
         default:
           find = false;
           break;
