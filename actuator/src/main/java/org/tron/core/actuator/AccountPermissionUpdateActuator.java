@@ -16,8 +16,8 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.common.crypto.pqc.MLDSA44Verifier;
-import org.tron.common.crypto.pqc.MLDSA65Verifier;
+import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -303,9 +303,9 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
   private static int expectedPublicKeyLength(SignatureScheme scheme) {
     switch (scheme) {
       case ML_DSA_44:
-        return MLDSA44Verifier.PUBLIC_KEY_LENGTH;
+        return MLDSA44.PUBLIC_KEY_LENGTH;
       case ML_DSA_65:
-        return MLDSA65Verifier.PUBLIC_KEY_LENGTH;
+        return MLDSA65.PUBLIC_KEY_LENGTH;
       default:
         return -1;
     }

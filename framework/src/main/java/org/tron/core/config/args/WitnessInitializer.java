@@ -97,6 +97,45 @@ public class WitnessInitializer {
     return witnesses;
   }
 
+  /**
+   * Init for PQ-only witness nodes (no legacy ECDSA key). The witness account
+   * address must be supplied explicitly because there is no ECDSA key to derive it from.
+   */
+  public static LocalWitnesses initFromPqOnly(String witnessAccountAddress) {
+    if (StringUtils.isBlank(witnessAccountAddress)) {
+      throw new TronError(
+          "localWitnessAccountAddress must be set for PQ-only witness nodes",
+          TronError.ErrCode.WITNESS_INIT);
+    }
+    byte[] address = Commons.decodeFromBase58Check(witnessAccountAddress);
+    if (address == null) {
+      throw new TronError(
+          "LocalWitnessAccountAddress format is incorrect",
+          TronError.ErrCode.WITNESS_INIT);
+    }
+    LocalWitnesses witnesses = new LocalWitnesses();
+    witnesses.initWitnessAccountAddress(address, false);
+    logger.debug("Initialised PQ-only witness with address {}", witnessAccountAddress);
+    return witnesses;
+  }
+
+  /**
+   * Resolve witness address for PQ seed configuration.
+   */
+  public static byte[] resolvePqWitnessAddress(String witnessAccountAddress) {
+    if (StringUtils.isEmpty(witnessAccountAddress)) {
+      return null;
+    }
+    byte[] address = Commons.decodeFromBase58Check(witnessAccountAddress);
+    if (address != null) {
+      logger.debug("Got localWitnessAccountAddress from config.conf");
+    } else {
+      throw new TronError("LocalWitnessAccountAddress format from config is incorrect",
+          TronError.ErrCode.WITNESS_INIT);
+    }
+    return address;
+  }
+
   static byte[] resolveWitnessAddress(
       LocalWitnesses witnesses, String witnessAccountAddress) {
     if (StringUtils.isEmpty(witnessAccountAddress)) {

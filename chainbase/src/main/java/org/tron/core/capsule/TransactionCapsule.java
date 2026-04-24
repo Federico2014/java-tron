@@ -45,8 +45,7 @@ import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.pqc.PqAuthDigest;
-import org.tron.common.crypto.pqc.SignatureVerifier;
-import org.tron.common.crypto.pqc.SignatureVerifierRegistry;
+import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.math.StrictMathWrapper;
 import org.tron.common.overlay.message.Message;
@@ -746,18 +745,17 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
         throw new PermissionException("signer is not in permission");
       }
       SignatureScheme scheme = key.getScheme();
-      if (!SignatureVerifierRegistry.contains(scheme)) {
+      if (!PqSignatureRegistry.contains(scheme)) {
         throw new PermissionException("unsupported scheme: " + scheme);
       }
-      SignatureVerifier verifier = SignatureVerifierRegistry.get(scheme);
       byte[] digest = PqAuthDigest.tx(txid, permissionId, signer.toByteArray());
       byte[] pk = key.getPublicKey().toByteArray();
       byte[] sig = aw.getSignature().toByteArray();
-      if (pk.length != verifier.getPublicKeyLength()
-          || sig.length != verifier.getSignatureLength()) {
+      if (pk.length != PqSignatureRegistry.getPublicKeyLength(scheme)
+          || sig.length != PqSignatureRegistry.getSignatureLength(scheme)) {
         throw new PermissionException("public key or signature length mismatch");
       }
-      if (!verifier.verify(pk, digest, sig)) {
+      if (!PqSignatureRegistry.verify(scheme, pk, digest, sig)) {
         throw new PermissionException("pq sig invalid");
       }
       weight = StrictMathWrapper.addExact(weight, key.getWeight());

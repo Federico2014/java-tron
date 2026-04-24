@@ -1,15 +1,8 @@
 package org.tron.core.capsule;
 
 import com.google.protobuf.ByteString;
-import java.security.SecureRandom;
-import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAKeyGenerationParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAKeyPairGenerator;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters;
-import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
 import org.junit.Assert;
+import org.tron.common.crypto.pqc.MLDSA65;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -33,8 +26,7 @@ public class BlockCapsulePqTest extends BaseTest {
 
   private ECKey witnessKey;
   private byte[] witnessAddress;
-  private MLDSAPrivateKeyParameters pqSk;
-  private MLDSAPublicKeyParameters pqPk;
+  private MLDSA65 pqKeypair;
 
   @BeforeClass
   public static void init() {
@@ -45,11 +37,7 @@ public class BlockCapsulePqTest extends BaseTest {
   public void setUp() {
     witnessKey = new ECKey();
     witnessAddress = witnessKey.getAddress();
-    MLDSAKeyPairGenerator gen = new MLDSAKeyPairGenerator();
-    gen.init(new MLDSAKeyGenerationParameters(new SecureRandom(), MLDSAParameters.ml_dsa_65));
-    AsymmetricCipherKeyPair kp = gen.generateKeyPair();
-    pqPk = (MLDSAPublicKeyParameters) kp.getPublic();
-    pqSk = (MLDSAPrivateKeyParameters) kp.getPrivate();
+    pqKeypair = new MLDSA65();
   }
 
   private AccountCapsule buildWitnessAccount(SignatureScheme scheme) {
@@ -58,7 +46,7 @@ public class BlockCapsulePqTest extends BaseTest {
         .setWeight(1)
         .setScheme(scheme);
     if (scheme == SignatureScheme.ML_DSA_65) {
-      kb.setPublicKey(ByteString.copyFrom(pqPk.getEncoded()));
+      kb.setPublicKey(ByteString.copyFrom(pqKeypair.getPublicKey()));
     }
     Permission witnessPerm = Permission.newBuilder()
         .setType(PermissionType.Witness)
@@ -97,14 +85,7 @@ public class BlockCapsulePqTest extends BaseTest {
   }
 
   private byte[] signPq(byte[] message) {
-    MLDSASigner signer = new MLDSASigner();
-    signer.init(true, pqSk);
-    signer.update(message, 0, message.length);
-    try {
-      return signer.generateSignature();
-    } catch (Exception e) {
-      throw new AssertionError(e);
-    }
+    return MLDSA65.sign(pqKeypair.getPrivateKey(), message);
   }
 
   @Test

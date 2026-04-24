@@ -10,6 +10,7 @@ import org.bouncycastle.util.encoders.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.crypto.SignUtils;
+import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.consensus.Consensus;
 import org.tron.consensus.base.Param;
@@ -46,6 +47,7 @@ public class ConsensusService {
     param.setAgreeNodeCount(parameter.getAgreeNodeCount());
     List<Miner> miners = new ArrayList<>();
     List<String> privateKeys = Args.getLocalWitnesses().getPrivateKeys();
+    List<String> pqSeeds = Args.getLocalWitnesses().getPqSeeds();
     if (privateKeys.size() > 1) {
       for (String key : privateKeys) {
         byte[] privateKey = fromHexString(key);
@@ -76,6 +78,27 @@ public class ConsensusService {
       Miner miner = param.new Miner(privateKey, ByteString.copyFrom(privateKeyAddress),
           ByteString.copyFrom(witnessAddress));
       miners.add(miner);
+    } else if (pqSeeds.size() > 1) {
+      for (String seed : pqSeeds) {
+        byte[] seedBytes = fromHexString(seed);
+        MLDSA65 keypair = new MLDSA65(seedBytes);
+        byte[] sk = keypair.getPrivateKey();
+        byte[] pk = keypair.getPublicKey();
+        byte[] pqAddress = MLDSA65.computeAddress(pk);
+        WitnessCapsule witnessCapsule = witnessStore.get(pqAddress);
+        if (null == witnessCapsule) {
+          logger.warn("Witness {} is not in witnessStore.", Hex.toHexString(pqAddress));
+        }
+        ByteString pqAddressBs = ByteString.copyFrom(pqAddress);
+        Miner miner = param.new Miner(null, pqAddressBs, pqAddressBs);
+        miner.setPqPrivateKey(sk);
+        miner.setPqPublicKey(pk);
+        miners.add(miner);
+        logger.info("Add ML-DSA witness (from seed): {}, size: {}",
+            Hex.toHexString(pqAddress), miners.size());
+      }
+    } else if (pqSeeds.size() == 1) {
+      miners.add(buildPqOnlyMinerFromSeed(param, pqSeeds.get(0)));
     }
 
     param.setMiners(miners);
@@ -83,6 +106,29 @@ public class ConsensusService {
     param.setPbftInterface(pbftBaseImpl);
     consensus.start(param);
     logger.info("consensus service start success");
+  }
+
+  private Miner buildPqOnlyMinerFromSeed(Param param, String pqSeed) {
+    byte[] seedBytes = fromHexString(pqSeed);
+    MLDSA65 keypair = new MLDSA65(seedBytes);
+    byte[] sk = keypair.getPrivateKey();
+    byte[] pk = keypair.getPublicKey();
+    byte[] pqAddress = MLDSA65.computeAddress(pk);
+    byte[] witnessAddress = Args.getLocalWitnesses().getWitnessAccountAddress();
+    if (witnessAddress == null || witnessAddress.length == 0) {
+      witnessAddress = pqAddress;
+    }
+    WitnessCapsule witnessCapsule = witnessStore.get(witnessAddress);
+    if (null == witnessCapsule) {
+      logger.warn("Witness {} is not in witnessStore.", Hex.toHexString(witnessAddress));
+    }
+    // In multi-signature mode, the address derived from the PQ key may differ from witnessAddress.
+    Miner miner = param.new Miner(null, ByteString.copyFrom(pqAddress),
+        ByteString.copyFrom(witnessAddress));
+    miner.setPqPrivateKey(sk);
+    miner.setPqPublicKey(pk);
+    logger.info("Add ML-DSA witness (from seed): {}", Hex.toHexString(witnessAddress));
+    return miner;
   }
 
   public void stop() {

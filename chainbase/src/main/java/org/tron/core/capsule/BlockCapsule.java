@@ -32,8 +32,7 @@ import org.tron.common.bloom.Bloom;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.pqc.PqAuthDigest;
-import org.tron.common.crypto.pqc.SignatureVerifier;
-import org.tron.common.crypto.pqc.SignatureVerifierRegistry;
+import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
@@ -284,12 +283,11 @@ public class BlockCapsule implements ProtoCapsule<Block> {
       throw new ValidateSignatureException(
           "witness_auth signer not found in witness permission");
     }
-    SignatureVerifier verifier = SignatureVerifierRegistry.get(scheme);
     byte[] publicKey = matched.getPublicKey().toByteArray();
     byte[] signature = witnessAuth.getSignature().toByteArray();
     byte[] rawHdrHash = getRawHash().getBytes();
     byte[] digest = PqAuthDigest.block(rawHdrHash, signerAddr);
-    return verifier.verify(publicKey, digest, signature);
+    return PqSignatureRegistry.verify(scheme, publicKey, digest, signature);
   }
 
   public BlockId getBlockId() {

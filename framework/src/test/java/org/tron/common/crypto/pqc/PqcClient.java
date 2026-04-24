@@ -1,0 +1,139 @@
+package org.tron.common.crypto.pqc;
+
+import com.google.protobuf.Any;
+import com.google.protobuf.ByteString;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import java.nio.ByteBuffer;
+import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
+import org.tron.api.GrpcAPI.EmptyMessage;
+import org.tron.api.GrpcAPI.Return;
+import org.tron.api.WalletGrpc;
+import org.tron.api.WalletGrpc.WalletBlockingStub;
+import org.tron.common.utils.ByteArray;
+import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.Block;
+import org.tron.protos.Protocol.Transaction;
+import org.tron.protos.Protocol.Transaction.Contract.ContractType;
+import org.tron.protos.contract.BalanceContract.TransferContract;
+
+/**
+ * Demo client that connects to {@link PqcWitnessNode} and broadcasts an ML-DSA-44
+ * signed transfer transaction.
+ *
+ * The keypair is derived from the same fixed seed used by PqcWitnessNode, so no
+ * out-of-band key exchange is needed.
+ *
+ * Usage:
+ *   Terminal 1 — start the witness node first:
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.PqcWitnessNode
+ *   Terminal 2 — broadcast a PQC transaction:
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.PqcClient
+ *
+ * Optional JVM args:
+ *   -Dpqc.host=localhost  (default: localhost)
+ *   -Dpqc.port=50051      (default: 50051)
+ */
+public class PqcClient {
+
+  private static final String HOST =
+      System.getProperty("pqc.host", "localhost");
+  private static final int PORT =
+      Integer.parseInt(System.getProperty("pqc.port", "50051"));
+
+  /** Recipient of the demo transfer. */
+  private static final byte[] TO_ADDR =
+      ByteArray.fromHexString("41f522cc20ca18b636bdd93b4fb15ea84cc2b4e001");
+
+  public static void main(String[] args) throws Exception {
+    // ── 1. Derive user keypair from same fixed seed as PqcWitnessNode ─────
+    byte[] userSeed = new byte[32];
+    Arrays.fill(userSeed, (byte) 0x02);
+    MLDSA44 userKp = new MLDSA44(userSeed);
+
+    byte[] userPub    = userKp.getPublicKey();
+    byte[] userPriv   = userKp.getPrivateKey();
+    byte[] signerAddr = MLDSA44.computeAddress(userPub);
+    byte[] ownerAddr  = PqcWitnessNode.USER_ADDR;
+
+    System.out.println("=== PQC Client ===");
+    System.out.println("Connecting to " + HOST + ":" + PORT);
+    System.out.println("Owner address:  " + ByteArray.toHexString(ownerAddr));
+    System.out.println("Signer address: " + ByteArray.toHexString(signerAddr));
+
+    // ── 2. Connect via gRPC ───────────────────────────────────────────────
+    ManagedChannel channel = ManagedChannelBuilder
+        .forAddress(HOST, PORT)
+        .usePlaintext()
+        .build();
+    WalletBlockingStub stub = WalletGrpc.newBlockingStub(channel)
+        .withDeadlineAfter(10, TimeUnit.SECONDS);
+
+    try {
+      // ── 3. Fetch reference block for TaPoS ───────────────────────────
+      Block head = stub.getNowBlock(EmptyMessage.getDefaultInstance());
+      byte[] headerRaw = head.getBlockHeader().getRawData().toByteArray();
+      long   refNum    = head.getBlockHeader().getRawData().getNumber();
+      byte[] blockHash = sha256(headerRaw);
+
+      System.out.println("Reference block: #" + refNum
+          + " hash=" + ByteArray.toHexString(Arrays.copyOfRange(blockHash, 0, 8)) + "...");
+
+      // ── 4. Build the transfer transaction ─────────────────────────────
+      Transaction.raw rawData = Transaction.raw.newBuilder()
+          .addContract(Transaction.Contract.newBuilder()
+              .setType(ContractType.TransferContract)
+              .setParameter(Any.pack(TransferContract.newBuilder()
+                  .setOwnerAddress(ByteString.copyFrom(ownerAddr))
+                  .setToAddress(ByteString.copyFrom(TO_ADDR))
+                  .setAmount(1_000_000L)  // 1 TRX
+                  .build()))
+              .setPermissionId(0))
+          // TaPoS fields
+          .setRefBlockHash(ByteString.copyFrom(Arrays.copyOfRange(blockHash, 8, 16)))
+          .setRefBlockBytes(ByteString.copyFrom(longToBytes(refNum), 6, 2))
+          .setExpiration(System.currentTimeMillis() + 60_000L)
+          .build();
+
+      Transaction tx = Transaction.newBuilder().setRawData(rawData).build();
+
+      // ── 5. Sign with ML-DSA-44 auth_witness ──────────────────────────
+      byte[] txId   = sha256(rawData.toByteArray());
+      byte[] digest = PqAuthDigest.tx(txId, 0, signerAddr);
+      byte[] sig    = MLDSA44.sign(userPriv, digest);
+
+      Transaction signedTx = tx.toBuilder()
+          .addAuthWitness(AuthWitness.newBuilder()
+              .setSignerAddress(ByteString.copyFrom(signerAddr))
+              .setSignature(ByteString.copyFrom(sig)))
+          .build();
+
+      System.out.println("TX id: " + ByteArray.toHexString(txId));
+
+      // ── 6. Broadcast ──────────────────────────────────────────────────
+      Return result = stub.broadcastTransaction(signedTx);
+      System.out.println("Broadcast result: " + result.getCode()
+          + " — " + result.getMessage().toStringUtf8());
+
+      if (result.getResult()) {
+        System.out.println("SUCCESS: PQC-signed transaction accepted by the node.");
+      } else {
+        System.out.println("REJECTED: " + result.getCode());
+      }
+
+    } finally {
+      channel.shutdown();
+      channel.awaitTermination(5, TimeUnit.SECONDS);
+    }
+  }
+
+  private static byte[] sha256(byte[] data) throws Exception {
+    return MessageDigest.getInstance("SHA-256").digest(data);
+  }
+
+  private static byte[] longToBytes(long value) {
+    return ByteBuffer.allocate(8).putLong(value).array();
+  }
+}

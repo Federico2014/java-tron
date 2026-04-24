@@ -1041,6 +1041,10 @@ public class Args extends CommonParameter {
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) : 0;
 
+    PARAMETER.allowMlDsa =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_ML_DSA) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_ML_DSA) : 0;
+
     logConfig();
   }
 
@@ -1216,6 +1220,19 @@ public class Args extends CommonParameter {
       if (!keystores.isEmpty()) {
         localWitnesses = WitnessInitializer.initFromKeystore(
             keystores, cmd.password, witnessAddr);
+        return;
+      }
+    }
+
+    // path 4: PQ seed configuration
+    if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ)) {
+      List<String> pqSeeds = config.getStringList(ConfigKey.LOCAL_WITNESS_SEED_PQ);
+      if (!pqSeeds.isEmpty()) {
+        localWitnesses.setPqSeeds(pqSeeds);
+        byte[] address = WitnessInitializer.resolvePqWitnessAddress(witnessAddr);
+        if (address != null) {
+          localWitnesses.setWitnessAccountAddress(address);
+        }
         return;
       }
     }

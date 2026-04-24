@@ -1,5 +1,6 @@
 package org.tron.common.crypto.pqc;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -17,23 +18,23 @@ import org.junit.Before;
 import org.junit.Test;
 import org.tron.protos.Protocol.SignatureScheme;
 
-public class MLDSA65VerifierTest {
+public class MLDSA65Test {
 
-  private MLDSA65Verifier verifier;
+  private MLDSA65 keypair;
   private MLDSAPublicKeyParameters pk;
   private MLDSAPrivateKeyParameters sk;
 
   @Before
   public void setUp() {
-    verifier = new MLDSA65Verifier();
     MLDSAKeyPairGenerator gen = new MLDSAKeyPairGenerator();
     gen.init(new MLDSAKeyGenerationParameters(new SecureRandom(), MLDSAParameters.ml_dsa_65));
     AsymmetricCipherKeyPair kp = gen.generateKeyPair();
     pk = (MLDSAPublicKeyParameters) kp.getPublic();
     sk = (MLDSAPrivateKeyParameters) kp.getPrivate();
+    keypair = new MLDSA65(sk.getEncoded(), pk.getEncoded());
   }
 
-  private byte[] sign(byte[] message) {
+  private byte[] rawSign(byte[] message) {
     MLDSASigner signer = new MLDSASigner();
     signer.init(true, sk);
     signer.update(message, 0, message.length);
@@ -46,45 +47,45 @@ public class MLDSA65VerifierTest {
 
   @Test
   public void schemeAndLengthsMatchFips204() {
-    assertEquals(SignatureScheme.ML_DSA_65, verifier.getScheme());
-    assertEquals(1952, verifier.getPublicKeyLength());
-    assertEquals(3309, verifier.getSignatureLength());
+    assertEquals(SignatureScheme.ML_DSA_65, keypair.getScheme());
+    assertEquals(1952, keypair.getPublicKeyLength());
+    assertEquals(3309, keypair.getSignatureLength());
     assertEquals(1952, pk.getEncoded().length);
   }
 
   @Test
   public void validSignatureVerifies() {
     byte[] msg = "tron-pq-mldsa65".getBytes();
-    byte[] sig = sign(msg);
+    byte[] sig = rawSign(msg);
     assertEquals(3309, sig.length);
-    assertTrue(verifier.verify(pk.getEncoded(), msg, sig));
+    assertTrue(keypair.verify(msg, sig));
   }
 
   @Test
   public void signatureBoundToMessage() {
     byte[] msg = "block-header".getBytes();
-    byte[] sig = sign(msg);
+    byte[] sig = rawSign(msg);
     byte[] tamperedMsg = "block-footer".getBytes();
-    assertFalse(verifier.verify(pk.getEncoded(), tamperedMsg, sig));
+    assertFalse(keypair.verify(tamperedMsg, sig));
   }
 
   @Test
   public void tamperedSignatureFailsVerification() {
     byte[] msg = "payload".getBytes();
-    byte[] sig = sign(msg);
+    byte[] sig = rawSign(msg);
     sig[sig.length - 1] ^= 0x01;
-    assertFalse(verifier.verify(pk.getEncoded(), msg, sig));
+    assertFalse(keypair.verify(msg, sig));
   }
 
   @Test
   public void wrongPublicKeyFailsVerification() {
     byte[] msg = "payload".getBytes();
-    byte[] sig = sign(msg);
+    byte[] sig = rawSign(msg);
     MLDSAKeyPairGenerator gen = new MLDSAKeyPairGenerator();
     gen.init(new MLDSAKeyGenerationParameters(new SecureRandom(), MLDSAParameters.ml_dsa_65));
     MLDSAPublicKeyParameters otherPk =
         (MLDSAPublicKeyParameters) gen.generateKeyPair().getPublic();
-    assertFalse(verifier.verify(otherPk.getEncoded(), msg, sig));
+    assertFalse(MLDSA65.verify(otherPk.getEncoded(), msg, sig));
   }
 
   @Test
@@ -93,7 +94,7 @@ public class MLDSA65VerifierTest {
     byte[] msg = new byte[] {1};
     byte[] sig = new byte[3309];
     try {
-      verifier.verify(badPk, msg, sig);
+      MLDSA65.verify(badPk, msg, sig);
       fail("short public key should be rejected");
     } catch (IllegalArgumentException expected) {
       assertTrue(expected.getMessage().contains("public key length"));
@@ -105,7 +106,7 @@ public class MLDSA65VerifierTest {
     byte[] badSig = new byte[3310];
     byte[] msg = new byte[] {1};
     try {
-      verifier.verify(pk.getEncoded(), msg, badSig);
+      MLDSA65.verify(pk.getEncoded(), msg, badSig);
       fail("wrong-length signature should be rejected");
     } catch (IllegalArgumentException expected) {
       assertTrue(expected.getMessage().contains("signature length"));
@@ -116,7 +117,7 @@ public class MLDSA65VerifierTest {
   public void nullMessageRejected() {
     byte[] sig = new byte[3309];
     try {
-      verifier.verify(pk.getEncoded(), null, sig);
+      MLDSA65.verify(pk.getEncoded(), null, sig);
       fail("null message should be rejected");
     } catch (IllegalArgumentException expected) {
       assertTrue(expected.getMessage().contains("message"));
@@ -126,8 +127,8 @@ public class MLDSA65VerifierTest {
   @Test
   public void emptyMessageVerifiesConsistently() {
     byte[] msg = new byte[0];
-    byte[] sig = sign(msg);
-    assertTrue(verifier.verify(pk.getEncoded(), msg, sig));
+    byte[] sig = rawSign(msg);
+    assertTrue(keypair.verify(msg, sig));
   }
 
   @Test
@@ -140,10 +141,38 @@ public class MLDSA65VerifierTest {
     byte[] msg = new byte[] {1};
     byte[] sig = new byte[3309];
     try {
-      verifier.verify(pk44Bytes, msg, sig);
+      MLDSA65.verify(pk44Bytes, msg, sig);
       fail("ML-DSA-44 key for ML-DSA-65 verifier should be rejected on length");
     } catch (IllegalArgumentException expected) {
       assertTrue(expected.getMessage().contains("public key length"));
     }
+  }
+
+  @Test
+  public void keypairBoundInstanceSignsAndVerifies() {
+    MLDSA65 signer = new MLDSA65();
+    byte[] msg = "keypair-bound".getBytes();
+    byte[] sig = signer.sign(msg);
+    assertEquals(MLDSA65.SIGNATURE_LENGTH, sig.length);
+    assertTrue(signer.verify(msg, sig));
+  }
+
+  @Test
+  public void fromSeedIsDeterministic() {
+    byte[] seed = new byte[32];
+    for (int i = 0; i < seed.length; i++) {
+      seed[i] = (byte) i;
+    }
+    MLDSA65 a = new MLDSA65(seed);
+    MLDSA65 b = new MLDSA65(seed);
+    assertArrayEquals(a.getPublicKey(), b.getPublicKey());
+    assertArrayEquals(a.getPrivateKey(), b.getPrivateKey());
+  }
+
+  @Test
+  public void computeAddressIs21Bytes() {
+    byte[] skBytes = MLDSA65.generatePrivateKey();
+    byte[] pkBytes = MLDSA65.derivePublicKey(skBytes);
+    assertEquals(21, MLDSA65.computeAddress(pkBytes).length);
   }
 }

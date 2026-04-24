@@ -54,7 +54,7 @@ import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
-import org.tron.common.crypto.pqc.MLDSA65Signer;
+import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.pqc.PqAuthDigest;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
@@ -1794,7 +1794,7 @@ public class Manager {
     }
     byte[] signerAddress = witnessPermission.getKeys(0).getAddress().toByteArray();
     byte[] digest = PqAuthDigest.block(blockCapsule.getRawHashBytes(), signerAddress);
-    byte[] signature = MLDSA65Signer.sign(pqPrivateKey, digest);
+    byte[] signature = MLDSA65.sign(pqPrivateKey, digest);
     AuthWitness witnessAuth = AuthWitness.newBuilder()
         .setSignerAddress(ByteString.copyFrom(signerAddress))
         .setSignature(ByteString.copyFrom(signature))

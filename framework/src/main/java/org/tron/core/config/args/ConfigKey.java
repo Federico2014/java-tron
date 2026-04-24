@@ -13,6 +13,7 @@ final class ConfigKey {
   public static final String LOCAL_WITNESS = "localwitness"; // private key
   public static final String LOCAL_WITNESS_ACCOUNT_ADDRESS = "localWitnessAccountAddress";
   public static final String LOCAL_WITNESS_KEYSTORE = "localwitnesskeystore";
+  public static final String LOCAL_WITNESS_SEED_PQ = "localwitness_seed_pq";
 
   // crypto
   public static final String CRYPTO_ENGINE = "crypto.engine";
@@ -248,6 +249,7 @@ final class ConfigKey {
   public static final String COMMITTEE_ALLOW_TVM_BLOB = "committee.allowTvmBlob";
   public static final String COMMITTEE_PROPOSAL_EXPIRE_TIME = "committee.proposalExpireTime";
   public static final String COMMITTEE_ALLOW_TVM_OSAKA = "committee.allowTvmOsaka";
+  public static final String COMMITTEE_ALLOW_ML_DSA = "committee.allowMlDsa";
   public static final String ALLOW_ACCOUNT_ASSET_OPTIMIZATION =
       "committee.allowAccountAssetOptimization";
   public static final String ALLOW_ASSET_OPTIMIZATION = "committee.allowAssetOptimization";
