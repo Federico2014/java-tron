@@ -1514,6 +1514,11 @@ public class Wallet {
         .setValue(dbManager.getDynamicPropertiesStore().getAllowTvmOsaka())
         .build());
 
+    builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
+        .setKey("getAllowMlDsa")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowMlDsa())
+        .build());
+
     return builder.build();
   }
 

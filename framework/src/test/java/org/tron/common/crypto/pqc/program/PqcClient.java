@@ -1,4 +1,4 @@
-package org.tron.common.crypto.pqc;
+package org.tron.common.crypto.pqc.program;
 
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
@@ -12,6 +12,8 @@ import org.tron.api.GrpcAPI.EmptyMessage;
 import org.tron.api.GrpcAPI.Return;
 import org.tron.api.WalletGrpc;
 import org.tron.api.WalletGrpc.WalletBlockingStub;
+import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.PqAuthDigest;
 import org.tron.common.utils.ByteArray;
 import org.tron.protos.Protocol.AuthWitness;
 import org.tron.protos.Protocol.Block;
@@ -28,9 +30,9 @@ import org.tron.protos.contract.BalanceContract.TransferContract;
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.PqcWitnessNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.PqcClient
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcClient
  *
  * Optional JVM args:
  *   -Dpqc.host=localhost  (default: localhost)
@@ -48,6 +50,12 @@ public class PqcClient {
       ByteArray.fromHexString("41f522cc20ca18b636bdd93b4fb15ea84cc2b4e001");
 
   public static void main(String[] args) throws Exception {
+    // Force INFO level: logback-test.xml (on the test classpath) sets root=DEBUG
+    // which is far too noisy for a demo run.
+    ((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+        .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
+        .setLevel(ch.qos.logback.classic.Level.INFO);
+
     // ── 1. Derive user keypair from same fixed seed as PqcWitnessNode ─────
     byte[] userSeed = new byte[32];
     Arrays.fill(userSeed, (byte) 0x02);

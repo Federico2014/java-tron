@@ -1,4 +1,4 @@
-package org.tron.common.crypto.pqc;
+package org.tron.common.crypto.pqc.program;
 
 import com.google.protobuf.ByteString;
 import java.io.File;
@@ -9,8 +9,9 @@ import java.util.Collections;
 import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
+import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.utils.ByteArray;
-import org.tron.common.utils.LocalWitnesses;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.capsule.WitnessCapsule;
@@ -37,9 +38,9 @@ import org.tron.protos.Protocol.SignatureScheme;
  *
  * Usage:
  *   Terminal 1 — start this node:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.PqcWitnessNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.PqcClient
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcClient
  */
 public class PqcWitnessNode {
 
@@ -51,29 +52,39 @@ public class PqcWitnessNode {
   /** gRPC port the node listens on. */
   static final int GRPC_PORT = 50051;
 
+  /** Full-node HTTP port. */
+  static final int HTTP_PORT = 8090;
+
+  /** P2P listen port (shared with PqFullNode so it can dial in as a seed peer). */
+  static final int P2P_PORT = 18888;
+
   /** Fixed on-chain address for the demo user account. */
   static final byte[] USER_ADDR =
       ByteArray.fromHexString("41abd4b9367799eaa3197fecb144eb71de1e049abc");
 
   public static void main(String[] args) throws Exception {
+    // Force INFO level: logback-test.xml (on the test classpath) sets root=DEBUG
+    // which is far too noisy for a demo run.
+    ((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+        .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
+        .setLevel(ch.qos.logback.classic.Level.INFO);
+
     // ── 1. Derive deterministic keypairs ──────────────────────────────────
     MLDSA65 witnessKp = new MLDSA65(WITNESS_SEED);
     MLDSA44 userKp    = new MLDSA44(USER_SEED);
 
     byte[] witnessPub  = witnessKp.getPublicKey();
-    byte[] witnessPriv = witnessKp.getPrivateKey();
     byte[] witnessAddr = MLDSA65.computeAddress(witnessPub);
-    ByteString witnessAddrBs = ByteString.copyFrom(witnessAddr);
-
     byte[] userPub     = userKp.getPublicKey();
     byte[] signerAddr  = MLDSA44.computeAddress(userPub);
-    ByteString signerAddrBs = ByteString.copyFrom(signerAddr);
 
     System.out.println("=== PQC Witness Node ===");
     System.out.println("Witness address (ML-DSA-65): " + ByteArray.toHexString(witnessAddr));
     System.out.println("User address:                " + ByteArray.toHexString(USER_ADDR));
     System.out.println("User signer address:         " + ByteArray.toHexString(signerAddr));
     System.out.println("gRPC port:                   " + GRPC_PORT);
+    System.out.println("HTTP port:                   " + HTTP_PORT);
+    System.out.println("P2P port:                    " + P2P_PORT);
 
     // ── 2. Configure node ─────────────────────────────────────────────────
     File dbDir = Files.createTempDirectory("pqc-node-").toFile();
@@ -83,10 +94,12 @@ public class PqcWitnessNode {
         "config-test.conf");
     Args.getInstance().setRpcEnable(true);
     Args.getInstance().setFullNodeHttpEnable(true);
+    Args.getInstance().setFullNodeHttpPort(HTTP_PORT);
     Args.getInstance().setRpcPort(GRPC_PORT);
-    Args.getInstance().setP2pDisable(true);
+    Args.getInstance().setNodeListenPort(P2P_PORT);
     Args.getInstance().setNeedSyncCheck(false);
     Args.getInstance().setMinEffectiveConnection(0);
+    Args.getInstance().genesisBlock.setWitnesses(new ArrayList<>());
 
     // ── 3. Start Spring context ───────────────────────────────────────────
     TronApplicationContext context = new TronApplicationContext(DefaultConfig.class);
@@ -94,11 +107,44 @@ public class PqcWitnessNode {
     Manager db = context.getBean(Manager.class);
     ChainBaseManager chain = context.getBean(ChainBaseManager.class);
 
-    // ── 4. Enable PQ features ─────────────────────────────────────────────
+    // ── 4. Install PQ genesis pre-state (shared with PqFullNode) ─────────
+    installPqGenesisState(db, chain, witnessPub, userPub);
+
+    // ── 5. Start consensus (DposTask auto-produces blocks) ───────────────
+    context.getBean(ConsensusService.class).start();
+
+    // ── 6. Start gRPC / P2P server ───────────────────────────────────────
+    app.startup();
+
+    System.out.println("\nNode is running. Send Ctrl-C to stop.");
+    System.out.println("Run PqcClient or PqFullNode in another terminal.\n");
+
+    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+      System.out.println("Shutting down...");
+      context.close();
+      Args.clearParam();
+    }));
+
+    Thread.currentThread().join(); // block until Ctrl-C
+  }
+
+  /**
+   * Apply the PQ-specific pre-state that must exist on every node participating
+   * in the demo network. Both PqcWitnessNode and PqFullNode call this so their
+   * genesis state matches before the first PQ block is produced / received.
+   */
+  static void installPqGenesisState(Manager db, ChainBaseManager chain,
+      byte[] witnessPub, byte[] userPub) {
+    byte[] witnessAddr = MLDSA65.computeAddress(witnessPub);
+    ByteString witnessAddrBs = ByteString.copyFrom(witnessAddr);
+    byte[] signerAddr = MLDSA44.computeAddress(userPub);
+    ByteString signerAddrBs = ByteString.copyFrom(signerAddr);
+
+    // Activate ML-DSA on the local chain params.
     db.getDynamicPropertiesStore().saveAllowMlDsa(1L);
     db.getDynamicPropertiesStore().saveAllowMultiSign(1L);
 
-    // ── 5. Register witness account with ML-DSA-65 witness permission ─────
+    // Witness account with ML-DSA-65 witness permission.
     Permission witnessPerm = Permission.newBuilder()
         .setType(PermissionType.Witness)
         .setId(1).setPermissionName("witness").setThreshold(1)
@@ -118,7 +164,7 @@ public class PqcWitnessNode {
     chain.getWitnessScheduleStore().saveActiveWitnesses(new ArrayList<>());
     chain.addWitness(witnessAddrBs);
 
-    // ── 6. Register user account with ML-DSA-44 owner permission ─────────
+    // User account with ML-DSA-44 owner permission.
     Permission userOwnerPerm = Permission.newBuilder()
         .setType(PermissionType.Owner).setPermissionName("owner").setThreshold(1)
         .addKeys(Key.newBuilder()
@@ -131,23 +177,6 @@ public class PqcWitnessNode {
     userCapsule.setBalance(100_000_000L); // 100 TRX
     userCapsule.updatePermissions(userOwnerPerm, null, Collections.emptyList());
     db.getAccountStore().put(USER_ADDR, userCapsule);
-
-    // ── 7. Start consensus (DposTask auto-produces blocks) ────────────────
-    context.getBean(ConsensusService.class).start();
-
-    // ── 8. Start gRPC server ──────────────────────────────────────────────
-    app.startup();
-
-    System.out.println("\nNode is running. Send Ctrl-C to stop.");
-    System.out.println("Run PqcClient in another terminal to broadcast a PQC transaction.\n");
-
-    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-      System.out.println("Shutting down...");
-      context.close();
-      Args.clearParam();
-    }));
-
-    Thread.currentThread().join(); // block until Ctrl-C
   }
 
   private static byte[] filledSeed(int value) {
