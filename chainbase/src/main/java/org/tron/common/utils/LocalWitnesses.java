@@ -26,6 +26,7 @@ import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.pqc.MLDSA65;
+import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.core.config.Parameter.ChainConstant;
 import org.tron.core.exception.TronError;
 import org.tron.protos.Protocol.SignatureScheme;
@@ -42,8 +43,15 @@ public class LocalWitnesses {
 
   /** PQ signature scheme used to derive keys from {@link #pqSeeds}. */
   @Getter
-  @Setter
   private SignatureScheme pqScheme = SignatureScheme.ML_DSA_65;
+
+  public void setPqScheme(SignatureScheme pqScheme) {
+    if (pqScheme == null || !PqSignatureRegistry.contains(pqScheme)) {
+      throw new TronError("unsupported PQ signature scheme: " + pqScheme,
+          TronError.ErrCode.WITNESS_INIT);
+    }
+    this.pqScheme = pqScheme;
+  }
 
   @Setter
   @Getter
@@ -121,7 +129,8 @@ public class LocalWitnesses {
 
   private static void validatePqSeed(String seed) {
     String hex = seed;
-    if (StringUtils.startsWithIgnoreCase(hex, "0X")) {
+    // Match downstream ByteArray.fromHexString, which only strips lowercase "0x".
+    if (StringUtils.startsWith(hex, "0x")) {
       hex = hex.substring(2);
     }
     int expectedHexLen = MLDSA65.SEED_LENGTH * 2;

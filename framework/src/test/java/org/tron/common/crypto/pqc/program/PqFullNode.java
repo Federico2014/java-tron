@@ -87,8 +87,9 @@ public class PqFullNode {
     Args.getInstance().genesisBlock.setWitnesses(new ArrayList<>());
 
     // Point to the witness node as the only seed peer.
-    Args.getInstance().getSeedNode().setAddressList(Collections.singletonList(
-        new InetSocketAddress(WITNESS_HOST, WITNESS_P2P_PORT)));
+    // Mutable list — startup appends persisted peers to it.
+    Args.getInstance().getSeedNode().setAddressList(new ArrayList<>(
+        Collections.singletonList(new InetSocketAddress(WITNESS_HOST, WITNESS_P2P_PORT))));
 
     // ── 3. Start Spring context ───────────────────────────────────────────
     TronApplicationContext context = new TronApplicationContext(DefaultConfig.class);

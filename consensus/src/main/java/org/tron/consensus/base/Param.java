@@ -67,18 +67,30 @@ public class Param {
     @Setter
     private ByteString witnessAddress;
 
-    @Getter
-    @Setter
     private byte[] pqPrivateKey;
 
-    @Getter
-    @Setter
     private byte[] pqPublicKey;
 
     public Miner(byte[] privateKey, ByteString privateKeyAddress, ByteString witnessAddress) {
       this.privateKey = privateKey;
       this.privateKeyAddress = privateKeyAddress;
       this.witnessAddress = witnessAddress;
+    }
+
+    public byte[] getPqPrivateKey() {
+      return pqPrivateKey == null ? null : pqPrivateKey.clone();
+    }
+
+    public void setPqPrivateKey(byte[] pqPrivateKey) {
+      this.pqPrivateKey = pqPrivateKey == null ? null : pqPrivateKey.clone();
+    }
+
+    public byte[] getPqPublicKey() {
+      return pqPublicKey == null ? null : pqPublicKey.clone();
+    }
+
+    public void setPqPublicKey(byte[] pqPublicKey) {
+      this.pqPublicKey = pqPublicKey == null ? null : pqPublicKey.clone();
     }
   }
 

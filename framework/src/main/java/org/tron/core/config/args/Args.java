@@ -1229,6 +1229,7 @@ public class Args extends CommonParameter {
     if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ)) {
       List<String> pqSeeds = config.getStringList(ConfigKey.LOCAL_WITNESS_SEED_PQ);
       if (!pqSeeds.isEmpty()) {
+        localWitnesses = new LocalWitnesses();
         localWitnesses.setPqSeeds(pqSeeds);
         if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
           String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);

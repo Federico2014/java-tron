@@ -758,7 +758,11 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       if (!PqSignatureRegistry.verify(scheme, pk, digest, sig)) {
         throw new PermissionException("pq sig invalid");
       }
-      weight = StrictMathWrapper.addExact(weight, key.getWeight());
+      try {
+        weight = StrictMathWrapper.addExact(weight, key.getWeight());
+      } catch (ArithmeticException e) {
+        throw new PermissionException("weight overflow");
+      }
     }
     return weight >= permission.getThreshold();
   }

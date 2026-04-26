@@ -18,6 +18,7 @@ import org.tron.consensus.base.Param;
 import org.tron.consensus.base.Param.Miner;
 import org.tron.core.capsule.WitnessCapsule;
 import org.tron.core.config.args.Args;
+import org.tron.core.exception.TronError;
 import org.tron.core.store.WitnessStore;
 import org.tron.protos.Protocol.SignatureScheme;
 
@@ -82,6 +83,7 @@ public class ConsensusService {
       miners.add(miner);
     } else if (pqSeeds.size() > 1) {
       SignatureScheme scheme = Args.getLocalWitnesses().getPqScheme();
+      requireSupportedPqScheme(scheme);
       for (String seed : pqSeeds) {
         byte[] seedBytes = fromHexString(seed);
         PqSignature keypair = PqSignatureRegistry.fromSeed(scheme, seedBytes);
@@ -113,6 +115,7 @@ public class ConsensusService {
 
   private Miner buildPqOnlyMinerFromSeed(Param param, String pqSeed) {
     SignatureScheme scheme = Args.getLocalWitnesses().getPqScheme();
+    requireSupportedPqScheme(scheme);
     byte[] seedBytes = fromHexString(pqSeed);
     PqSignature keypair = PqSignatureRegistry.fromSeed(scheme, seedBytes);
     byte[] sk = keypair.getPrivateKey();
@@ -133,6 +136,13 @@ public class ConsensusService {
     miner.setPqPublicKey(pk);
     logger.info("Add {} witness (from seed): {}", scheme, Hex.toHexString(witnessAddress));
     return miner;
+  }
+
+  private static void requireSupportedPqScheme(SignatureScheme scheme) {
+    if (!PqSignatureRegistry.contains(scheme)) {
+      throw new TronError("unsupported PQ witness scheme: " + scheme,
+          TronError.ErrCode.WITNESS_INIT);
+    }
   }
 
   public void stop() {
