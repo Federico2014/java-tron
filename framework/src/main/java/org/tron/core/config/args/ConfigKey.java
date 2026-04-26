@@ -14,6 +14,7 @@ final class ConfigKey {
   public static final String LOCAL_WITNESS_ACCOUNT_ADDRESS = "localWitnessAccountAddress";
   public static final String LOCAL_WITNESS_KEYSTORE = "localwitnesskeystore";
   public static final String LOCAL_WITNESS_SEED_PQ = "localwitness_seed_pq";
+  public static final String LOCAL_WITNESS_SEED_PQ_SCHEME = "localwitness_seed_pq_scheme";
 
   // crypto
   public static final String CRYPTO_ENGINE = "crypto.engine";

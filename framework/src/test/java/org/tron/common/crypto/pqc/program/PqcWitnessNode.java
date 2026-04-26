@@ -10,7 +10,6 @@ import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
 import org.tron.common.crypto.pqc.MLDSA44;
-import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.capsule.AccountCapsule;
@@ -27,7 +26,7 @@ import org.tron.protos.Protocol.Permission.PermissionType;
 import org.tron.protos.Protocol.SignatureScheme;
 
 /**
- * Demo witness node with ML-DSA-65 block production.
+ * Demo witness node with ML-DSA-44 block production.
  *
  * Starts an in-process TRON node configured with a PQC witness keypair and
  * a user account that holds an ML-DSA-44 owner permission — ready to receive
@@ -44,7 +43,7 @@ import org.tron.protos.Protocol.SignatureScheme;
  */
 public class PqcWitnessNode {
 
-  /** Fixed seed for the ML-DSA-65 witness keypair (shared with PqcClient for derivation). */
+  /** Fixed seed for the ML-DSA-44 witness keypair (shared with PqcClient for derivation). */
   static final byte[] WITNESS_SEED = filledSeed(0x01);
   /** Fixed seed for the ML-DSA-44 user keypair (shared with PqcClient for derivation). */
   static final byte[] USER_SEED = filledSeed(0x02);
@@ -70,16 +69,16 @@ public class PqcWitnessNode {
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
     // ── 1. Derive deterministic keypairs ──────────────────────────────────
-    MLDSA65 witnessKp = new MLDSA65(WITNESS_SEED);
+    MLDSA44 witnessKp = new MLDSA44(WITNESS_SEED);
     MLDSA44 userKp    = new MLDSA44(USER_SEED);
 
     byte[] witnessPub  = witnessKp.getPublicKey();
-    byte[] witnessAddr = MLDSA65.computeAddress(witnessPub);
+    byte[] witnessAddr = MLDSA44.computeAddress(witnessPub);
     byte[] userPub     = userKp.getPublicKey();
     byte[] signerAddr  = MLDSA44.computeAddress(userPub);
 
     System.out.println("=== PQC Witness Node ===");
-    System.out.println("Witness address (ML-DSA-65): " + ByteArray.toHexString(witnessAddr));
+    System.out.println("Witness address (ML-DSA-44): " + ByteArray.toHexString(witnessAddr));
     System.out.println("User address:                " + ByteArray.toHexString(USER_ADDR));
     System.out.println("User signer address:         " + ByteArray.toHexString(signerAddr));
     System.out.println("gRPC port:                   " + GRPC_PORT);
@@ -135,7 +134,7 @@ public class PqcWitnessNode {
    */
   static void installPqGenesisState(Manager db, ChainBaseManager chain,
       byte[] witnessPub, byte[] userPub) {
-    byte[] witnessAddr = MLDSA65.computeAddress(witnessPub);
+    byte[] witnessAddr = MLDSA44.computeAddress(witnessPub);
     ByteString witnessAddrBs = ByteString.copyFrom(witnessAddr);
     byte[] signerAddr = MLDSA44.computeAddress(userPub);
     ByteString signerAddrBs = ByteString.copyFrom(signerAddr);
@@ -144,13 +143,13 @@ public class PqcWitnessNode {
     db.getDynamicPropertiesStore().saveAllowMlDsa(1L);
     db.getDynamicPropertiesStore().saveAllowMultiSign(1L);
 
-    // Witness account with ML-DSA-65 witness permission.
+    // Witness account with ML-DSA-44 witness permission.
     Permission witnessPerm = Permission.newBuilder()
         .setType(PermissionType.Witness)
         .setId(1).setPermissionName("witness").setThreshold(1)
         .addKeys(Key.newBuilder()
             .setAddress(witnessAddrBs).setWeight(1)
-            .setScheme(SignatureScheme.ML_DSA_65)
+            .setScheme(SignatureScheme.ML_DSA_44)
             .setPublicKey(ByteString.copyFrom(witnessPub)))
         .build();
     db.getAccountStore().put(witnessAddr, new AccountCapsule(Account.newBuilder()

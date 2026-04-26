@@ -28,6 +28,7 @@ import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.core.config.Parameter.ChainConstant;
 import org.tron.core.exception.TronError;
+import org.tron.protos.Protocol.SignatureScheme;
 
 @Slf4j(topic = "app")
 public class LocalWitnesses {
@@ -35,9 +36,14 @@ public class LocalWitnesses {
   @Getter
   private List<String> privateKeys = Lists.newArrayList();
 
-  /** ML-DSA-65 seed values in hex format (64 hex chars = 32 bytes). */
+  /** ML-DSA seed values in hex format (64 hex chars = 32 bytes). */
   @Getter
   private List<String> pqSeeds = Lists.newArrayList();
+
+  /** PQ signature scheme used to derive keys from {@link #pqSeeds}. */
+  @Getter
+  @Setter
+  private SignatureScheme pqScheme = SignatureScheme.ML_DSA_65;
 
   @Setter
   @Getter
@@ -102,7 +108,7 @@ public class LocalWitnesses {
     this.privateKeys.add(privateKey);
   }
 
-  /** ML-DSA-65 seed values (32 bytes = 64 hex chars). Keys are derived from seeds. */
+  /** ML-DSA seed values (32 bytes = 64 hex chars). Keys are derived from seeds. */
   public void setPqSeeds(final List<String> pqSeeds) {
     if (CollectionUtils.isEmpty(pqSeeds)) {
       return;
@@ -120,12 +126,12 @@ public class LocalWitnesses {
     }
     int expectedHexLen = MLDSA65.SEED_LENGTH * 2;
     if (StringUtils.isBlank(hex) || hex.length() != expectedHexLen) {
-      throw new TronError(String.format("ML-DSA-65 seed must be %d hex chars, actual: %d",
+      throw new TronError(String.format("ML-DSA seed must be %d hex chars, actual: %d",
           expectedHexLen, StringUtils.isBlank(hex) ? 0 : hex.length()),
           TronError.ErrCode.WITNESS_INIT);
     }
     if (!StringUtil.isHexadecimal(hex)) {
-      throw new TronError("ML-DSA-65 seed must be hex string",
+      throw new TronError("ML-DSA seed must be hex string",
           TronError.ErrCode.WITNESS_INIT);
     }
   }

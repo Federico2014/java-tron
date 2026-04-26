@@ -18,6 +18,7 @@ import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
+import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -294,9 +295,9 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
 
     if (permission.getType() == PermissionType.Witness
         && first != SignatureScheme.UNKNOWN_SIG_SCHEME
-        && first != SignatureScheme.ML_DSA_65) {
+        && !PqSignatureRegistry.contains(first)) {
       throw new ContractValidateException(
-          "Witness permission only supports ML_DSA_65 or legacy scheme, got " + first);
+          "Witness permission only supports legacy or registered PQ schemes, got " + first);
     }
   }
 

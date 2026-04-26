@@ -1192,7 +1192,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
   }
 
   @Test
-  public void witnessMlDsa44Rejected() {
+  public void witnessMlDsa44Accepted() throws ContractValidateException {
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(WITNESS_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
@@ -1206,12 +1206,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     Any any = getContract(address, owner, witness,
         java.util.Collections.singletonList(active));
 
-    try {
-      actuatorFor(any).validate();
-      fail("Witness permission with ML-DSA-44 should be rejected");
-    } catch (ContractValidateException e) {
-      Assert.assertTrue(e.getMessage().contains("Witness permission only supports ML_DSA_65"));
-    }
+    actuatorFor(any).validate();
   }
 
   @Test

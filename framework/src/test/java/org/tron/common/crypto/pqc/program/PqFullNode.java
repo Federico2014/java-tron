@@ -9,7 +9,6 @@ import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
 import org.tron.common.crypto.pqc.MLDSA44;
-import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.config.DefaultConfig;
@@ -20,7 +19,7 @@ import org.tron.core.db.Manager;
  * Demo fullnode that dials {@link PqcWitnessNode} via P2P and syncs PQ-signed blocks.
  *
  * Both nodes share the same deterministic PQ genesis pre-state (witness account with an
- * ML-DSA-65 witness permission + demo user account with an ML-DSA-44 owner permission),
+ * ML-DSA-44 witness permission + demo user account with an ML-DSA-44 owner permission),
  * installed via {@link PqcWitnessNode#installPqGenesisState}. Once the witness produces
  * a block it is broadcast over P2P; this node validates {@code BlockHeader.witness_auth}
  * against the same on-chain public key and applies the block.
@@ -57,7 +56,7 @@ public class PqFullNode {
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
     // ── 1. Derive the same deterministic keys used by PqcWitnessNode ──────
-    MLDSA65 witnessKp = new MLDSA65(PqcWitnessNode.WITNESS_SEED);
+    MLDSA44 witnessKp = new MLDSA44(PqcWitnessNode.WITNESS_SEED);
     MLDSA44 userKp    = new MLDSA44(PqcWitnessNode.USER_SEED);
 
     byte[] witnessPub = witnessKp.getPublicKey();
@@ -69,7 +68,7 @@ public class PqFullNode {
     System.out.println("HTTP port:      " + HTTP_PORT);
     System.out.println("P2P port:       " + P2P_PORT);
     System.out.println("Witness address (expected): "
-        + ByteArray.toHexString(MLDSA65.computeAddress(witnessPub)));
+        + ByteArray.toHexString(MLDSA44.computeAddress(witnessPub)));
 
     // ── 2. Configure node (no -w: this is a pure fullnode) ────────────────
     File dbDir = Files.createTempDirectory("pqc-fullnode-").toFile();
@@ -99,7 +98,7 @@ public class PqFullNode {
 
     // ── 4. Install matching PQ genesis pre-state ──────────────────────────
     // Without this the incoming witness_auth would fail to validate because
-    // this node wouldn't know the witness's ML-DSA-65 public key.
+    // this node wouldn't know the witness's ML-DSA-44 public key.
     PqcWitnessNode.installPqGenesisState(db, chain, witnessPub, userPub);
 
     // ── 5. Start P2P + gRPC (no ConsensusService.start — we don't produce) ─

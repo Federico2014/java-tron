@@ -10,7 +10,8 @@ import org.bouncycastle.util.encoders.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.MLDSA65;
+import org.tron.common.crypto.pqc.PqSignature;
+import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.consensus.Consensus;
 import org.tron.consensus.base.Param;
@@ -18,6 +19,7 @@ import org.tron.consensus.base.Param.Miner;
 import org.tron.core.capsule.WitnessCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.store.WitnessStore;
+import org.tron.protos.Protocol.SignatureScheme;
 
 @Slf4j(topic = "consensus")
 @Component
@@ -79,12 +81,13 @@ public class ConsensusService {
           ByteString.copyFrom(witnessAddress));
       miners.add(miner);
     } else if (pqSeeds.size() > 1) {
+      SignatureScheme scheme = Args.getLocalWitnesses().getPqScheme();
       for (String seed : pqSeeds) {
         byte[] seedBytes = fromHexString(seed);
-        MLDSA65 keypair = new MLDSA65(seedBytes);
+        PqSignature keypair = PqSignatureRegistry.fromSeed(scheme, seedBytes);
         byte[] sk = keypair.getPrivateKey();
         byte[] pk = keypair.getPublicKey();
-        byte[] pqAddress = MLDSA65.computeAddress(pk);
+        byte[] pqAddress = keypair.getAddress();
         WitnessCapsule witnessCapsule = witnessStore.get(pqAddress);
         if (null == witnessCapsule) {
           logger.warn("Witness {} is not in witnessStore.", Hex.toHexString(pqAddress));
@@ -94,8 +97,8 @@ public class ConsensusService {
         miner.setPqPrivateKey(sk);
         miner.setPqPublicKey(pk);
         miners.add(miner);
-        logger.info("Add ML-DSA witness (from seed): {}, size: {}",
-            Hex.toHexString(pqAddress), miners.size());
+        logger.info("Add {} witness (from seed): {}, size: {}",
+            scheme, Hex.toHexString(pqAddress), miners.size());
       }
     } else if (pqSeeds.size() == 1) {
       miners.add(buildPqOnlyMinerFromSeed(param, pqSeeds.get(0)));
@@ -109,11 +112,12 @@ public class ConsensusService {
   }
 
   private Miner buildPqOnlyMinerFromSeed(Param param, String pqSeed) {
+    SignatureScheme scheme = Args.getLocalWitnesses().getPqScheme();
     byte[] seedBytes = fromHexString(pqSeed);
-    MLDSA65 keypair = new MLDSA65(seedBytes);
+    PqSignature keypair = PqSignatureRegistry.fromSeed(scheme, seedBytes);
     byte[] sk = keypair.getPrivateKey();
     byte[] pk = keypair.getPublicKey();
-    byte[] pqAddress = MLDSA65.computeAddress(pk);
+    byte[] pqAddress = keypair.getAddress();
     byte[] witnessAddress = Args.getLocalWitnesses().getWitnessAccountAddress();
     if (witnessAddress == null || witnessAddress.length == 0) {
       witnessAddress = pqAddress;
@@ -127,7 +131,7 @@ public class ConsensusService {
         ByteString.copyFrom(witnessAddress));
     miner.setPqPrivateKey(sk);
     miner.setPqPublicKey(pk);
-    logger.info("Add ML-DSA witness (from seed): {}", Hex.toHexString(witnessAddress));
+    logger.info("Add {} witness (from seed): {}", scheme, Hex.toHexString(witnessAddress));
     return miner;
   }
 

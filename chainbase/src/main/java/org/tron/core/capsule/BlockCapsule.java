@@ -227,9 +227,11 @@ public class BlockCapsule implements ProtoCapsule<Block> {
       if (accountCapsule != null && accountCapsule.getInstance().hasWitnessPermission()) {
         Permission witnessPermission = accountCapsule.getInstance().getWitnessPermission();
         if (witnessPermission.getKeysCount() > 0
-            && witnessPermission.getKeys(0).getScheme() == SignatureScheme.ML_DSA_65) {
+            && PqSignatureRegistry.contains(witnessPermission.getKeys(0).getScheme())) {
           throw new ValidateSignatureException(
-              "witness permission requires ML_DSA_65 but witness_signature is legacy");
+              "witness permission requires PQ scheme "
+                  + witnessPermission.getKeys(0).getScheme()
+                  + " but witness_signature is legacy");
         }
       }
     }
@@ -266,7 +268,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
           "witness_auth present but witness permission is not configured");
     }
     SignatureScheme scheme = witnessPermission.getKeys(0).getScheme();
-    if (scheme != SignatureScheme.ML_DSA_65) {
+    if (!PqSignatureRegistry.contains(scheme)) {
       throw new ValidateSignatureException(
           "witness permission scheme " + scheme + " is not allowed for block signing");
     }

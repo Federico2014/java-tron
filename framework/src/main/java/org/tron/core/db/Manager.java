@@ -54,8 +54,8 @@ import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
-import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.pqc.PqAuthDigest;
+import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.logsfilter.EventPluginLoader;
@@ -1760,8 +1760,8 @@ public class Manager {
 
   private void signBlockCapsule(BlockCapsule blockCapsule, Miner miner) {
     SignatureScheme scheme = resolveWitnessScheme(miner);
-    if (scheme == SignatureScheme.ML_DSA_65) {
-      signWitnessAuth(blockCapsule, miner);
+    if (PqSignatureRegistry.contains(scheme)) {
+      signWitnessAuth(blockCapsule, miner, scheme);
     } else {
       blockCapsule.sign(miner.getPrivateKey());
     }
@@ -1783,18 +1783,19 @@ public class Manager {
     return witnessPermission.getKeys(0).getScheme();
   }
 
-  private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner) {
+  private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner, SignatureScheme scheme) {
     byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
     Permission witnessPermission = chainBaseManager.getAccountStore().get(witnessAddress)
         .getInstance().getWitnessPermission();
     byte[] pqPrivateKey = miner.getPqPrivateKey();
     if (pqPrivateKey == null) {
       throw new IllegalStateException(
-          "witness permission requires ML_DSA_65 but local PQ private key is not configured");
+          "witness permission requires " + scheme
+              + " but local PQ private key is not configured");
     }
     byte[] signerAddress = witnessPermission.getKeys(0).getAddress().toByteArray();
     byte[] digest = PqAuthDigest.block(blockCapsule.getRawHashBytes(), signerAddress);
-    byte[] signature = MLDSA65.sign(pqPrivateKey, digest);
+    byte[] signature = PqSignatureRegistry.sign(scheme, pqPrivateKey, digest);
     AuthWitness witnessAuth = AuthWitness.newBuilder()
         .setSignerAddress(ByteString.copyFrom(signerAddress))
         .setSignature(ByteString.copyFrom(signature))

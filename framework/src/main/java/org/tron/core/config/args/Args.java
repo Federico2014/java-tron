@@ -78,6 +78,7 @@ import org.tron.p2p.dns.update.DnsType;
 import org.tron.p2p.dns.update.PublishConfig;
 import org.tron.p2p.utils.NetUtil;
 import org.tron.program.Version;
+import org.tron.protos.Protocol.SignatureScheme;
 
 @Slf4j(topic = "app")
 @NoArgsConstructor
@@ -1229,6 +1230,15 @@ public class Args extends CommonParameter {
       List<String> pqSeeds = config.getStringList(ConfigKey.LOCAL_WITNESS_SEED_PQ);
       if (!pqSeeds.isEmpty()) {
         localWitnesses.setPqSeeds(pqSeeds);
+        if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
+          String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);
+          try {
+            localWitnesses.setPqScheme(SignatureScheme.valueOf(schemeName));
+          } catch (IllegalArgumentException e) {
+            throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
+                + ": " + schemeName, TronError.ErrCode.WITNESS_INIT);
+          }
+        }
         byte[] address = WitnessInitializer.resolvePqWitnessAddress(witnessAddr);
         if (address != null) {
           localWitnesses.setWitnessAccountAddress(address);
