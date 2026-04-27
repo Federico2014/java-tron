@@ -45,6 +45,7 @@ import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
+import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.zksnark.BN128;
@@ -111,6 +112,7 @@ public class PrecompiledContracts {
 
   private static final VerifyMlDsa44 verifyMlDsa44 = new VerifyMlDsa44();
   private static final VerifyMlDsa65 verifyMlDsa65 = new VerifyMlDsa65();
+  private static final VerifyFnDsa verifyFnDsa = new VerifyFnDsa();
 
   // FreezeV2 PrecompileContracts
   private static final GetChainParameter getChainParameter = new GetChainParameter();
@@ -213,6 +215,11 @@ public class PrecompiledContracts {
   // 0x14: ML-DSA-65 verify (TRON extension, FIPS-204 / SHAKE256, raw 1952-byte public key).
   private static final DataWord verifyMlDsa65Addr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000014");
+  // EIP-8052 0x16: FN-DSA / Falcon-512 verify (FIPS-206 draft). Input layout:
+  // [msg 32B | sig_len 2B (big-endian) | sig sig_len B (1..752) | pk 896B].
+  // Variable-length signature is prefixed with a 2-byte length field.
+  private static final DataWord verifyFnDsaAddr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000016");
 
   public static PrecompiledContract getOptimizedContractForConstant(PrecompiledContract contract) {
     try {
@@ -301,6 +308,9 @@ public class PrecompiledContracts {
     }
     if (VMConfig.allowMlDsa() && address.equals(verifyMlDsa65Addr)) {
       return verifyMlDsa65;
+    }
+    if (VMConfig.allowFnDsa() && address.equals(verifyFnDsaAddr)) {
+      return verifyFnDsa;
     }
 
     if (VMConfig.allowTvmFreezeV2()) {
@@ -2303,6 +2313,56 @@ public class PrecompiledContracts {
         byte[] sig = copyOfRange(data, MSG_LEN, MSG_LEN + SIG_LEN);
         byte[] pk = copyOfRange(data, MSG_LEN + SIG_LEN, INPUT_LEN);
         boolean ok = MLDSA65.verify(pk, msg, sig);
+        return Pair.of(true, ok ? DataWord.ONE().getData() : DataWord.ZERO().getData());
+      } catch (Throwable t) {
+        return Pair.of(true, DataWord.ZERO().getData());
+      }
+    }
+  }
+
+  /**
+   * Verifies a FN-DSA / Falcon-512 signature (FIPS-206 draft). EIP-8052 / TRON extension.
+   *
+   * <p>Input layout (variable-length, EIP-8052-inspired):
+   * <pre>
+   *   [msg 32B | sig_len 2B (big-endian, 1..752) | sig sig_len B | pk 896B]
+   * </pre>
+   * Minimum input: 32 + 2 + 1 + 896 = 931 bytes.
+   *
+   * <p>Returns a 32-byte word: 1 on valid signature, 0 otherwise.
+   * Malformed input (wrong lengths, out-of-range sig_len) returns 0 without error.
+   */
+  public static class VerifyFnDsa extends PrecompiledContract {
+
+    private static final int MSG_LEN = 32;
+    private static final int SIG_LEN_FIELD = 2;
+    private static final int PK_LEN = FNDSA.PUBLIC_KEY_LENGTH;
+    private static final int MAX_SIG_LEN = FNDSA.SIGNATURE_LENGTH;
+    private static final int MIN_INPUT_LEN = MSG_LEN + SIG_LEN_FIELD + 1 + PK_LEN;
+
+    @Override
+    public long getEnergyForData(byte[] data) {
+      return 2500;
+    }
+
+    @Override
+    public Pair<Boolean, byte[]> execute(byte[] data) {
+      if (data == null || data.length < MIN_INPUT_LEN) {
+        return Pair.of(true, DataWord.ZERO().getData());
+      }
+      try {
+        byte[] msg = copyOfRange(data, 0, MSG_LEN);
+        int sigLen = ((data[MSG_LEN] & 0xFF) << 8) | (data[MSG_LEN + 1] & 0xFF);
+        if (sigLen < 1 || sigLen > MAX_SIG_LEN) {
+          return Pair.of(true, DataWord.ZERO().getData());
+        }
+        int pkOffset = MSG_LEN + SIG_LEN_FIELD + sigLen;
+        if (data.length < pkOffset + PK_LEN) {
+          return Pair.of(true, DataWord.ZERO().getData());
+        }
+        byte[] sig = copyOfRange(data, MSG_LEN + SIG_LEN_FIELD, pkOffset);
+        byte[] pk = copyOfRange(data, pkOffset, pkOffset + PK_LEN);
+        boolean ok = FNDSA.verify(pk, msg, sig);
         return Pair.of(true, ok ? DataWord.ONE().getData() : DataWord.ZERO().getData());
       } catch (Throwable t) {
         return Pair.of(true, DataWord.ZERO().getData());

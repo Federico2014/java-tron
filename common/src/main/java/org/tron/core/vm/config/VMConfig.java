@@ -65,6 +65,8 @@ public class VMConfig {
 
   private static boolean ALLOW_ML_DSA = false;
 
+  private static boolean ALLOW_FN_DSA = false;
+
   private VMConfig() {
   }
 
@@ -184,6 +186,10 @@ public class VMConfig {
     ALLOW_ML_DSA = allow == 1;
   }
 
+  public static void initAllowFnDsa(long allow) {
+    ALLOW_FN_DSA = allow == 1;
+  }
+
   public static boolean getEnergyLimitHardFork() {
     return CommonParameter.ENERGY_LIMIT_HARD_FORK;
   }
@@ -290,5 +296,9 @@ public class VMConfig {
 
   public static boolean allowMlDsa() {
     return ALLOW_ML_DSA;
+  }
+
+  public static boolean allowFnDsa() {
+    return ALLOW_FN_DSA;
   }
 }
