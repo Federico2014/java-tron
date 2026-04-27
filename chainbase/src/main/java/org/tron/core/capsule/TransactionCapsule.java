@@ -44,6 +44,7 @@ import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
+import org.tron.common.crypto.pqc.EphemeralSecp256k1;
 import org.tron.common.crypto.pqc.PqAuthDigest;
 import org.tron.common.crypto.pqc.PqSignatureRegistry;
 import org.tron.common.es.ExecutorServiceManager;
@@ -68,6 +69,7 @@ import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.EphemeralWitness;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -752,12 +754,21 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
         throw new PermissionException(scheme + " is not activated");
       }
-      byte[] digest = PqAuthDigest.tx(txid, permissionId, signer.toByteArray());
       byte[] pk = key.getPublicKey().toByteArray();
       byte[] sig = aw.getSignature().toByteArray();
       if (pk.length != PqSignatureRegistry.getPublicKeyLength(scheme)
           || !PqSignatureRegistry.isValidSignatureLength(scheme, sig.length)) {
         throw new PermissionException("public key or signature length mismatch");
+      }
+      byte[] digest;
+      if (scheme == SignatureScheme.EPHEMERAL_SECP256K1) {
+        if (account == null) {
+          throw new PermissionException(
+              "EPHEMERAL_SECP256K1 requires an existing account for replay protection");
+        }
+        digest = ephemeralPreVerifyChecks(transaction, permissionId, signer, sig, account);
+      } else {
+        digest = PqAuthDigest.tx(txid, permissionId, signer.toByteArray());
       }
       if (!PqSignatureRegistry.verify(scheme, pk, digest, sig)) {
         throw new PermissionException("pq sig invalid");
@@ -774,6 +785,91 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
   private static Sha256Hash computeRawHash(Transaction transaction) {
     return Sha256Hash.of(CommonParameter.getInstance().isECKeyCryptoEngine(),
         transaction.getRawData().toByteArray());
+  }
+
+  /**
+   * Pre-verify checks for an EPHEMERAL_SECP256K1 auth witness: parses the
+   * inner {@link EphemeralWitness}, enforces nonce monotonicity and that the
+   * advertised leaf has not been consumed, and returns the domain-separated
+   * digest the ECDSA signature must verify over. State is read but never
+   * mutated here — bitmap / nonce updates happen at execution time.
+   */
+  private static byte[] ephemeralPreVerifyChecks(Transaction transaction, int permissionId,
+      ByteString signer, byte[] sig, AccountCapsule account) throws PermissionException {
+    EphemeralWitness witness;
+    try {
+      witness = EphemeralWitness.parseFrom(sig);
+    } catch (InvalidProtocolBufferException e) {
+      throw new PermissionException("malformed EphemeralWitness: " + e.getMessage());
+    }
+    int leafIndex = witness.getLeafIndex();
+    // proto uint32 -> Java signed int; negative-as-signed (>=2^31) exceeds the
+    // per-account 2^16 cap and must be rejected outright.
+    if (leafIndex < 0 || leafIndex >= (1 << 16)) {
+      throw new PermissionException(
+          "ephemeral leaf_index out of range [0, 2^16): " + Integer.toUnsignedString(leafIndex));
+    }
+    long txNonce = transaction.getRawData().getNonce();
+    long lastNonce = account.getLastEphemeralNonce();
+    if (txNonce <= lastNonce) {
+      throw new PermissionException(
+          "ephemeral nonce must be > last_ephemeral_nonce (got " + txNonce
+              + ", last " + lastNonce + ")");
+    }
+    if (account.isEphemeralLeafConsumed(leafIndex)) {
+      throw new PermissionException(
+          "ephemeral leaf already consumed: " + leafIndex);
+    }
+    byte[] txid = computeRawHash(transaction).getBytes();
+    return PqAuthDigest.ephemeralTx(txid, permissionId, signer.toByteArray(),
+        txNonce, leafIndex);
+  }
+
+  /**
+   * Commits replay-protection state for every EPHEMERAL_SECP256K1 auth witness
+   * in {@code transaction}: records each consumed leaf in the signing account's
+   * bitmap and advances {@code last_ephemeral_nonce} to {@code raw.nonce}.
+   * Idempotent on already-consumed leaves only when called against the same
+   * committed state — callers MUST run this exactly once per accepted tx, after
+   * structured-signature validation and actuator execution have both succeeded.
+   */
+  public static void commitEphemeralReplayState(Transaction transaction,
+      AccountStore accountStore, DynamicPropertiesStore dynamicPropertiesStore) {
+    Transaction.Contract contract = transaction.getRawData().getContractList().get(0);
+    int permissionId = contract.getPermissionId();
+    byte[] owner = getOwner(contract);
+    AccountCapsule account = accountStore.get(owner);
+    if (account == null) {
+      return;
+    }
+    Permission permission = account.getPermissionById(permissionId);
+    if (permission == null || permission.getKeysCount() == 0) {
+      return;
+    }
+    if (permission.getKeysList().get(0).getScheme() != SignatureScheme.EPHEMERAL_SECP256K1) {
+      return;
+    }
+    long txNonce = transaction.getRawData().getNonce();
+    boolean mutated = false;
+    for (AuthWitness aw : transaction.getAuthWitnessList()) {
+      Key key = findKeyByAddress(permission, aw.getSignerAddress());
+      if (key == null || key.getScheme() != SignatureScheme.EPHEMERAL_SECP256K1) {
+        continue;
+      }
+      EphemeralWitness witness;
+      try {
+        witness = EphemeralWitness.parseFrom(aw.getSignature());
+      } catch (InvalidProtocolBufferException e) {
+        // pre-verify already rejected malformed witnesses; defensive skip
+        continue;
+      }
+      account.markEphemeralLeafConsumed(witness.getLeafIndex());
+      mutated = true;
+    }
+    if (mutated || txNonce > account.getLastEphemeralNonce()) {
+      account.setLastEphemeralNonce(txNonce);
+      accountStore.put(owner, account);
+    }
   }
 
   private static Key findKeyByAddress(Permission permission, ByteString address) {

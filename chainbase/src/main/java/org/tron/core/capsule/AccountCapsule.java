@@ -1477,4 +1477,68 @@ public class AccountCapsule implements ProtoCapsule<Account>, Comparable<Account
     }
   }
 
+  // ---------------- EPHEMERAL_SECP256K1 replay-protection state ----------------
+
+  public static final int EPHEMERAL_BITMAP_MAX_BYTES = 8 * 1024;
+
+  public ByteString getEphemeralUsedBitmap() {
+    return this.account.getEphemeralUsedBitmap();
+  }
+
+  public long getLastEphemeralNonce() {
+    return this.account.getLastEphemeralNonce();
+  }
+
+  public void setLastEphemeralNonce(long nonce) {
+    this.account = this.account.toBuilder().setLastEphemeralNonce(nonce).build();
+  }
+
+  /**
+   * @return true iff the bit for {@code leafIndex} is set in
+   * {@code ephemeral_used_bitmap}. Out-of-range / absent bits return false
+   * (an unallocated tail byte is treated as zero, matching the wire spec).
+   */
+  public boolean isEphemeralLeafConsumed(int leafIndex) {
+    if (leafIndex < 0) {
+      throw new IllegalArgumentException("leafIndex must be non-negative");
+    }
+    int byteIdx = leafIndex >>> 3;
+    ByteString bitmap = this.account.getEphemeralUsedBitmap();
+    if (byteIdx >= bitmap.size()) {
+      return false;
+    }
+    int bitInByte = leafIndex & 7;
+    return ((bitmap.byteAt(byteIdx) & 0xff) & (1 << bitInByte)) != 0;
+  }
+
+  /**
+   * Marks {@code leafIndex} as consumed in {@code ephemeral_used_bitmap},
+   * growing the bitmap if needed up to {@link #EPHEMERAL_BITMAP_MAX_BYTES}.
+   * Throws {@link IllegalStateException} if the resulting bitmap would exceed
+   * the cap (per-account leaf count is capped at 2^16).
+   */
+  public void markEphemeralLeafConsumed(int leafIndex) {
+    if (leafIndex < 0) {
+      throw new IllegalArgumentException("leafIndex must be non-negative");
+    }
+    int byteIdx = leafIndex >>> 3;
+    if (byteIdx >= EPHEMERAL_BITMAP_MAX_BYTES) {
+      throw new IllegalStateException(
+          "ephemeral leaf index " + leafIndex + " exceeds per-account cap (2^16 leaves)");
+    }
+    ByteString cur = this.account.getEphemeralUsedBitmap();
+    int needed = byteIdx + 1;
+    byte[] buf;
+    if (cur.size() >= needed) {
+      buf = cur.toByteArray();
+    } else {
+      buf = new byte[needed];
+      cur.copyTo(buf, 0);
+    }
+    int bitInByte = leafIndex & 7;
+    buf[byteIdx] = (byte) ((buf[byteIdx] & 0xff) | (1 << bitInByte));
+    this.account = this.account.toBuilder()
+        .setEphemeralUsedBitmap(ByteString.copyFrom(buf))
+        .build();
+  }
 }

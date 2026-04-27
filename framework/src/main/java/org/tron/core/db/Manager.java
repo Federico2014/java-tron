@@ -1532,6 +1532,14 @@ public class Manager {
           String.format(" %s transaction signature validate failed", txId));
     }
 
+    // Commit replay-protection state for EPHEMERAL_SECP256K1 witnesses before
+    // the actuator can mutate any other state. This must happen exactly once per
+    // accepted tx; rollback of the surrounding snapshot will revert it
+    // atomically with the rest of the tx side effects.
+    TransactionCapsule.commitEphemeralReplayState(trxCap.getInstance(),
+        chainBaseManager.getAccountStore(),
+        chainBaseManager.getDynamicPropertiesStore());
+
     TransactionTrace trace = new TransactionTrace(trxCap, StoreFactory.getInstance(),
         new RuntimeImpl());
     trxCap.setTrxTrace(trace);
