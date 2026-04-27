@@ -19,15 +19,16 @@ import org.tron.common.utils.Sha256Hash;
  * index encodes left/right at each level (bit 0 = leaf level, bit {@code depth-1}
  * = top level).
  *
- * <p>Tree depth is capped at {@link #MAX_DEPTH} (2^32 leaves) so a single proof
- * fits in a fixed buffer; Phase C constrains usage to {@code <= 2^16} leaves
- * per Ephemeral permission via the account bitmap, but the tree itself does
- * not enforce that lower bound.
+ * <p>Tree depth is capped at {@link #MAX_DEPTH} (2^20 leaves) — chosen to keep
+ * a fully-materialised tree within ~32 MiB of working memory while leaving
+ * headroom above the Ephemeral consumer's own 2^16 cap. Each consumer is free
+ * to enforce a tighter bound (e.g. {@code EphemeralSecp256k1.MAX_PROOF_DEPTH}
+ * = 16); the tree itself does not enforce those lower bounds.
  */
 public final class MerkleTree {
 
   public static final int LEAF_LENGTH = 32;
-  public static final int MAX_DEPTH = 32;
+  public static final int MAX_DEPTH = 20;
 
   private MerkleTree() {
   }
@@ -98,8 +99,9 @@ public final class MerkleTree {
     if (index < 0) {
       throw new IllegalArgumentException("leaf index must be non-negative");
     }
-    // Index must fit in `depth` bits (leaf range = [0, 2^depth)).
-    if (depth < 32 && (index >>> depth) != 0) {
+    // Index must fit in `depth` bits (leaf range = [0, 2^depth)). Java's
+    // `>>>` shifts mod 32, so this is only correct because MAX_DEPTH < 32.
+    if ((index >>> depth) != 0) {
       throw new IllegalArgumentException(
           "leaf index " + index + " exceeds depth " + depth);
     }
