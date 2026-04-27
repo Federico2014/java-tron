@@ -886,14 +886,38 @@ public class ProposalUtil {
         }
         break;
       }
-      case ALLOW_ML_DSA: {
-        if (dynamicPropertiesStore.getAllowMlDsa() == 1) {
+      case ALLOW_ML_DSA_44: {
+        if (value != 0 && value != 1) {
           throw new ContractValidateException(
-              "[ALLOW_ML_DSA] has been valid, no need to propose again");
+              "This value[ALLOW_ML_DSA_44] is only allowed to be 0 or 1");
         }
-        if (value != 1) {
+        break;
+      }
+      case ALLOW_ML_DSA_65: {
+        if (value != 0 && value != 1) {
           throw new ContractValidateException(
-              "This value[ALLOW_ML_DSA] is only allowed to be 1");
+              "This value[ALLOW_ML_DSA_65] is only allowed to be 0 or 1");
+        }
+        break;
+      }
+      case ALLOW_SLH_DSA: {
+        if (value != 0 && value != 1) {
+          throw new ContractValidateException(
+              "This value[ALLOW_SLH_DSA] is only allowed to be 0 or 1");
+        }
+        break;
+      }
+      case ALLOW_FN_DSA: {
+        if (value != 0 && value != 1) {
+          throw new ContractValidateException(
+              "This value[ALLOW_FN_DSA] is only allowed to be 0 or 1");
+        }
+        break;
+      }
+      case ALLOW_EPHEMERAL_SECP256K1: {
+        if (value != 0 && value != 1) {
+          throw new ContractValidateException(
+              "This value[ALLOW_EPHEMERAL_SECP256K1] is only allowed to be 0 or 1");
         }
         break;
       }
@@ -983,7 +1007,11 @@ public class ProposalUtil {
     PROPOSAL_EXPIRE_TIME(92), // (0, 31536003000)
     ALLOW_TVM_SELFDESTRUCT_RESTRICTION(94), // 0, 1
     ALLOW_TVM_OSAKA(96), // 0, 1
-    ALLOW_ML_DSA(97); // 0, 1
+    ALLOW_ML_DSA_44(97), // 0, 1 (renamed from ALLOW_ML_DSA; ID preserved)
+    ALLOW_ML_DSA_65(98), // 0, 1
+    ALLOW_SLH_DSA(99), // 0, 1
+    ALLOW_FN_DSA(100), // 0, 1
+    ALLOW_EPHEMERAL_SECP256K1(101); // 0, 1
 
     private long code;
 

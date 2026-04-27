@@ -650,8 +650,9 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       int legacyCount = this.transaction.getSignatureCount();
       int pqCount = this.transaction.getAuthWitnessCount();
 
-      if (pqCount > 0 && !dynamicPropertiesStore.allowMlDsa()) {
-        throw new ValidateSignatureException("auth_witness not allowed: ML-DSA not activated");
+      if (pqCount > 0 && !dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
+        throw new ValidateSignatureException(
+            "auth_witness not allowed: no PQ scheme is activated");
       }
       if (legacyCount > 0 && pqCount > 0) {
         throw new ValidateSignatureException(
@@ -747,6 +748,9 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       SignatureScheme scheme = key.getScheme();
       if (!PqSignatureRegistry.contains(scheme)) {
         throw new PermissionException("unsupported scheme: " + scheme);
+      }
+      if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
+        throw new PermissionException(scheme + " is not activated");
       }
       byte[] digest = PqAuthDigest.tx(txid, permissionId, signer.toByteArray());
       byte[] pk = key.getPublicKey().toByteArray();

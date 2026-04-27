@@ -1,7 +1,7 @@
 package org.tron.core.services;
 
 import static org.tron.core.Constant.MAX_PROPOSAL_EXPIRE_TIME;
-import static org.tron.core.utils.ProposalUtil.ProposalType.ALLOW_ML_DSA;
+import static org.tron.core.utils.ProposalUtil.ProposalType.ALLOW_ML_DSA_44;
 import static org.tron.core.utils.ProposalUtil.ProposalType.CONSENSUS_LOGIC_OPTIMIZATION;
 import static org.tron.core.utils.ProposalUtil.ProposalType.ENERGY_FEE;
 import static org.tron.core.utils.ProposalUtil.ProposalType.PROPOSAL_EXPIRE_TIME;
@@ -154,18 +154,18 @@ public class ProposalServiceTest extends BaseTest {
 
   @Test
   public void testProcessAllowMlDsa() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
-    Assert.assertFalse(dbManager.getDynamicPropertiesStore().allowMlDsa());
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
+    Assert.assertFalse(dbManager.getDynamicPropertiesStore().allowMlDsa44());
 
     Proposal proposal = Proposal.newBuilder()
-        .putParameters(ALLOW_ML_DSA.getCode(), 1L).build();
+        .putParameters(ALLOW_ML_DSA_44.getCode(), 1L).build();
     ProposalCapsule proposalCapsule = new ProposalCapsule(proposal);
     boolean result = ProposalService.process(dbManager, proposalCapsule);
     Assert.assertTrue(result);
 
-    Assert.assertEquals(1L, dbManager.getDynamicPropertiesStore().getAllowMlDsa());
-    Assert.assertTrue(dbManager.getDynamicPropertiesStore().allowMlDsa());
+    Assert.assertEquals(1L, dbManager.getDynamicPropertiesStore().getAllowMlDsa44());
+    Assert.assertTrue(dbManager.getDynamicPropertiesStore().allowMlDsa44());
 
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
   }
 }

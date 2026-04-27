@@ -261,7 +261,6 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
 
   private void validatePermissionScheme(Permission permission) throws ContractValidateException {
     DynamicPropertiesStore dynamicStore = chainBaseManager.getDynamicPropertiesStore();
-    boolean mlDsaAllowed = dynamicStore.allowMlDsa();
 
     SignatureScheme first = permission.getKeysList().get(0).getScheme();
     for (Key key : permission.getKeysList()) {
@@ -276,9 +275,9 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
               "public_key must be empty when scheme is UNKNOWN_SIG_SCHEME");
         }
       } else {
-        if (!mlDsaAllowed) {
+        if (!dynamicStore.isPqSchemeAllowed(scheme)) {
           throw new ContractValidateException(
-              "ML-DSA is not activated, scheme " + scheme + " is not allowed");
+              scheme + " is not activated, this scheme is not allowed");
         }
         int expected = expectedPublicKeyLength(scheme);
         if (expected < 0) {
@@ -294,10 +293,16 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
     }
 
     if (permission.getType() == PermissionType.Witness
-        && first != SignatureScheme.UNKNOWN_SIG_SCHEME
-        && !PqSignatureRegistry.contains(first)) {
-      throw new ContractValidateException(
-          "Witness permission only supports legacy or registered PQ schemes, got " + first);
+        && first != SignatureScheme.UNKNOWN_SIG_SCHEME) {
+      if (first == SignatureScheme.EPHEMERAL_SECP256K1) {
+        throw new ContractValidateException(
+            "EPHEMERAL_SECP256K1 is incompatible with witness block production "
+                + "and is permanently rejected for Witness permission");
+      }
+      if (!PqSignatureRegistry.contains(first)) {
+        throw new ContractValidateException(
+            "Witness permission only supports legacy or registered PQ schemes, got " + first);
+      }
     }
   }
 

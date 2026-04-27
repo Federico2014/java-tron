@@ -91,7 +91,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test
   public void legacyValidateWithoutAuthWitnessAcceptedBeforeActivation() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(0L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.UNKNOWN_SIG_SCHEME);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -104,7 +105,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void authWitnessBeforeActivationRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(0L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.UNKNOWN_SIG_SCHEME);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -122,7 +124,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void bothLegacyAndAuthWitnessRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -140,7 +143,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void mlDsaSchemeWithLegacyOnlyRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -153,7 +157,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void legacySchemeWithAuthWitnessOnlyRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.UNKNOWN_SIG_SCHEME);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -171,7 +176,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void neitherLegacyNorAuthRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -184,7 +190,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test
   public void pqOnlyAccepted() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -202,7 +209,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test
   public void tamperedAuthWitnessFails() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -222,7 +230,8 @@ public class BlockCapsulePqTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void signerNotInWitnessPermissionRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
     dbManager.getAccountStore().put(witnessAddress, witness);
 

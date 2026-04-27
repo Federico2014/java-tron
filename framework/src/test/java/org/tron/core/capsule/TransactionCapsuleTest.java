@@ -135,7 +135,8 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void authWitnessBeforeActivationRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(0L);
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0).toBuilder()
         .addAuthWitness(AuthWitness.newBuilder()
             .setSignerAddress(ByteString.copyFrom(ByteArray.fromHexString(PQ_SIGNER_HEX)))
@@ -148,13 +149,13 @@ public class TransactionCapsuleTest extends BaseTest {
           dbManager.getDynamicPropertiesStore());
       Assert.fail("should reject auth_witness before activation");
     } catch (ValidateSignatureException e) {
-      Assert.assertTrue(e.getMessage().contains("ML-DSA not activated"));
+      Assert.assertTrue(e.getMessage().contains("no PQ scheme is activated"));
     }
   }
 
   @Test
   public void signatureAndAuthWitnessAreMutuallyExclusive() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0).toBuilder()
         .addSignature(ByteString.copyFrom(new byte[65]))
         .addAuthWitness(AuthWitness.newBuilder()
@@ -174,7 +175,7 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void validAuthWitnessAccepted() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     MLDSA44 kp = new MLDSA44();
     putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
 
@@ -197,7 +198,7 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void duplicateSignerRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     MLDSA44 kp = new MLDSA44();
     putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
 
@@ -224,7 +225,7 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void tamperedAuthWitnessRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     MLDSA44 kp = new MLDSA44();
     putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
 
@@ -253,7 +254,7 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void signerNotInPermissionRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     MLDSA44 kp = new MLDSA44();
     putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
 
@@ -388,7 +389,8 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void mlDsa65AuthWitnessAlsoAccepted() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     MLDSA65 kp = new MLDSA65();
     putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_65);
 

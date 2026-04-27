@@ -1515,8 +1515,28 @@ public class Wallet {
         .build());
 
     builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
-        .setKey("getAllowMlDsa")
-        .setValue(dbManager.getDynamicPropertiesStore().getAllowMlDsa())
+        .setKey("getAllowMlDsa44")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowMlDsa44())
+        .build());
+
+    builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
+        .setKey("getAllowMlDsa65")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowMlDsa65())
+        .build());
+
+    builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
+        .setKey("getAllowSlhDsa")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowSlhDsa())
+        .build());
+
+    builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
+        .setKey("getAllowFnDsa")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowFnDsa())
+        .build());
+
+    builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
+        .setKey("getAllowEphemeralSecp256k1")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowEphemeralSecp256k1())
         .build());
 
     return builder.build();

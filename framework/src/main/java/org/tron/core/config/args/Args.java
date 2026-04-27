@@ -1042,9 +1042,25 @@ public class Args extends CommonParameter {
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) : 0;
 
-    PARAMETER.allowMlDsa =
-        config.hasPath(ConfigKey.COMMITTEE_ALLOW_ML_DSA) ? config
-            .getInt(ConfigKey.COMMITTEE_ALLOW_ML_DSA) : 0;
+    PARAMETER.allowMlDsa44 =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_ML_DSA_44) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_ML_DSA_44) : 0;
+
+    PARAMETER.allowMlDsa65 =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_ML_DSA_65) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_ML_DSA_65) : 0;
+
+    PARAMETER.allowSlhDsa =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_SLH_DSA) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_SLH_DSA) : 0;
+
+    PARAMETER.allowFnDsa =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_FN_DSA) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_FN_DSA) : 0;
+
+    PARAMETER.allowEphemeralSecp256k1 =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_EPHEMERAL_SECP256K1) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_EPHEMERAL_SECP256K1) : 0;
 
     logConfig();
   }

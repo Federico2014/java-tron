@@ -28,7 +28,10 @@ enum SignatureScheme {
   SM2_SM3 = 2;
   ML_DSA_44 = 3;
   ML_DSA_65 = 4;
-  reserved 5 to 15;
+  SLH_DSA = 5;             // FIPS 205 SLH-DSA-SHA2-128s
+  FN_DSA = 6;              // FIPS 206 draft Falcon-512
+  EPHEMERAL_SECP256K1 = 7; // PQ-root + Merkle commitment + one-time secp256k1
+  reserved 8 to 15;
 }
 
 // AccountId, (name, address) use name, (null, address) use address, (name, null) use name,

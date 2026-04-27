@@ -639,7 +639,23 @@ public class CommonParameter {
 
   @Getter
   @Setter
-  public long allowMlDsa;
+  public long allowMlDsa44;
+
+  @Getter
+  @Setter
+  public long allowMlDsa65;
+
+  @Getter
+  @Setter
+  public long allowSlhDsa;
+
+  @Getter
+  @Setter
+  public long allowFnDsa;
+
+  @Getter
+  @Setter
+  public long allowEphemeralSecp256k1;
 
   private static double calcMaxTimeRatio() {
     return 5.0;

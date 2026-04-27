@@ -24,6 +24,7 @@ import org.tron.core.config.Parameter.ChainConstant;
 import org.tron.core.db.TronStoreWithRevoking;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ItemNotFoundException;
+import org.tron.protos.Protocol.SignatureScheme;
 
 @Slf4j(topic = "DB")
 @Component
@@ -240,7 +241,14 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
 
   private static final byte[] ALLOW_TVM_OSAKA = "ALLOW_TVM_OSAKA".getBytes();
 
-  private static final byte[] ALLOW_ML_DSA = "ALLOW_ML_DSA".getBytes();
+  // Storage key preserved as "ALLOW_ML_DSA" for on-chain compat with
+  // add-ml-dsa-signature-support; Java symbol renamed to ALLOW_ML_DSA_44.
+  private static final byte[] ALLOW_ML_DSA_44 = "ALLOW_ML_DSA".getBytes();
+  private static final byte[] ALLOW_ML_DSA_65 = "ALLOW_ML_DSA_65".getBytes();
+  private static final byte[] ALLOW_SLH_DSA = "ALLOW_SLH_DSA".getBytes();
+  private static final byte[] ALLOW_FN_DSA = "ALLOW_FN_DSA".getBytes();
+  private static final byte[] ALLOW_EPHEMERAL_SECP256K1 =
+      "ALLOW_EPHEMERAL_SECP256K1".getBytes();
 
   @Autowired
   private DynamicPropertiesStore(@Value("properties") String dbName) {
@@ -2995,19 +3003,101 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
     this.put(ALLOW_TVM_OSAKA, new BytesCapsule(ByteArray.fromLong(value)));
   }
 
-  public long getAllowMlDsa() {
-    return Optional.ofNullable(getUnchecked(ALLOW_ML_DSA))
+  public long getAllowMlDsa44() {
+    return Optional.ofNullable(getUnchecked(ALLOW_ML_DSA_44))
         .map(BytesCapsule::getData)
         .map(ByteArray::toLong)
-        .orElse(CommonParameter.getInstance().getAllowMlDsa());
+        .orElse(CommonParameter.getInstance().getAllowMlDsa44());
   }
 
-  public void saveAllowMlDsa(long value) {
-    this.put(ALLOW_ML_DSA, new BytesCapsule(ByteArray.fromLong(value)));
+  public void saveAllowMlDsa44(long value) {
+    this.put(ALLOW_ML_DSA_44, new BytesCapsule(ByteArray.fromLong(value)));
   }
 
-  public boolean allowMlDsa() {
-    return getAllowMlDsa() == 1L;
+  public boolean allowMlDsa44() {
+    return getAllowMlDsa44() == 1L;
+  }
+
+  public long getAllowMlDsa65() {
+    return Optional.ofNullable(getUnchecked(ALLOW_ML_DSA_65))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance().getAllowMlDsa65());
+  }
+
+  public void saveAllowMlDsa65(long value) {
+    this.put(ALLOW_ML_DSA_65, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public boolean allowMlDsa65() {
+    return getAllowMlDsa65() == 1L;
+  }
+
+  public long getAllowSlhDsa() {
+    return Optional.ofNullable(getUnchecked(ALLOW_SLH_DSA))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance().getAllowSlhDsa());
+  }
+
+  public void saveAllowSlhDsa(long value) {
+    this.put(ALLOW_SLH_DSA, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public boolean allowSlhDsa() {
+    return getAllowSlhDsa() == 1L;
+  }
+
+  public long getAllowFnDsa() {
+    return Optional.ofNullable(getUnchecked(ALLOW_FN_DSA))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance().getAllowFnDsa());
+  }
+
+  public void saveAllowFnDsa(long value) {
+    this.put(ALLOW_FN_DSA, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public boolean allowFnDsa() {
+    return getAllowFnDsa() == 1L;
+  }
+
+  public long getAllowEphemeralSecp256k1() {
+    return Optional.ofNullable(getUnchecked(ALLOW_EPHEMERAL_SECP256K1))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance().getAllowEphemeralSecp256k1());
+  }
+
+  public void saveAllowEphemeralSecp256k1(long value) {
+    this.put(ALLOW_EPHEMERAL_SECP256K1, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public boolean allowEphemeralSecp256k1() {
+    return getAllowEphemeralSecp256k1() == 1L;
+  }
+
+  public boolean isPqSchemeAllowed(SignatureScheme scheme) {
+    switch (scheme) {
+      case ML_DSA_44:
+        return allowMlDsa44();
+      case ML_DSA_65:
+        return allowMlDsa65();
+      case SLH_DSA:
+        return allowSlhDsa();
+      case FN_DSA:
+        return allowFnDsa();
+      case EPHEMERAL_SECP256K1:
+        return allowEphemeralSecp256k1();
+      default:
+        return false;
+    }
+  }
+
+  public boolean isAnyPqSchemeAllowed() {
+    return allowMlDsa44() || allowMlDsa65() || allowSlhDsa() || allowFnDsa()
+        || allowEphemeralSecp256k1();
   }
 
   private static class DynamicResourceProperties {

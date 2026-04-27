@@ -1768,7 +1768,7 @@ public class Manager {
   }
 
   private SignatureScheme resolveWitnessScheme(Miner miner) {
-    if (!chainBaseManager.getDynamicPropertiesStore().allowMlDsa()) {
+    if (!chainBaseManager.getDynamicPropertiesStore().isAnyPqSchemeAllowed()) {
       return SignatureScheme.UNKNOWN_SIG_SCHEME;
     }
     byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
@@ -1780,7 +1780,11 @@ public class Manager {
     if (witnessPermission.getKeysCount() == 0) {
       return SignatureScheme.UNKNOWN_SIG_SCHEME;
     }
-    return witnessPermission.getKeys(0).getScheme();
+    SignatureScheme scheme = witnessPermission.getKeys(0).getScheme();
+    if (!chainBaseManager.getDynamicPropertiesStore().isPqSchemeAllowed(scheme)) {
+      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+    }
+    return scheme;
   }
 
   private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner, SignatureScheme scheme) {

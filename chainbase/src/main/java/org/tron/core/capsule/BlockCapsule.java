@@ -222,7 +222,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   private boolean validateLegacySignature(DynamicPropertiesStore dynamicPropertiesStore,
       AccountStore accountStore, byte[] witnessAccountAddress)
       throws ValidateSignatureException {
-    if (dynamicPropertiesStore.allowMlDsa()) {
+    if (dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
       AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
       if (accountCapsule != null && accountCapsule.getInstance().hasWitnessPermission()) {
         Permission witnessPermission = accountCapsule.getInstance().getWitnessPermission();
@@ -254,10 +254,6 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   private boolean validateWitnessAuth(DynamicPropertiesStore dynamicPropertiesStore,
       AccountStore accountStore, byte[] witnessAccountAddress, AuthWitness witnessAuth)
       throws ValidateSignatureException {
-    if (!dynamicPropertiesStore.allowMlDsa()) {
-      throw new ValidateSignatureException(
-          "witness_auth present but ML-DSA is not activated");
-    }
     AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
     Permission witnessPermission = null;
     if (accountCapsule != null && accountCapsule.getInstance().hasWitnessPermission()) {
@@ -268,9 +264,17 @@ public class BlockCapsule implements ProtoCapsule<Block> {
           "witness_auth present but witness permission is not configured");
     }
     SignatureScheme scheme = witnessPermission.getKeys(0).getScheme();
+    if (scheme == SignatureScheme.EPHEMERAL_SECP256K1) {
+      throw new ValidateSignatureException(
+          "EPHEMERAL_SECP256K1 is not allowed for witness permission");
+    }
     if (!PqSignatureRegistry.contains(scheme)) {
       throw new ValidateSignatureException(
           "witness permission scheme " + scheme + " is not allowed for block signing");
+    }
+    if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
+      throw new ValidateSignatureException(
+          "witness_auth present but " + scheme + " is not activated");
     }
 
     byte[] signerAddr = witnessAuth.getSignerAddress().toByteArray();

@@ -774,27 +774,51 @@ public class ProposalUtilTest extends BaseTest {
   }
 
   @Test
-  public void validateAllowMlDsa() {
-    long code = ProposalType.ALLOW_ML_DSA.getCode();
+  public void validateAllowMlDsa44() {
+    assertPqAllowFlagAcceptsZeroAndOne(
+        ProposalType.ALLOW_ML_DSA_44.getCode(), "ALLOW_ML_DSA_44");
+  }
 
+  @Test
+  public void validateAllowMlDsa65() {
+    assertPqAllowFlagAcceptsZeroAndOne(
+        ProposalType.ALLOW_ML_DSA_65.getCode(), "ALLOW_ML_DSA_65");
+  }
+
+  @Test
+  public void validateAllowSlhDsa() {
+    assertPqAllowFlagAcceptsZeroAndOne(
+        ProposalType.ALLOW_SLH_DSA.getCode(), "ALLOW_SLH_DSA");
+  }
+
+  @Test
+  public void validateAllowFnDsa() {
+    assertPqAllowFlagAcceptsZeroAndOne(
+        ProposalType.ALLOW_FN_DSA.getCode(), "ALLOW_FN_DSA");
+  }
+
+  @Test
+  public void validateAllowEphemeralSecp256k1() {
+    assertPqAllowFlagAcceptsZeroAndOne(
+        ProposalType.ALLOW_EPHEMERAL_SECP256K1.getCode(), "ALLOW_EPHEMERAL_SECP256K1");
+  }
+
+  private void assertPqAllowFlagAcceptsZeroAndOne(long code, String name) {
     ContractValidateException thrown = assertThrows(ContractValidateException.class,
-        () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 0));
-    assertEquals("This value[ALLOW_ML_DSA] is only allowed to be 1", thrown.getMessage());
+        () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 2));
+    assertEquals(
+        "This value[" + name + "] is only allowed to be 0 or 1", thrown.getMessage());
 
     thrown = assertThrows(ContractValidateException.class,
-        () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 2));
-    assertEquals("This value[ALLOW_ML_DSA] is only allowed to be 1", thrown.getMessage());
+        () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, -1));
+    assertEquals(
+        "This value[" + name + "] is only allowed to be 0 or 1", thrown.getMessage());
 
     try {
+      ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 0);
       ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 1);
     } catch (ContractValidateException e) {
-      Assert.fail("value=1 should be accepted: " + e.getMessage());
+      Assert.fail("value=0 and value=1 should both be accepted: " + e.getMessage());
     }
-
-    dynamicPropertiesStore.saveAllowMlDsa(1L);
-    thrown = assertThrows(ContractValidateException.class,
-        () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 1));
-    assertEquals("[ALLOW_ML_DSA] has been valid, no need to propose again", thrown.getMessage());
-    dynamicPropertiesStore.saveAllowMlDsa(0L);
   }
 }

@@ -140,7 +140,7 @@ public class PqcWitnessNode {
     ByteString signerAddrBs = ByteString.copyFrom(signerAddr);
 
     // Activate ML-DSA on the local chain params.
-    db.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    db.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     db.getDynamicPropertiesStore().saveAllowMultiSign(1L);
 
     // Witness account with ML-DSA-44 witness permission.

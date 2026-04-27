@@ -396,8 +396,24 @@ public class ProposalService extends ProposalUtil {
           manager.getDynamicPropertiesStore().saveAllowTvmOsaka(entry.getValue());
           break;
         }
-        case ALLOW_ML_DSA: {
-          manager.getDynamicPropertiesStore().saveAllowMlDsa(entry.getValue());
+        case ALLOW_ML_DSA_44: {
+          manager.getDynamicPropertiesStore().saveAllowMlDsa44(entry.getValue());
+          break;
+        }
+        case ALLOW_ML_DSA_65: {
+          manager.getDynamicPropertiesStore().saveAllowMlDsa65(entry.getValue());
+          break;
+        }
+        case ALLOW_SLH_DSA: {
+          manager.getDynamicPropertiesStore().saveAllowSlhDsa(entry.getValue());
+          break;
+        }
+        case ALLOW_FN_DSA: {
+          manager.getDynamicPropertiesStore().saveAllowFnDsa(entry.getValue());
+          break;
+        }
+        case ALLOW_EPHEMERAL_SECP256K1: {
+          manager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(entry.getValue());
           break;
         }
         default:

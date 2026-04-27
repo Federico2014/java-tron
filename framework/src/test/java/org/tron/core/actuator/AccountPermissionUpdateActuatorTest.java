@@ -1084,7 +1084,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void mlDsaPermissionRejectedWhenNotAllowed() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Collections.singletonList(
@@ -1096,15 +1096,15 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
     try {
       actuatorFor(any).validate();
-      fail("should reject ML-DSA key when ALLOW_ML_DSA = 0");
+      fail("should reject ML-DSA key when ALLOW_ML_DSA_44 = 0");
     } catch (ContractValidateException e) {
-      Assert.assertTrue(e.getMessage().contains("ML-DSA is not activated"));
+      Assert.assertTrue(e.getMessage().contains("ML_DSA_44 is not activated"));
     }
   }
 
   @Test
   public void legacyKeyWithNonEmptyPublicKeyRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     Key badLegacy = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS)))
@@ -1128,7 +1128,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void mixedSchemeInSamePermissionRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Arrays.asList(
@@ -1150,7 +1150,8 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void mixedMlDsaSchemesRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Arrays.asList(
@@ -1172,7 +1173,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void mlDsa44WrongPublicKeyLengthRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Collections.singletonList(
@@ -1193,7 +1194,8 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void witnessMlDsa44Accepted() throws ContractValidateException {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(WITNESS_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Collections.singletonList(
@@ -1211,7 +1213,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void duplicatePublicKeyRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     byte[] sharedPk = fixedBytes(1312, 1);
     Key k1 = Key.newBuilder()
@@ -1242,7 +1244,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void validMlDsa44PermissionAccepted() throws ContractValidateException {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Collections.singletonList(
@@ -1260,7 +1262,8 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
   @Test
   public void validMlDsa65WitnessPermissionAccepted() throws ContractValidateException {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(1L);
     ByteString address = ByteString.copyFrom(ByteArray.fromHexString(WITNESS_ADDRESS));
     Permission owner = ownerPermissionWithKeys(
         java.util.Collections.singletonList(
