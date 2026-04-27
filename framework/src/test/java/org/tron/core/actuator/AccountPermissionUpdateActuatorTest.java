@@ -1381,4 +1381,82 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
       Assert.assertTrue(e.getMessage().contains("same scheme"));
     }
   }
+
+  @Test
+  public void fnDsaPermissionRejectedWhenNotAllowed() {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.FN_DSA, 897, 1)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS1)), 2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("should reject FN-DSA key when ALLOW_FN_DSA = 0");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("FN_DSA is not activated"));
+    }
+  }
+
+  @Test
+  public void fnDsaWrongPublicKeyLengthRejected() {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.FN_DSA, 895, 1)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS1)), 2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("FN-DSA wrong public_key length should be rejected");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("public_key length"));
+    }
+  }
+
+  @Test
+  public void validFnDsaPermissionAccepted() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.FN_DSA, 896, 1)),
+        2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.FN_DSA, 896, 2)),
+        2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
+
+  @Test
+  public void validFnDsaWitnessPermissionAccepted() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(WITNESS_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.FN_DSA, 896, 1)),
+        2);
+    Permission witness = witnessPermissionWithKey(
+        mlDsaKey(KEY_ADDRESS1, SignatureScheme.FN_DSA, 896, 2));
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS2, SignatureScheme.FN_DSA, 896, 3)),
+        2);
+    Any any = getContract(address, owner, witness,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
 }

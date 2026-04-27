@@ -14,6 +14,7 @@ import org.junit.Test;
 import org.tron.common.BaseTest;
 import org.tron.common.TestConstants;
 import org.tron.common.crypto.ECKey;
+import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.pqc.SLHDSA;
@@ -462,6 +463,91 @@ public class TransactionCapsuleTest extends BaseTest {
       Assert.fail("tampered SLH-DSA signature should be rejected");
     } catch (ValidateSignatureException e) {
       Assert.assertTrue(e.getMessage().contains("pq sig invalid"));
+    }
+  }
+
+  @Test
+  public void fnDsaAuthWitnessAccepted() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.FN_DSA);
+
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    byte[] digest = PqAuthDigest.tx(txid, 0, signerAddr);
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
+    Assert.assertTrue("FN-DSA signature must be within protocol bound",
+        sig.length > 0 && sig.length <= FNDSA.SIGNATURE_LENGTH);
+
+    Transaction signed = tx.toBuilder()
+        .addAuthWitness(AuthWitness.newBuilder()
+            .setSignerAddress(ByteString.copyFrom(signerAddr))
+            .setSignature(ByteString.copyFrom(sig))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    Assert.assertTrue(cap.validatePubSignature(dbManager.getAccountStore(),
+        dbManager.getDynamicPropertiesStore()));
+  }
+
+  @Test
+  public void fnDsaTamperedAuthWitnessRejected() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.FN_DSA);
+
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    byte[] digest = PqAuthDigest.tx(txid, 0, signerAddr);
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
+    sig[0] ^= 0x01;
+
+    Transaction signed = tx.toBuilder()
+        .addAuthWitness(AuthWitness.newBuilder()
+            .setSignerAddress(ByteString.copyFrom(signerAddr))
+            .setSignature(ByteString.copyFrom(sig))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("tampered FN-DSA signature should be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("pq sig invalid"));
+    }
+  }
+
+  @Test
+  public void fnDsaAuthWitnessRejectedWhenNotActivated() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPqPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.FN_DSA);
+
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    byte[] digest = PqAuthDigest.tx(txid, 0, signerAddr);
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
+
+    Transaction signed = tx.toBuilder()
+        .addAuthWitness(AuthWitness.newBuilder()
+            .setSignerAddress(ByteString.copyFrom(signerAddr))
+            .setSignature(ByteString.copyFrom(sig))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("FN-DSA must be rejected when ALLOW_FN_DSA is 0");
+    } catch (ValidateSignatureException expected) {
+      // accepted: rejection path triggered
     }
   }
 }

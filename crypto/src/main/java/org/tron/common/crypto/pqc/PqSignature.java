@@ -53,12 +53,18 @@ public interface PqSignature {
     }
   }
 
+  /**
+   * Default signature-length validation: treats {@link #getSignatureLength()} as the
+   * <em>upper bound</em>, allowing variable-length schemes (e.g. FN-DSA / Falcon).
+   * Fixed-length schemes (ML-DSA-44 / ML-DSA-65 / SLH-DSA) override this method to
+   * enforce strict equality.
+   */
   default void validateSignature(byte[] signature) {
-    if (signature == null || signature.length != getSignatureLength()) {
+    if (signature == null || signature.length == 0 || signature.length > getSignatureLength()) {
       throw new IllegalArgumentException(
           "invalid " + getScheme() + " signature length: "
               + (signature == null ? "null" : signature.length)
-              + ", expected " + getSignatureLength());
+              + ", expected 1.." + getSignatureLength());
     }
   }
 }

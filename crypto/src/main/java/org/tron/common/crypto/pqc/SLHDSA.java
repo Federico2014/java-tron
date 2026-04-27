@@ -105,6 +105,17 @@ public final class SLHDSA implements PqSignature {
     return verify(publicKey, message, signature);
   }
 
+  /** SLH-DSA-SHA2-128s produces fixed-length signatures; override the default upper-bound check. */
+  @Override
+  public void validateSignature(byte[] signature) {
+    if (signature == null || signature.length != SIGNATURE_LENGTH) {
+      throw new IllegalArgumentException(
+          "invalid " + getScheme() + " signature length: "
+              + (signature == null ? "null" : signature.length)
+              + ", expected " + SIGNATURE_LENGTH);
+    }
+  }
+
   public static boolean verify(byte[] publicKey, byte[] message, byte[] signature) {
     if (publicKey == null || publicKey.length != PUBLIC_KEY_LENGTH) {
       throw new IllegalArgumentException(

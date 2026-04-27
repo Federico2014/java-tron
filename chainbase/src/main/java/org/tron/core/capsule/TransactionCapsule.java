@@ -756,7 +756,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       byte[] pk = key.getPublicKey().toByteArray();
       byte[] sig = aw.getSignature().toByteArray();
       if (pk.length != PqSignatureRegistry.getPublicKeyLength(scheme)
-          || sig.length != PqSignatureRegistry.getSignatureLength(scheme)) {
+          || !PqSignatureRegistry.isValidSignatureLength(scheme, sig.length)) {
         throw new PermissionException("public key or signature length mismatch");
       }
       if (!PqSignatureRegistry.verify(scheme, pk, digest, sig)) {

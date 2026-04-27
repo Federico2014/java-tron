@@ -68,6 +68,9 @@ public class Constant {
   // Post-quantum (SLH-DSA-SHA2-128s / FIPS 205) signature constants
   public static final int SLH_DSA_PUBLIC_KEY_LENGTH = 32;
   public static final int SLH_DSA_SIGNATURE_LENGTH = 7856;
+  // Post-quantum (FN-DSA / Falcon-512 / FIPS 206 draft) signature constants
+  public static final int FN_DSA_PUBLIC_KEY_LENGTH = 896;
+  public static final int FN_DSA_SIGNATURE_MAX_LENGTH = 752;
   public static final String PQ_TX_AUTH_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String PQ_BLOCK_AUTH_DOMAIN = "TRON_BLOCK_AUTH_V1";
 
