@@ -255,6 +255,16 @@ message Account {
 
   int64 delegated_frozenV2_balance_for_bandwidth = 36;
   int64 acquired_delegated_frozenV2_balance_for_bandwidth = 37;
+
+  // Bitmap of consumed Ephemeral leaf indices (1 bit per leaf, little-endian
+  // byte order). Capped at 8 KiB (2^16 leaves per account) — once exhausted
+  // the account MUST rotate its Ephemeral PQ root. Empty / absent = no leaves
+  // consumed yet, fully backward-compatible with non-Ephemeral accounts.
+  bytes ephemeral_used_bitmap = 61;
+  // Highest Transaction.raw.nonce accepted from this account against an
+  // Ephemeral permission. Each new Ephemeral transaction MUST carry a nonce
+  // strictly greater than this value. 0 = no Ephemeral activity yet.
+  int64 last_ephemeral_nonce = 62;
 }
 
 message Key {
@@ -275,6 +285,20 @@ message Key {
 message AuthWitness {
   bytes signer_address = 1;
   bytes signature = 2;
+}
+
+// Ephemeral secp256k1 signature payload (TIP-PQ Ephemeral). For an Ephemeral
+// permission the on-chain Permission.Key.public_key is a 32-byte SHA-256
+// Merkle root committing to a list of one-time secp256k1 public keys; each
+// transaction reveals one leaf (one_time_pubkey), its Merkle path, leaf index,
+// and a regular ECDSA signature produced by the corresponding one-time secret
+// key. Serialized into AuthWitness.signature (variable length, bounded by the
+// max Merkle depth).
+message EphemeralWitness {
+  bytes one_time_pubkey = 1;
+  repeated bytes merkle_path = 2;
+  uint32 leaf_index = 3;
+  bytes ecdsa_signature = 4;
 }
 
 message DelegatedResource {
@@ -475,6 +499,10 @@ message Transaction {
     bytes scripts = 12;
     int64 timestamp = 14;
     int64 fee_limit = 18;
+    // Replay-protection nonce for EPHEMERAL_SECP256K1 transactions only. Other
+    // schemes ignore this field and SHOULD leave it 0. The signing account's
+    // last_ephemeral_nonce in the Account state advances strictly monotonically.
+    int64 nonce = 20;
   }
 
   raw raw_data = 1;
