@@ -6,6 +6,12 @@ import static org.tron.protos.Protocol.Transaction.Result.contractResult.SUCCESS
 
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
+import java.math.BigInteger;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
 import org.junit.Before;
@@ -17,8 +23,9 @@ import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
-import org.tron.common.crypto.pqc.SLHDSA;
+import org.tron.common.crypto.pqc.MerkleTree;
 import org.tron.common.crypto.pqc.PqAuthDigest;
+import org.tron.common.crypto.pqc.SLHDSA;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.common.utils.StringUtil;
@@ -27,6 +34,7 @@ import org.tron.core.config.args.Args;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.EphemeralWitness;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -140,6 +148,8 @@ public class TransactionCapsuleTest extends BaseTest {
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(0L);
     dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(0L);
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0).toBuilder()
         .addAuthWitness(AuthWitness.newBuilder()
             .setSignerAddress(ByteString.copyFrom(ByteArray.fromHexString(PQ_SIGNER_HEX)))
@@ -549,5 +559,296 @@ public class TransactionCapsuleTest extends BaseTest {
     } catch (ValidateSignatureException expected) {
       // accepted: rejection path triggered
     }
+  }
+
+  // --------------------- EPHEMERAL_SECP256K1 integration ---------------------
+
+  private static final SecureRandom EPH_RNG = new SecureRandom();
+
+  private static byte[] sha256(byte[] in) {
+    MessageDigest md = Sha256Hash.newDigest();
+    return md.digest(in);
+  }
+
+  private static byte[] unsignedFixed(BigInteger v, int len) {
+    byte[] raw = v.toByteArray();
+    if (raw.length == len) {
+      return raw;
+    }
+    if (raw.length == len + 1 && raw[0] == 0) {
+      return Arrays.copyOfRange(raw, 1, raw.length);
+    }
+    if (raw.length < len) {
+      byte[] out = new byte[len];
+      System.arraycopy(raw, 0, out, len - raw.length, raw.length);
+      return out;
+    }
+    throw new IllegalArgumentException("value does not fit in " + len + " bytes");
+  }
+
+  private static byte[] rawEcdsaSign(ECKey key, byte[] digest) {
+    ECKey.ECDSASignature sig = key.sign(digest).toCanonicalised();
+    byte[] r = unsignedFixed(sig.r, 32);
+    byte[] s = unsignedFixed(sig.s, 32);
+    byte[] out = new byte[64];
+    System.arraycopy(r, 0, out, 0, 32);
+    System.arraycopy(s, 0, out, 32, 32);
+    return out;
+  }
+
+  /** Pre-built tree of {@code n} one-time secp256k1 keys with leaves and root. */
+  private static class EphemeralTree {
+    final List<ECKey> keys = new ArrayList<>();
+    final List<byte[]> pubkeysCompressed = new ArrayList<>();
+    final List<byte[]> leaves = new ArrayList<>();
+    final byte[] root;
+
+    EphemeralTree(int n) {
+      for (int i = 0; i < n; i++) {
+        ECKey k = new ECKey(EPH_RNG);
+        byte[] pk = k.getPubKeyPoint().getEncoded(true);
+        keys.add(k);
+        pubkeysCompressed.add(pk);
+        leaves.add(sha256(pk));
+      }
+      this.root = MerkleTree.buildRoot(leaves);
+    }
+  }
+
+  private static byte[] buildEphemeralWitness(byte[] oneTimePub, List<byte[]> path,
+                                              int leafIndex, byte[] ecdsaSig) {
+    EphemeralWitness.Builder b = EphemeralWitness.newBuilder()
+        .setOneTimePubkey(ByteString.copyFrom(oneTimePub))
+        .setLeafIndex(leafIndex)
+        .setEcdsaSignature(ByteString.copyFrom(ecdsaSig));
+    for (byte[] p : path) {
+      b.addMerklePath(ByteString.copyFrom(p));
+    }
+    return b.build().toByteArray();
+  }
+
+  private Transaction buildEphemeralTx(String ownerHex, int permissionId, long nonce) {
+    TransferContract transfer = TransferContract.newBuilder()
+        .setOwnerAddress(ByteString.copyFrom(ByteArray.fromHexString(ownerHex)))
+        .setToAddress(ByteString.copyFrom(ByteArray.fromHexString(PQ_SIGNER_HEX)))
+        .setAmount(1L)
+        .build();
+    Transaction.Contract c = Transaction.Contract.newBuilder()
+        .setType(ContractType.TransferContract)
+        .setParameter(Any.pack(transfer))
+        .setPermissionId(permissionId)
+        .build();
+    raw rawData = raw.newBuilder().addContract(c).setNonce(nonce).build();
+    return Transaction.newBuilder().setRawData(rawData).build();
+  }
+
+  /** Sign a fresh tx for {@code leafIndex} with this tree at the given nonce. */
+  private Transaction signEphemeralTx(EphemeralTree t, String ownerHex, int permissionId,
+                                      long nonce, int leafIndex) {
+    Transaction tx = buildEphemeralTx(ownerHex, permissionId, nonce);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    byte[] digest = PqAuthDigest.ephemeralTx(txid, permissionId, signerAddr, nonce, leafIndex);
+    byte[] ecdsa = rawEcdsaSign(t.keys.get(leafIndex), digest);
+    List<byte[]> path = MerkleTree.generateProof(t.leaves, leafIndex);
+    byte[] witness = buildEphemeralWitness(t.pubkeysCompressed.get(leafIndex),
+        path, leafIndex, ecdsa);
+    return tx.toBuilder()
+        .addAuthWitness(AuthWitness.newBuilder()
+            .setSignerAddress(ByteString.copyFrom(signerAddr))
+            .setSignature(ByteString.copyFrom(witness))
+            .build())
+        .build();
+  }
+
+  @Test
+  public void ephemeralAuthWitnessAccepted() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(8);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+
+    Transaction signed = signEphemeralTx(t, PQ_OWNER_HEX, 0, 1L, 3);
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    Assert.assertTrue(cap.validatePubSignature(dbManager.getAccountStore(),
+        dbManager.getDynamicPropertiesStore()));
+  }
+
+  @Test
+  public void ephemeralAuthWitnessRejectedWhenNotActivated() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa65(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(0L);
+    EphemeralTree t = new EphemeralTree(4);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+
+    Transaction signed = signEphemeralTx(t, PQ_OWNER_HEX, 0, 1L, 0);
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("ephemeral must be rejected when ALLOW_EPHEMERAL_SECP256K1 is 0");
+    } catch (ValidateSignatureException expected) {
+      // ok
+    }
+  }
+
+  @Test
+  public void ephemeralNonceMustAdvance() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(4);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+    // Bump the on-chain last nonce to 5; tx must use nonce > 5.
+    byte[] addr = ByteArray.fromHexString(PQ_OWNER_HEX);
+    AccountCapsule acc = dbManager.getAccountStore().get(addr);
+    acc.setLastEphemeralNonce(5L);
+    dbManager.getAccountStore().put(addr, acc);
+
+    Transaction signed = signEphemeralTx(t, PQ_OWNER_HEX, 0, 5L, 0);
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("nonce <= last_ephemeral_nonce must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("ephemeral nonce must be"));
+    }
+  }
+
+  @Test
+  public void ephemeralLeafAlreadyConsumed() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(4);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+    byte[] addr = ByteArray.fromHexString(PQ_OWNER_HEX);
+    AccountCapsule acc = dbManager.getAccountStore().get(addr);
+    acc.markEphemeralLeafConsumed(2);
+    dbManager.getAccountStore().put(addr, acc);
+
+    Transaction signed = signEphemeralTx(t, PQ_OWNER_HEX, 0, 1L, 2);
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("re-using a consumed leaf must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("ephemeral leaf already consumed"));
+    }
+  }
+
+  @Test
+  public void ephemeralLeafIndexOutOfRange() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(2);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+
+    Transaction tx = buildEphemeralTx(PQ_OWNER_HEX, 0, 1L);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    int outOfRange = 1 << 16; // == 2^16, just past the cap
+    byte[] digest = PqAuthDigest.ephemeralTx(txid, 0, signerAddr, 1L, outOfRange);
+    byte[] ecdsa = rawEcdsaSign(t.keys.get(0), digest);
+    List<byte[]> path = MerkleTree.generateProof(t.leaves, 0);
+    byte[] witness = buildEphemeralWitness(t.pubkeysCompressed.get(0), path, outOfRange, ecdsa);
+    Transaction signed = tx.toBuilder()
+        .addAuthWitness(AuthWitness.newBuilder()
+            .setSignerAddress(ByteString.copyFrom(signerAddr))
+            .setSignature(ByteString.copyFrom(witness))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("leaf_index >= 2^16 must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("ephemeral leaf_index out of range"));
+    }
+  }
+
+  @Test
+  public void ephemeralRequiresExistingAccount() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(2);
+    // Owner is referenced in TransferContract but absent from the store: the
+    // default permission falls back to legacy scheme, so the auth_witness path
+    // must reject before any bitmap state is consulted.
+    String missingOwnerHex = "41dead0000000000000000000000000000000000";
+    Transaction tx = buildEphemeralTx(missingOwnerHex, 0, 1L);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    byte[] digest = PqAuthDigest.ephemeralTx(txid, 0, signerAddr, 1L, 0);
+    byte[] ecdsa = rawEcdsaSign(t.keys.get(0), digest);
+    List<byte[]> path = MerkleTree.generateProof(t.leaves, 0);
+    byte[] witness = buildEphemeralWitness(t.pubkeysCompressed.get(0), path, 0, ecdsa);
+    Transaction signed = tx.toBuilder()
+        .addAuthWitness(AuthWitness.newBuilder()
+            .setSignerAddress(ByteString.copyFrom(signerAddr))
+            .setSignature(ByteString.copyFrom(witness))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("ephemeral with missing account must be rejected");
+    } catch (ValidateSignatureException expected) {
+      // any ValidateSignatureException is acceptable here — the missing-account
+      // path can surface as either "account not found" or the pq-specific message.
+    }
+  }
+
+  @Test
+  public void ephemeralCommitAdvancesNonceAndBitmap() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(8);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+
+    Transaction signed = signEphemeralTx(t, PQ_OWNER_HEX, 0, 7L, 5);
+    new TransactionCapsule(signed).validatePubSignature(
+        dbManager.getAccountStore(), dbManager.getDynamicPropertiesStore());
+    TransactionCapsule.commitEphemeralReplayState(signed,
+        dbManager.getAccountStore(), dbManager.getDynamicPropertiesStore());
+
+    byte[] addr = ByteArray.fromHexString(PQ_OWNER_HEX);
+    AccountCapsule after = dbManager.getAccountStore().get(addr);
+    Assert.assertEquals(7L, after.getLastEphemeralNonce());
+    Assert.assertTrue("leaf 5 must be marked consumed", after.isEphemeralLeafConsumed(5));
+    Assert.assertFalse("untouched leaves must remain free", after.isEphemeralLeafConsumed(0));
+    Assert.assertFalse("untouched leaves must remain free", after.isEphemeralLeafConsumed(7));
+  }
+
+  @Test
+  public void ephemeralMultiLeafConsumeAndContinue() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    EphemeralTree t = new EphemeralTree(8);
+    putAccountWithPqPermission(PQ_OWNER_HEX, t.root, SignatureScheme.EPHEMERAL_SECP256K1);
+    byte[] addr = ByteArray.fromHexString(PQ_OWNER_HEX);
+
+    int[] leafSequence = {0, 1, 2, 3};
+    long nonce = 0L;
+    for (int leaf : leafSequence) {
+      nonce++;
+      Transaction signed = signEphemeralTx(t, PQ_OWNER_HEX, 0, nonce, leaf);
+      Assert.assertTrue("nonce=" + nonce + " leaf=" + leaf,
+          new TransactionCapsule(signed).validatePubSignature(
+              dbManager.getAccountStore(), dbManager.getDynamicPropertiesStore()));
+      TransactionCapsule.commitEphemeralReplayState(signed,
+          dbManager.getAccountStore(), dbManager.getDynamicPropertiesStore());
+    }
+
+    AccountCapsule after = dbManager.getAccountStore().get(addr);
+    Assert.assertEquals(4L, after.getLastEphemeralNonce());
+    for (int leaf : leafSequence) {
+      Assert.assertTrue("leaf " + leaf + " should be consumed",
+          after.isEphemeralLeafConsumed(leaf));
+    }
+    Assert.assertFalse("leaf 4 must still be free", after.isEphemeralLeafConsumed(4));
+
+    // A fresh leaf with the next strictly-greater nonce must still verify.
+    Transaction next = signEphemeralTx(t, PQ_OWNER_HEX, 0, 5L, 4);
+    Assert.assertTrue(new TransactionCapsule(next).validatePubSignature(
+        dbManager.getAccountStore(), dbManager.getDynamicPropertiesStore()));
   }
 }

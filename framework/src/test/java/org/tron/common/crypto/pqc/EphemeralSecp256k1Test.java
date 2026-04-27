@@ -284,7 +284,8 @@ public class EphemeralSecp256k1Test {
     byte[] sBytes = unsignedFixed(highS, 32);
     System.arraycopy(sBytes, 0, sig, 32, 32);
     byte[] witness = buildWitness(t.pubkeysCompressed.get(idx), path, idx, sig);
-    assertFalse("high-s ECDSA must be rejected", EphemeralSecp256k1.verify(t.root, digest, witness));
+    assertFalse("high-s ECDSA must be rejected",
+        EphemeralSecp256k1.verify(t.root, digest, witness));
   }
 
   @Test
