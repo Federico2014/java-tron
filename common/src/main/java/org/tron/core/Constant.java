@@ -73,6 +73,11 @@ public class Constant {
   public static final int FN_DSA_SIGNATURE_MAX_LENGTH = 752;
   public static final String PQ_TX_AUTH_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String PQ_BLOCK_AUTH_DOMAIN = "TRON_BLOCK_AUTH_V1";
+  public static final String PQ_EPHEMERAL_TX_AUTH_DOMAIN = "TRON_EPHEMERAL_TX_AUTH_V1";
+  // Ephemeral secp256k1 (PQ-root + Merkle commitment + one-time secp256k1)
+  public static final int EPHEMERAL_PQ_ROOT_LENGTH = 32;
+  public static final int EPHEMERAL_MAX_PROOF_DEPTH = 16;
+  public static final int EPHEMERAL_BITMAP_MAX_BYTES = 8 * 1024;
 
   // Network
   public static final String LOCAL_HOST = "127.0.0.1";

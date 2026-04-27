@@ -107,6 +107,26 @@ public final class PqSignatureRegistry {
             return new FNDSA(seed);
           }
         }));
+    m.put(SignatureScheme.EPHEMERAL_SECP256K1, new SchemeInfo(
+        EphemeralSecp256k1.PUBLIC_KEY_LENGTH,
+        EphemeralSecp256k1.SIGNATURE_LENGTH,
+        new SignatureOps() {
+          @Override
+          public byte[] sign(byte[] privateKey, byte[] message) {
+            return EphemeralSecp256k1.sign(privateKey, message);
+          }
+
+          @Override
+          public boolean verify(byte[] publicKey, byte[] message, byte[] signature) {
+            return EphemeralSecp256k1.verify(publicKey, message, signature);
+          }
+
+          @Override
+          public PqSignature fromSeed(byte[] seed) {
+            throw new UnsupportedOperationException(
+                "EPHEMERAL_SECP256K1 has no node-side keypair to derive from seed");
+          }
+        }));
     SCHEMES = Collections.unmodifiableMap(m);
   }
 
@@ -133,7 +153,7 @@ public final class PqSignatureRegistry {
    */
   public static boolean isValidSignatureLength(SignatureScheme scheme, int length) {
     SchemeInfo info = require(scheme);
-    if (scheme == SignatureScheme.FN_DSA) {
+    if (scheme == SignatureScheme.FN_DSA || scheme == SignatureScheme.EPHEMERAL_SECP256K1) {
       return length > 0 && length <= info.signatureLength;
     }
     return length == info.signatureLength;

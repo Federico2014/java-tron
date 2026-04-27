@@ -101,6 +101,81 @@ public class PqAuthDigestTest {
   public void domainPrefixesAreExact() {
     assertEquals("TRON_TX_AUTH_V1", PqAuthDigest.TX_DOMAIN);
     assertEquals("TRON_BLOCK_AUTH_V1", PqAuthDigest.BLOCK_DOMAIN);
+    assertEquals("TRON_EPHEMERAL_TX_AUTH_V1", PqAuthDigest.EPHEMERAL_TX_DOMAIN);
+  }
+
+  @Test
+  public void ephemeralTxDigestEqualsExpectedSha256() throws Exception {
+    byte[] txid = bytes(0x11, 0x22, 0x33, 0x44);
+    int permissionId = 5;
+    byte[] signer = bytes(0xaa, 0xbb, 0xcc);
+    long nonce = 0x0102030405060708L;
+    int leafIndex = 0xCAFEBABE;
+
+    MessageDigest md = MessageDigest.getInstance("SHA-256");
+    md.update("TRON_EPHEMERAL_TX_AUTH_V1".getBytes(StandardCharsets.UTF_8));
+    md.update(txid);
+    md.update(bytes(0, 0, 0, 5));
+    md.update(signer);
+    md.update(bytes(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08));
+    md.update(bytes(0xCA, 0xFE, 0xBA, 0xBE));
+    byte[] expected = md.digest();
+
+    byte[] actual = PqAuthDigest.ephemeralTx(txid, permissionId, signer, nonce, leafIndex);
+    assertArrayEquals(expected, actual);
+    assertEquals(32, actual.length);
+  }
+
+  @Test
+  public void ephemeralTxDistinctFromTxDigest() {
+    byte[] txid = new byte[32];
+    byte[] addr = new byte[] {1, 2, 3};
+    byte[] tx = PqAuthDigest.tx(txid, 1, addr);
+    byte[] eph = PqAuthDigest.ephemeralTx(txid, 1, addr, 0L, 0);
+    assertFalse("ephemeralTx must not collide with tx",
+        java.util.Arrays.equals(tx, eph));
+  }
+
+  @Test
+  public void ephemeralTxNonceChangesDigest() {
+    byte[] txid = new byte[32];
+    byte[] addr = new byte[] {1};
+    byte[] d0 = PqAuthDigest.ephemeralTx(txid, 0, addr, 0L, 0);
+    byte[] d1 = PqAuthDigest.ephemeralTx(txid, 0, addr, 1L, 0);
+    assertNotEquals(new String(d0), new String(d1));
+  }
+
+  @Test
+  public void ephemeralTxLeafIndexChangesDigest() {
+    byte[] txid = new byte[32];
+    byte[] addr = new byte[] {1};
+    byte[] d0 = PqAuthDigest.ephemeralTx(txid, 0, addr, 0L, 0);
+    byte[] d1 = PqAuthDigest.ephemeralTx(txid, 0, addr, 0L, 1);
+    assertNotEquals(new String(d0), new String(d1));
+  }
+
+  @Test
+  public void ephemeralTxAcceptsFullUint32Range() {
+    // Proto uint32 maps to Java int; negative-as-signed values are valid wire indices.
+    byte[] hi = PqAuthDigest.ephemeralTx(new byte[32], 0, new byte[1], 0L, 0xFFFFFFFF);
+    byte[] zero = PqAuthDigest.ephemeralTx(new byte[32], 0, new byte[1], 0L, 0);
+    assertNotEquals(new String(hi), new String(zero));
+  }
+
+  @Test
+  public void ephemeralTxNullInputsRejected() {
+    try {
+      PqAuthDigest.ephemeralTx(null, 0, new byte[1], 0L, 0);
+      fail("null txid must be rejected");
+    } catch (IllegalArgumentException expected) {
+      assertTrue(expected.getMessage().contains("txid"));
+    }
+    try {
+      PqAuthDigest.ephemeralTx(new byte[1], 0, null, 0L, 0);
+      fail("null signer must be rejected");
+    } catch (IllegalArgumentException expected) {
+      assertTrue(expected.getMessage().contains("signerAddress"));
+    }
   }
 
   @Test

@@ -16,9 +16,12 @@ public final class PqAuthDigest {
 
   public static final String TX_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String BLOCK_DOMAIN = "TRON_BLOCK_AUTH_V1";
+  public static final String EPHEMERAL_TX_DOMAIN = "TRON_EPHEMERAL_TX_AUTH_V1";
 
   static final byte[] TX_DOMAIN_BYTES = TX_DOMAIN.getBytes(StandardCharsets.UTF_8);
   static final byte[] BLOCK_DOMAIN_BYTES = BLOCK_DOMAIN.getBytes(StandardCharsets.UTF_8);
+  static final byte[] EPHEMERAL_TX_DOMAIN_BYTES =
+      EPHEMERAL_TX_DOMAIN.getBytes(StandardCharsets.UTF_8);
 
   private PqAuthDigest() {
   }
@@ -54,8 +57,47 @@ public final class PqAuthDigest {
     return md.digest();
   }
 
+  /**
+   * Transaction-level PQ authentication digest for {@code EPHEMERAL_SECP256K1}.
+   * Distinct from {@link #tx(byte[], int, byte[])} via the dedicated domain
+   * prefix {@link #EPHEMERAL_TX_DOMAIN}, and additionally binds {@code nonce}
+   * and {@code leafIndex} so each one-time leaf authorizes exactly one tx.
+   *
+   * <pre>digest = SHA-256(
+   *     "TRON_EPHEMERAL_TX_AUTH_V1" || txid || permission_id_be4
+   *     || signer_address || nonce_be8 || leaf_index_be4)</pre>
+   */
+  public static byte[] ephemeralTx(byte[] txid, int permissionId, byte[] signerAddress,
+                                   long nonce, int leafIndex) {
+    requireNonNull(txid, "txid");
+    requireNonNull(signerAddress, "signerAddress");
+    // leafIndex is the proto uint32 wire value; full 32-bit range is bound to the digest.
+    // Semantic bounds (leafIndex < proof depth) are enforced during verify, not here.
+    MessageDigest md = Sha256Hash.newDigest();
+    md.update(EPHEMERAL_TX_DOMAIN_BYTES);
+    md.update(txid);
+    md.update(intToBe4(permissionId));
+    md.update(signerAddress);
+    md.update(longToBe8(nonce));
+    md.update(intToBe4(leafIndex));
+    return md.digest();
+  }
+
   private static byte[] intToBe4(int v) {
     return new byte[] {
+        (byte) ((v >>> 24) & 0xff),
+        (byte) ((v >>> 16) & 0xff),
+        (byte) ((v >>> 8) & 0xff),
+        (byte) (v & 0xff)
+    };
+  }
+
+  private static byte[] longToBe8(long v) {
+    return new byte[] {
+        (byte) ((v >>> 56) & 0xff),
+        (byte) ((v >>> 48) & 0xff),
+        (byte) ((v >>> 40) & 0xff),
+        (byte) ((v >>> 32) & 0xff),
         (byte) ((v >>> 24) & 0xff),
         (byte) ((v >>> 16) & 0xff),
         (byte) ((v >>> 8) & 0xff),
