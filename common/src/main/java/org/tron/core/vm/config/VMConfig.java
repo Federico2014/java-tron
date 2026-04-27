@@ -63,6 +63,10 @@ public class VMConfig {
 
   private static boolean ALLOW_TVM_OSAKA = false;
 
+  private static boolean ALLOW_ML_DSA_44 = false;
+
+  private static boolean ALLOW_ML_DSA_65 = false;
+
   private VMConfig() {
   }
 
@@ -178,6 +182,14 @@ public class VMConfig {
     ALLOW_TVM_OSAKA = allow == 1;
   }
 
+  public static void initAllowMlDsa44(long allow) {
+    ALLOW_ML_DSA_44 = allow == 1;
+  }
+
+  public static void initAllowMlDsa65(long allow) {
+    ALLOW_ML_DSA_65 = allow == 1;
+  }
+
   public static boolean getEnergyLimitHardFork() {
     return CommonParameter.ENERGY_LIMIT_HARD_FORK;
   }
@@ -280,5 +292,13 @@ public class VMConfig {
 
   public static boolean allowTvmOsaka() {
     return ALLOW_TVM_OSAKA;
+  }
+
+  public static boolean allowMlDsa44() {
+    return ALLOW_ML_DSA_44;
+  }
+
+  public static boolean allowMlDsa65() {
+    return ALLOW_ML_DSA_65;
   }
 }
