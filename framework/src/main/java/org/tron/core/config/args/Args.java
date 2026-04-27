@@ -31,6 +31,7 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -1205,6 +1206,14 @@ public class Args extends CommonParameter {
     }
   }
 
+  // Schemes accepted for the witness PQ seed config. Excludes EPHEMERAL_SECP256K1
+  // (no deterministic seed) and any future entries that lack a fromSeed path.
+  private static final EnumSet<SignatureScheme> WITNESS_PQ_SEED_SCHEMES = EnumSet.of(
+      SignatureScheme.ML_DSA_44,
+      SignatureScheme.ML_DSA_65,
+      SignatureScheme.FN_DSA,
+      SignatureScheme.SLH_DSA);
+
   private static void initLocalWitnesses(Config config, CLIParameter cmd) {
     // not a witness node, skip
     if (!PARAMETER.isWitness()) {
@@ -1249,12 +1258,20 @@ public class Args extends CommonParameter {
         localWitnesses.setPqSeeds(pqSeeds);
         if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
           String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);
+          SignatureScheme scheme;
           try {
-            localWitnesses.setPqScheme(SignatureScheme.valueOf(schemeName));
+            scheme = SignatureScheme.valueOf(schemeName);
           } catch (IllegalArgumentException e) {
             throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
                 + ": " + schemeName, TronError.ErrCode.WITNESS_INIT);
           }
+          if (!WITNESS_PQ_SEED_SCHEMES.contains(scheme)) {
+            throw new TronError(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
+                + "=" + schemeName + " is not allowed for witness signing; "
+                + "valid values: " + WITNESS_PQ_SEED_SCHEMES,
+                TronError.ErrCode.WITNESS_INIT);
+          }
+          localWitnesses.setPqScheme(scheme);
         }
         byte[] address = WitnessInitializer.resolvePqWitnessAddress(witnessAddr);
         if (address != null) {
