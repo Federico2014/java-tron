@@ -16,6 +16,7 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.common.crypto.pqc.EphemeralSecp256k1;
 import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
@@ -318,7 +319,8 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
         return SLHDSA.PUBLIC_KEY_LENGTH;
       case FN_DSA:
         return FNDSA.PUBLIC_KEY_LENGTH;
-      // EPHEMERAL_SECP256K1 length added in later phases.
+      case EPHEMERAL_SECP256K1:
+        return EphemeralSecp256k1.PUBLIC_KEY_LENGTH;
       default:
         return -1;
     }

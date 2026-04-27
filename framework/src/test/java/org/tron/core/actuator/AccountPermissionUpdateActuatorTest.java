@@ -1459,4 +1459,122 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
     Assert.assertTrue(actuatorFor(any).validate());
   }
+
+  @Test
+  public void ephemeralPermissionRejectedWhenNotAllowed() {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(0L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.EPHEMERAL_SECP256K1, 32, 1)),
+        2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("should reject Ephemeral key when ALLOW_EPHEMERAL_SECP256K1 = 0");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("EPHEMERAL_SECP256K1 is not activated"));
+    }
+  }
+
+  @Test
+  public void ephemeralWrongPublicKeyLengthRejected() {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.EPHEMERAL_SECP256K1, 31, 1)),
+        2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("Ephemeral wrong public_key length should be rejected");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("public_key length"));
+      Assert.assertTrue(e.getMessage().contains("32"));
+    }
+  }
+
+  @Test
+  public void validEphemeralActivePermissionAccepted() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.EPHEMERAL_SECP256K1, 32, 1)),
+        2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
+
+  @Test
+  public void validEphemeralOwnerPermissionAccepted() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.EPHEMERAL_SECP256K1, 32, 1)),
+        2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS1)), 2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
+
+  @Test
+  public void ephemeralWitnessPermissionAlwaysRejected() {
+    // Even with the activation flag on, Ephemeral must not be permitted for witness
+    // production because each leaf is one-shot and incompatible with continuous block signing.
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(WITNESS_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS)), 2);
+    Permission witness = witnessPermissionWithKey(
+        mlDsaKey(KEY_ADDRESS1, SignatureScheme.EPHEMERAL_SECP256K1, 32, 2));
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS2)), 2);
+    Any any = getContract(address, owner, witness,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("Witness permission with EPHEMERAL_SECP256K1 must be rejected");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(
+          e.getMessage().contains("EPHEMERAL_SECP256K1 is incompatible with witness"));
+    }
+  }
+
+  @Test
+  public void ephemeralAndMlDsaCoexistAcrossPermissions() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowEphemeralSecp256k1(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.ML_DSA_44, 1312, 1)),
+        2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.EPHEMERAL_SECP256K1, 32, 2)),
+        2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
 }
