@@ -65,6 +65,9 @@ public class Constant {
   public static final int ML_DSA_44_SIGNATURE_LENGTH = 2420;
   public static final int ML_DSA_65_PUBLIC_KEY_LENGTH = 1952;
   public static final int ML_DSA_65_SIGNATURE_LENGTH = 3309;
+  // Post-quantum (SLH-DSA-SHA2-128s / FIPS 205) signature constants
+  public static final int SLH_DSA_PUBLIC_KEY_LENGTH = 32;
+  public static final int SLH_DSA_SIGNATURE_LENGTH = 7856;
   public static final String PQ_TX_AUTH_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String PQ_BLOCK_AUTH_DOMAIN = "TRON_BLOCK_AUTH_V1";
 

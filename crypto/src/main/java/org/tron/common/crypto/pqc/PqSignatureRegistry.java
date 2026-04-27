@@ -73,6 +73,23 @@ public final class PqSignatureRegistry {
             return new MLDSA65(seed);
           }
         }));
+    m.put(SignatureScheme.SLH_DSA, new SchemeInfo(
+        SLHDSA.PUBLIC_KEY_LENGTH, SLHDSA.SIGNATURE_LENGTH, new SignatureOps() {
+          @Override
+          public byte[] sign(byte[] privateKey, byte[] message) {
+            return SLHDSA.sign(privateKey, message);
+          }
+
+          @Override
+          public boolean verify(byte[] publicKey, byte[] message, byte[] signature) {
+            return SLHDSA.verify(publicKey, message, signature);
+          }
+
+          @Override
+          public PqSignature fromSeed(byte[] seed) {
+            return new SLHDSA(seed);
+          }
+        }));
     SCHEMES = Collections.unmodifiableMap(m);
   }
 

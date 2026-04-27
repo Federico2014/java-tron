@@ -19,6 +19,7 @@ import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.SLHDSA;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -312,6 +313,9 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
         return MLDSA44.PUBLIC_KEY_LENGTH;
       case ML_DSA_65:
         return MLDSA65.PUBLIC_KEY_LENGTH;
+      case SLH_DSA:
+        return SLHDSA.PUBLIC_KEY_LENGTH;
+      // FN_DSA / EPHEMERAL_SECP256K1 lengths added in later phases.
       default:
         return -1;
     }

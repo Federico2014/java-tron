@@ -1280,4 +1280,105 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
 
     Assert.assertTrue(actuatorFor(any).validate());
   }
+
+  @Test
+  public void slhDsaPermissionRejectedWhenNotAllowed() {
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(0L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.SLH_DSA, 32, 1)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS1)), 2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("should reject SLH-DSA key when ALLOW_SLH_DSA = 0");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("SLH_DSA is not activated"));
+    }
+  }
+
+  @Test
+  public void slhDsaWrongPublicKeyLengthRejected() {
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.SLH_DSA, 31, 1)), 2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS1)), 2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("SLH-DSA wrong public_key length should be rejected");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("public_key length"));
+    }
+  }
+
+  @Test
+  public void validSlhDsaPermissionAccepted() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.SLH_DSA, 32, 1)),
+        2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.SLH_DSA, 32, 2)),
+        2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
+
+  @Test
+  public void validSlhDsaWitnessPermissionAccepted() throws ContractValidateException {
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(WITNESS_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.SLH_DSA, 32, 1)),
+        2);
+    Permission witness = witnessPermissionWithKey(
+        mlDsaKey(KEY_ADDRESS1, SignatureScheme.SLH_DSA, 32, 2));
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(
+            mlDsaKey(KEY_ADDRESS2, SignatureScheme.SLH_DSA, 32, 3)),
+        2);
+    Any any = getContract(address, owner, witness,
+        java.util.Collections.singletonList(active));
+
+    Assert.assertTrue(actuatorFor(any).validate());
+  }
+
+  @Test
+  public void slhDsaMixedWithMlDsaInSamePermissionRejected() {
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowSlhDsa(1L);
+    ByteString address = ByteString.copyFrom(ByteArray.fromHexString(OWNER_ADDRESS));
+    Permission owner = ownerPermissionWithKeys(
+        java.util.Arrays.asList(
+            mlDsaKey(KEY_ADDRESS, SignatureScheme.ML_DSA_44, 1312, 1),
+            mlDsaKey(KEY_ADDRESS1, SignatureScheme.SLH_DSA, 32, 2)),
+        2);
+    Permission active = activePermissionWithKeys(
+        java.util.Collections.singletonList(legacyKey(KEY_ADDRESS2)), 2);
+    Any any = getContract(address, owner, null,
+        java.util.Collections.singletonList(active));
+
+    try {
+      actuatorFor(any).validate();
+      fail("mixed SLH-DSA and ML-DSA in one permission should be rejected");
+    } catch (ContractValidateException e) {
+      Assert.assertTrue(e.getMessage().contains("same scheme"));
+    }
+  }
 }
