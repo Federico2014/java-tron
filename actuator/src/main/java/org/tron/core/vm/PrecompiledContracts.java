@@ -45,6 +45,8 @@ import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.SignatureInterface;
+import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.zksnark.BN128;
 import org.tron.common.crypto.zksnark.BN128Fp;
 import org.tron.common.crypto.zksnark.BN128G1;
@@ -106,6 +108,9 @@ public class PrecompiledContracts {
 
   private static final EthRipemd160 ethRipemd160 = new EthRipemd160();
   private static final Blake2F blake2F = new Blake2F();
+
+  private static final VerifyMlDsa44 verifyMlDsa44 = new VerifyMlDsa44();
+  private static final VerifyMlDsa65 verifyMlDsa65 = new VerifyMlDsa65();
 
   // FreezeV2 PrecompileContracts
   private static final GetChainParameter getChainParameter = new GetChainParameter();
@@ -200,6 +205,15 @@ public class PrecompiledContracts {
   private static final DataWord blake2FAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000020009");
 
+  // EIP-8051 0x12: ML-DSA-44 verify (FIPS-204, SHAKE256). Uses raw 1312-byte public key
+  // rather than EIP-8051's 20512-byte expanded form; signatures produced for 0x12 on
+  // EIP-8051-compliant chains are not byte-compatible with this precompile's input.
+  private static final DataWord verifyMlDsa44Addr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000012");
+  // 0x14: ML-DSA-65 verify (TRON extension, FIPS-204 / SHAKE256, raw 1952-byte public key).
+  private static final DataWord verifyMlDsa65Addr = new DataWord(
+      "0000000000000000000000000000000000000000000000000000000000000014");
+
   public static PrecompiledContract getOptimizedContractForConstant(PrecompiledContract contract) {
     try {
       Constructor<?> constructor = contract.getClass().getDeclaredConstructor();
@@ -280,6 +294,13 @@ public class PrecompiledContracts {
     }
     if (VMConfig.allowTvmCompatibleEvm() && address.equals(blake2FAddr)) {
       return blake2F;
+    }
+
+    if (VMConfig.allowMlDsa() && address.equals(verifyMlDsa44Addr)) {
+      return verifyMlDsa44;
+    }
+    if (VMConfig.allowMlDsa() && address.equals(verifyMlDsa65Addr)) {
+      return verifyMlDsa65;
     }
 
     if (VMConfig.allowTvmFreezeV2()) {
@@ -2218,6 +2239,74 @@ public class PrecompiledContracts {
       }
 
       return Pair.of(true, longTo32Bytes(acquiredResource));
+    }
+  }
+
+  /**
+   * Verifies an ML-DSA-44 signature (FIPS-204, SHAKE256). Input layout (right-padded with
+   * zeros if shorter): [msg 32B | signature 2420B | publicKey 1312B] = 3764B. Returns a
+   * 32-byte word: 1 on success, 0 on failure or malformed input.
+   */
+  public static class VerifyMlDsa44 extends PrecompiledContract {
+
+    private static final int MSG_LEN = 32;
+    private static final int SIG_LEN = MLDSA44.SIGNATURE_LENGTH;
+    private static final int PK_LEN = MLDSA44.PUBLIC_KEY_LENGTH;
+    private static final int INPUT_LEN = MSG_LEN + SIG_LEN + PK_LEN;
+
+    @Override
+    public long getEnergyForData(byte[] data) {
+      return 4500;
+    }
+
+    @Override
+    public Pair<Boolean, byte[]> execute(byte[] data) {
+      if (data == null || data.length < INPUT_LEN) {
+        return Pair.of(true, DataWord.ZERO().getData());
+      }
+      try {
+        byte[] msg = copyOfRange(data, 0, MSG_LEN);
+        byte[] sig = copyOfRange(data, MSG_LEN, MSG_LEN + SIG_LEN);
+        byte[] pk = copyOfRange(data, MSG_LEN + SIG_LEN, INPUT_LEN);
+        boolean ok = MLDSA44.verify(pk, msg, sig);
+        return Pair.of(true, ok ? DataWord.ONE().getData() : DataWord.ZERO().getData());
+      } catch (Throwable t) {
+        return Pair.of(true, DataWord.ZERO().getData());
+      }
+    }
+  }
+
+  /**
+   * Verifies an ML-DSA-65 signature (FIPS-204, SHAKE256). Input layout:
+   * [msg 32B | signature 3309B | publicKey 1952B] = 5293B. TRON extension; not part of
+   * EIP-8051. Returns a 32-byte word: 1 on success, 0 otherwise.
+   */
+  public static class VerifyMlDsa65 extends PrecompiledContract {
+
+    private static final int MSG_LEN = 32;
+    private static final int SIG_LEN = MLDSA65.SIGNATURE_LENGTH;
+    private static final int PK_LEN = MLDSA65.PUBLIC_KEY_LENGTH;
+    private static final int INPUT_LEN = MSG_LEN + SIG_LEN + PK_LEN;
+
+    @Override
+    public long getEnergyForData(byte[] data) {
+      return 7000;
+    }
+
+    @Override
+    public Pair<Boolean, byte[]> execute(byte[] data) {
+      if (data == null || data.length < INPUT_LEN) {
+        return Pair.of(true, DataWord.ZERO().getData());
+      }
+      try {
+        byte[] msg = copyOfRange(data, 0, MSG_LEN);
+        byte[] sig = copyOfRange(data, MSG_LEN, MSG_LEN + SIG_LEN);
+        byte[] pk = copyOfRange(data, MSG_LEN + SIG_LEN, INPUT_LEN);
+        boolean ok = MLDSA65.verify(pk, msg, sig);
+        return Pair.of(true, ok ? DataWord.ONE().getData() : DataWord.ZERO().getData());
+      } catch (Throwable t) {
+        return Pair.of(true, DataWord.ZERO().getData());
+      }
     }
   }
 
