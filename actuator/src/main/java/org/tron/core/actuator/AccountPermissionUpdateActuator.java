@@ -16,6 +16,7 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.pqc.PqSignatureRegistry;
@@ -261,7 +262,6 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
 
   private void validatePermissionScheme(Permission permission) throws ContractValidateException {
     DynamicPropertiesStore dynamicStore = chainBaseManager.getDynamicPropertiesStore();
-    boolean mlDsaAllowed = dynamicStore.allowMlDsa();
 
     SignatureScheme first = permission.getKeysList().get(0).getScheme();
     for (Key key : permission.getKeysList()) {
@@ -276,9 +276,9 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
               "public_key must be empty when scheme is UNKNOWN_SIG_SCHEME");
         }
       } else {
-        if (!mlDsaAllowed) {
+        if (!dynamicStore.isPqSchemeAllowed(scheme)) {
           throw new ContractValidateException(
-              "ML-DSA is not activated, scheme " + scheme + " is not allowed");
+              schemeNotActivatedMessage(scheme) + ", scheme " + scheme + " is not allowed");
         }
         int expected = expectedPublicKeyLength(scheme);
         if (expected < 0) {
@@ -307,8 +307,22 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
         return MLDSA44.PUBLIC_KEY_LENGTH;
       case ML_DSA_65:
         return MLDSA65.PUBLIC_KEY_LENGTH;
+      case FN_DSA:
+        return FNDSA.PUBLIC_KEY_LENGTH;
       default:
         return -1;
+    }
+  }
+
+  private static String schemeNotActivatedMessage(SignatureScheme scheme) {
+    switch (scheme) {
+      case ML_DSA_44:
+      case ML_DSA_65:
+        return "ML-DSA is not activated";
+      case FN_DSA:
+        return "FN-DSA is not activated";
+      default:
+        return scheme + " is not activated";
     }
   }
 }

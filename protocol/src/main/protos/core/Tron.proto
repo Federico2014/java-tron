@@ -28,7 +28,9 @@ enum SignatureScheme {
   SM2_SM3 = 2;
   ML_DSA_44 = 3;
   ML_DSA_65 = 4;
-  reserved 5 to 15;
+  FN_DSA = 6;
+  reserved 5;
+  reserved 7 to 15;
 }
 
 // AccountId, (name, address) use name, (null, address) use address, (name, null) use name,

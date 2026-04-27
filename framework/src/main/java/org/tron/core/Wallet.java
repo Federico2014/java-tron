@@ -1519,6 +1519,11 @@ public class Wallet {
         .setValue(dbManager.getDynamicPropertiesStore().getAllowMlDsa())
         .build());
 
+    builder.addChainParameter(Protocol.ChainParameters.ChainParameter.newBuilder()
+        .setKey("getAllowFnDsa")
+        .setValue(dbManager.getDynamicPropertiesStore().getAllowFnDsa())
+        .build());
+
     return builder.build();
   }
 

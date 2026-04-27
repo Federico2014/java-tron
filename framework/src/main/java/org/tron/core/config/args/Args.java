@@ -31,6 +31,7 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -1046,6 +1047,10 @@ public class Args extends CommonParameter {
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_ML_DSA) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_ML_DSA) : 0;
 
+    PARAMETER.allowFnDsa =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_FN_DSA) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_FN_DSA) : 0;
+
     logConfig();
   }
 
@@ -1189,6 +1194,10 @@ public class Args extends CommonParameter {
     }
   }
 
+  private static final EnumSet<SignatureScheme> WITNESS_PQ_SEED_SCHEMES = EnumSet.of(
+      SignatureScheme.ML_DSA_44, SignatureScheme.ML_DSA_65,
+      SignatureScheme.FN_DSA);
+
   private static void initLocalWitnesses(Config config, CLIParameter cmd) {
     // not a witness node, skip
     if (!PARAMETER.isWitness()) {
@@ -1234,7 +1243,13 @@ public class Args extends CommonParameter {
         if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
           String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);
           try {
-            localWitnesses.setPqScheme(SignatureScheme.valueOf(schemeName));
+            SignatureScheme scheme = SignatureScheme.valueOf(schemeName);
+            if (!WITNESS_PQ_SEED_SCHEMES.contains(scheme)) {
+              throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
+                  + ": " + schemeName + "; valid values: " + WITNESS_PQ_SEED_SCHEMES,
+                  TronError.ErrCode.WITNESS_INIT);
+            }
+            localWitnesses.setPqScheme(scheme);
           } catch (IllegalArgumentException e) {
             throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
                 + ": " + schemeName, TronError.ErrCode.WITNESS_INIT);

@@ -1768,7 +1768,7 @@ public class Manager {
   }
 
   private SignatureScheme resolveWitnessScheme(Miner miner) {
-    if (!chainBaseManager.getDynamicPropertiesStore().allowMlDsa()) {
+    if (!chainBaseManager.getDynamicPropertiesStore().isAnyPqSchemeAllowed()) {
       return SignatureScheme.UNKNOWN_SIG_SCHEME;
     }
     byte[] witnessAddress = miner.getWitnessAddress().toByteArray();

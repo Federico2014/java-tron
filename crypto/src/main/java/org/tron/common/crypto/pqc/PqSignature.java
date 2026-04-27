@@ -53,12 +53,16 @@ public interface PqSignature {
     }
   }
 
+  /**
+   * Default upper-bound check, sufficient for variable-length schemes (FN-DSA).
+   * Fixed-length schemes (ML-DSA-44 / ML-DSA-65) override this with strict equality.
+   */
   default void validateSignature(byte[] signature) {
-    if (signature == null || signature.length != getSignatureLength()) {
+    if (signature == null || signature.length == 0 || signature.length > getSignatureLength()) {
       throw new IllegalArgumentException(
           "invalid " + getScheme() + " signature length: "
               + (signature == null ? "null" : signature.length)
-              + ", expected " + getSignatureLength());
+              + ", expected 1.." + getSignatureLength());
     }
   }
 }

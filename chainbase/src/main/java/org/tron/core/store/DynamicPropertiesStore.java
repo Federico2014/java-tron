@@ -21,6 +21,7 @@ import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.capsule.BytesCapsule;
 import org.tron.core.config.Parameter.ChainConstant;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.core.db.TronStoreWithRevoking;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ItemNotFoundException;
@@ -241,6 +242,8 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
   private static final byte[] ALLOW_TVM_OSAKA = "ALLOW_TVM_OSAKA".getBytes();
 
   private static final byte[] ALLOW_ML_DSA = "ALLOW_ML_DSA".getBytes();
+
+  private static final byte[] ALLOW_FN_DSA = "ALLOW_FN_DSA".getBytes();
 
   @Autowired
   private DynamicPropertiesStore(@Value("properties") String dbName) {
@@ -3008,6 +3011,45 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
 
   public boolean allowMlDsa() {
     return getAllowMlDsa() == 1L;
+  }
+
+  public long getAllowFnDsa() {
+    return Optional.ofNullable(getUnchecked(ALLOW_FN_DSA))
+        .map(BytesCapsule::getData)
+        .map(ByteArray::toLong)
+        .orElse(CommonParameter.getInstance().getAllowFnDsa());
+  }
+
+  public void saveAllowFnDsa(long value) {
+    this.put(ALLOW_FN_DSA, new BytesCapsule(ByteArray.fromLong(value)));
+  }
+
+  public boolean allowFnDsa() {
+    return getAllowFnDsa() == 1L;
+  }
+
+  /** Returns true iff at least one post-quantum signature scheme is currently activated. */
+  public boolean isAnyPqSchemeAllowed() {
+    return allowMlDsa() || allowFnDsa();
+  }
+
+  /**
+   * Per-scheme governance check. ML-DSA-44 and ML-DSA-65 are gated by a single
+   * {@code ALLOW_ML_DSA} flag; FN-DSA has its own flag. Non-PQ schemes return false.
+   */
+  public boolean isPqSchemeAllowed(SignatureScheme scheme) {
+    if (scheme == null) {
+      return false;
+    }
+    switch (scheme) {
+      case ML_DSA_44:
+      case ML_DSA_65:
+        return allowMlDsa();
+      case FN_DSA:
+        return allowFnDsa();
+      default:
+        return false;
+    }
   }
 
   private static class DynamicResourceProperties {

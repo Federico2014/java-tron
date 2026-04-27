@@ -254,9 +254,9 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   private boolean validateWitnessAuth(DynamicPropertiesStore dynamicPropertiesStore,
       AccountStore accountStore, byte[] witnessAccountAddress, AuthWitness witnessAuth)
       throws ValidateSignatureException {
-    if (!dynamicPropertiesStore.allowMlDsa()) {
+    if (!dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
       throw new ValidateSignatureException(
-          "witness_auth present but ML-DSA is not activated");
+          "witness_auth present but no post-quantum scheme is activated");
     }
     AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
     Permission witnessPermission = null;
@@ -271,6 +271,10 @@ public class BlockCapsule implements ProtoCapsule<Block> {
     if (!PqSignatureRegistry.contains(scheme)) {
       throw new ValidateSignatureException(
           "witness permission scheme " + scheme + " is not allowed for block signing");
+    }
+    if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
+      throw new ValidateSignatureException(
+          "witness permission scheme " + scheme + " is not activated");
     }
 
     byte[] signerAddr = witnessAuth.getSignerAddress().toByteArray();

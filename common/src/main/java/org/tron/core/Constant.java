@@ -65,6 +65,11 @@ public class Constant {
   public static final int ML_DSA_44_SIGNATURE_LENGTH = 2420;
   public static final int ML_DSA_65_PUBLIC_KEY_LENGTH = 1952;
   public static final int ML_DSA_65_SIGNATURE_LENGTH = 3309;
+  // Post-quantum (FIPS 206 draft) FN-DSA / Falcon-512 signature constants.
+  // Falcon signatures are variable-length; SIGNATURE_MAX_LENGTH is the protocol-level
+  // upper bound, not an exact length.
+  public static final int FN_DSA_PUBLIC_KEY_LENGTH = 896;
+  public static final int FN_DSA_SIGNATURE_MAX_LENGTH = 752;
   public static final String PQ_TX_AUTH_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String PQ_BLOCK_AUTH_DOMAIN = "TRON_BLOCK_AUTH_V1";
 

@@ -400,6 +400,10 @@ public class ProposalService extends ProposalUtil {
           manager.getDynamicPropertiesStore().saveAllowMlDsa(entry.getValue());
           break;
         }
+        case ALLOW_FN_DSA: {
+          manager.getDynamicPropertiesStore().saveAllowFnDsa(entry.getValue());
+          break;
+        }
         default:
           find = false;
           break;

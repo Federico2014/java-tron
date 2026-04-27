@@ -73,6 +73,23 @@ public final class PqSignatureRegistry {
             return new MLDSA65(seed);
           }
         }));
+    m.put(SignatureScheme.FN_DSA, new SchemeInfo(
+        FNDSA.PUBLIC_KEY_LENGTH, FNDSA.SIGNATURE_LENGTH, new SignatureOps() {
+          @Override
+          public byte[] sign(byte[] privateKey, byte[] message) {
+            return FNDSA.sign(privateKey, message);
+          }
+
+          @Override
+          public boolean verify(byte[] publicKey, byte[] message, byte[] signature) {
+            return FNDSA.verify(publicKey, message, signature);
+          }
+
+          @Override
+          public PqSignature fromSeed(byte[] seed) {
+            return new FNDSA(seed);
+          }
+        }));
     SCHEMES = Collections.unmodifiableMap(m);
   }
 
@@ -89,6 +106,20 @@ public final class PqSignatureRegistry {
 
   public static int getSignatureLength(SignatureScheme scheme) {
     return require(scheme).signatureLength;
+  }
+
+  /**
+   * Per-scheme signature-length predicate. Fixed-length schemes (ML-DSA-44 / ML-DSA-65)
+   * require exact equality with {@link #getSignatureLength(SignatureScheme)};
+   * variable-length schemes (FN-DSA) treat that value as an upper bound and accept any
+   * {@code 1..max}.
+   */
+  public static boolean isValidSignatureLength(SignatureScheme scheme, int length) {
+    SchemeInfo info = require(scheme);
+    if (scheme == SignatureScheme.FN_DSA) {
+      return length > 0 && length <= info.signatureLength;
+    }
+    return length == info.signatureLength;
   }
 
   public static byte[] sign(SignatureScheme scheme, byte[] privateKey, byte[] message) {
