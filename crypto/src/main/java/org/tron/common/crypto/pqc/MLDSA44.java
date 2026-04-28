@@ -16,10 +16,10 @@ import org.tron.protos.Protocol.SignatureScheme;
  * FIPS 204 ML-DSA-44 keypair-bound signer/verifier. Instance verify and sign
  * use the bound keypair; stateless dispatch is available via the static
  * {@link #verify} / {@link #sign(byte[], byte[])} entry points and the
- * {@link PqSignatureRegistry}. Consumes raw public key / signature bytes —
+ * {@link PQSignatureRegistry}. Consumes raw public key / signature bytes —
  * no SubjectPublicKeyInfo, PEM, or Base64 wrapping.
  */
-public final class MLDSA44 implements PqSignature {
+public final class MLDSA44 implements PQSignature {
 
   public static final int PRIVATE_KEY_LENGTH = 2560;
   public static final int PUBLIC_KEY_LENGTH = 1312;

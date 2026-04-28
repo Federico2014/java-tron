@@ -25,8 +25,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.MLDSA65;
-import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.core.config.Parameter.ChainConstant;
 import org.tron.core.exception.TronError;
 import org.tron.protos.Protocol.SignatureScheme;
@@ -37,7 +36,11 @@ public class LocalWitnesses {
   @Getter
   private List<String> privateKeys = Lists.newArrayList();
 
-  /** ML-DSA seed values in hex format (64 hex chars = 32 bytes). */
+  /**
+   * PQ seed values in hex format. The expected byte length depends on
+   * {@link #pqScheme}: 32 bytes (64 hex chars) for ML-DSA-44 / ML-DSA-65,
+   * 48 bytes (96 hex chars) for FN-DSA.
+   */
   @Getter
   private List<String> pqSeeds = Lists.newArrayList();
 
@@ -46,7 +49,7 @@ public class LocalWitnesses {
   private SignatureScheme pqScheme = SignatureScheme.ML_DSA_65;
 
   public void setPqScheme(SignatureScheme pqScheme) {
-    if (pqScheme == null || !PqSignatureRegistry.contains(pqScheme)) {
+    if (pqScheme == null || !PQSignatureRegistry.contains(pqScheme)) {
       throw new TronError("unsupported PQ signature scheme: " + pqScheme,
           TronError.ErrCode.WITNESS_INIT);
     }
@@ -116,31 +119,37 @@ public class LocalWitnesses {
     this.privateKeys.add(privateKey);
   }
 
-  /** ML-DSA seed values (32 bytes = 64 hex chars). Keys are derived from seeds. */
+  /**
+   * PQ seed values used to derive signing keys under {@link #pqScheme}. Each seed must
+   * be a hex string whose byte length matches the scheme's required seed size; callers
+   * must therefore set the scheme via {@link #setPqScheme(SignatureScheme)} before
+   * calling this method when targeting a non-default scheme.
+   */
   public void setPqSeeds(final List<String> pqSeeds) {
     if (CollectionUtils.isEmpty(pqSeeds)) {
       return;
     }
+    int expectedSeedLen = PQSignatureRegistry.getSeedLength(pqScheme);
     for (String seed : pqSeeds) {
-      validatePqSeed(seed);
+      validatePqSeed(seed, expectedSeedLen);
     }
     this.pqSeeds = pqSeeds;
   }
 
-  private static void validatePqSeed(String seed) {
+  private static void validatePqSeed(String seed, int expectedSeedLen) {
     String hex = seed;
     // Match downstream ByteArray.fromHexString, which only strips lowercase "0x".
     if (StringUtils.startsWith(hex, "0x")) {
       hex = hex.substring(2);
     }
-    int expectedHexLen = MLDSA65.SEED_LENGTH * 2;
+    int expectedHexLen = expectedSeedLen * 2;
     if (StringUtils.isBlank(hex) || hex.length() != expectedHexLen) {
-      throw new TronError(String.format("ML-DSA seed must be %d hex chars, actual: %d",
+      throw new TronError(String.format("PQ seed must be %d hex chars, actual: %d",
           expectedHexLen, StringUtils.isBlank(hex) ? 0 : hex.length()),
           TronError.ErrCode.WITNESS_INIT);
     }
     if (!StringUtil.isHexadecimal(hex)) {
-      throw new TronError("ML-DSA seed must be hex string",
+      throw new TronError("PQ seed must be hex string",
           TronError.ErrCode.WITNESS_INIT);
     }
   }

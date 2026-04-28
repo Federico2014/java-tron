@@ -12,7 +12,7 @@ import org.tron.protos.Protocol.SignatureScheme;
  * schemes (ECDSA secp256k1, SM2/SM3) are NOT registered — they flow through
  * the existing {@code SignInterface} path.
  */
-public final class PqSignatureRegistry {
+public final class PQSignatureRegistry {
 
   /** Stateless sign/verify/keygen dispatch bound to a single PQ scheme. */
   public interface SignatureOps {
@@ -20,17 +20,19 @@ public final class PqSignatureRegistry {
 
     boolean verify(byte[] publicKey, byte[] message, byte[] signature);
 
-    PqSignature fromSeed(byte[] seed);
+    PQSignature fromSeed(byte[] seed);
   }
 
   private static final class SchemeInfo {
     final int publicKeyLength;
     final int signatureLength;
+    final int seedLength;
     final SignatureOps ops;
 
-    SchemeInfo(int publicKeyLength, int signatureLength, SignatureOps ops) {
+    SchemeInfo(int publicKeyLength, int signatureLength, int seedLength, SignatureOps ops) {
       this.publicKeyLength = publicKeyLength;
       this.signatureLength = signatureLength;
+      this.seedLength = seedLength;
       this.ops = ops;
     }
   }
@@ -40,7 +42,8 @@ public final class PqSignatureRegistry {
   static {
     EnumMap<SignatureScheme, SchemeInfo> m = new EnumMap<>(SignatureScheme.class);
     m.put(SignatureScheme.ML_DSA_44, new SchemeInfo(
-        MLDSA44.PUBLIC_KEY_LENGTH, MLDSA44.SIGNATURE_LENGTH, new SignatureOps() {
+        MLDSA44.PUBLIC_KEY_LENGTH, MLDSA44.SIGNATURE_LENGTH, MLDSA44.SEED_LENGTH,
+        new SignatureOps() {
           @Override
           public byte[] sign(byte[] privateKey, byte[] message) {
             return MLDSA44.sign(privateKey, message);
@@ -52,12 +55,13 @@ public final class PqSignatureRegistry {
           }
 
           @Override
-          public PqSignature fromSeed(byte[] seed) {
+          public PQSignature fromSeed(byte[] seed) {
             return new MLDSA44(seed);
           }
         }));
     m.put(SignatureScheme.ML_DSA_65, new SchemeInfo(
-        MLDSA65.PUBLIC_KEY_LENGTH, MLDSA65.SIGNATURE_LENGTH, new SignatureOps() {
+        MLDSA65.PUBLIC_KEY_LENGTH, MLDSA65.SIGNATURE_LENGTH, MLDSA65.SEED_LENGTH,
+        new SignatureOps() {
           @Override
           public byte[] sign(byte[] privateKey, byte[] message) {
             return MLDSA65.sign(privateKey, message);
@@ -69,12 +73,13 @@ public final class PqSignatureRegistry {
           }
 
           @Override
-          public PqSignature fromSeed(byte[] seed) {
+          public PQSignature fromSeed(byte[] seed) {
             return new MLDSA65(seed);
           }
         }));
     m.put(SignatureScheme.FN_DSA, new SchemeInfo(
-        FNDSA.PUBLIC_KEY_LENGTH, FNDSA.SIGNATURE_LENGTH, new SignatureOps() {
+        FNDSA.PUBLIC_KEY_LENGTH, FNDSA.SIGNATURE_LENGTH, FNDSA.SEED_LENGTH,
+        new SignatureOps() {
           @Override
           public byte[] sign(byte[] privateKey, byte[] message) {
             return FNDSA.sign(privateKey, message);
@@ -86,14 +91,14 @@ public final class PqSignatureRegistry {
           }
 
           @Override
-          public PqSignature fromSeed(byte[] seed) {
+          public PQSignature fromSeed(byte[] seed) {
             return new FNDSA(seed);
           }
         }));
     SCHEMES = Collections.unmodifiableMap(m);
   }
 
-  private PqSignatureRegistry() {
+  private PQSignatureRegistry() {
   }
 
   public static boolean contains(SignatureScheme scheme) {
@@ -106,6 +111,10 @@ public final class PqSignatureRegistry {
 
   public static int getSignatureLength(SignatureScheme scheme) {
     return require(scheme).signatureLength;
+  }
+
+  public static int getSeedLength(SignatureScheme scheme) {
+    return require(scheme).seedLength;
   }
 
   /**
@@ -131,7 +140,7 @@ public final class PqSignatureRegistry {
     return require(scheme).ops.verify(publicKey, message, signature);
   }
 
-  public static PqSignature fromSeed(SignatureScheme scheme, byte[] seed) {
+  public static PQSignature fromSeed(SignatureScheme scheme, byte[] seed) {
     return require(scheme).ops.fromSeed(seed);
   }
 
@@ -139,7 +148,7 @@ public final class PqSignatureRegistry {
     SchemeInfo info = SCHEMES.get(scheme);
     if (info == null) {
       throw new IllegalArgumentException(
-          "no PqSignature registered for scheme: " + scheme);
+          "no PQSignature registered for scheme: " + scheme);
     }
     return info;
   }

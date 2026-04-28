@@ -16,37 +16,37 @@ import org.tron.core.config.args.Args;
 import org.tron.core.db.Manager;
 
 /**
- * Demo fullnode that dials {@link PqcWitnessNode} via P2P and syncs PQ-signed blocks.
+ * Demo fullnode that dials {@link PQWitnessNode} via P2P and syncs PQ-signed blocks.
  *
  * Both nodes share the same deterministic PQ genesis pre-state (witness account with an
  * ML-DSA-44 witness permission + demo user account with an ML-DSA-44 owner permission),
- * installed via {@link PqcWitnessNode#installPqGenesisState}. Once the witness produces
+ * installed via {@link PQWitnessNode#installPQGenesisState}. Once the witness produces
  * a block it is broadcast over P2P; this node validates {@code BlockHeader.pq_witness}
  * against the same on-chain public key and applies the block.
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcWitnessNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
  *   Terminal 2 — start a fullnode that syncs from it:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqFullNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQFullNode
  *
  * Optional JVM args:
  *   -Dpqc.witness.host=127.0.0.1   (default: 127.0.0.1)
- *   -Dpqc.witness.p2p.port=18888   (default: PqcWitnessNode.P2P_PORT)
+ *   -Dpqc.witness.p2p.port=18888   (default: PQWitnessNode.P2P_PORT)
  */
-public class PqFullNode {
+public class PQFullNode {
 
-  /** gRPC port (different from PqcWitnessNode so both can run on one host). */
+  /** gRPC port (different from PQWitnessNode so both can run on one host). */
   static final int GRPC_PORT = 50052;
-  /** Full-node HTTP port (different from PqcWitnessNode). */
+  /** Full-node HTTP port (different from PQWitnessNode). */
   static final int HTTP_PORT = 8091;
-  /** P2P listen port (different from PqcWitnessNode). */
+  /** P2P listen port (different from PQWitnessNode). */
   static final int P2P_PORT = 18889;
 
   private static final String WITNESS_HOST =
       System.getProperty("pqc.witness.host", "127.0.0.1");
   private static final int WITNESS_P2P_PORT = Integer.parseInt(
-      System.getProperty("pqc.witness.p2p.port", String.valueOf(PqcWitnessNode.P2P_PORT)));
+      System.getProperty("pqc.witness.p2p.port", String.valueOf(PQWitnessNode.P2P_PORT)));
 
   public static void main(String[] args) throws Exception {
     // Force INFO level: logback-test.xml (on the test classpath) sets root=DEBUG
@@ -55,9 +55,9 @@ public class PqFullNode {
         .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
-    // ── 1. Derive the same deterministic keys used by PqcWitnessNode ──────
-    MLDSA44 witnessKp = new MLDSA44(PqcWitnessNode.WITNESS_SEED);
-    MLDSA44 userKp    = new MLDSA44(PqcWitnessNode.USER_SEED);
+    // ── 1. Derive the same deterministic keys used by PQWitnessNode ──────
+    MLDSA44 witnessKp = new MLDSA44(PQWitnessNode.WITNESS_SEED);
+    MLDSA44 userKp    = new MLDSA44(PQWitnessNode.USER_SEED);
 
     byte[] witnessPub = witnessKp.getPublicKey();
     byte[] userPub    = userKp.getPublicKey();
@@ -100,7 +100,7 @@ public class PqFullNode {
     // ── 4. Install matching PQ genesis pre-state ──────────────────────────
     // Without this the incoming pq_witness would fail to validate because
     // this node wouldn't know the witness's ML-DSA-44 public key.
-    PqcWitnessNode.installPqGenesisState(db, chain, witnessPub, userPub);
+    PQWitnessNode.installPQGenesisState(db, chain, witnessPub, userPub);
 
     // ── 5. Start P2P + gRPC (no ConsensusService.start — we don't produce) ─
     app.startup();

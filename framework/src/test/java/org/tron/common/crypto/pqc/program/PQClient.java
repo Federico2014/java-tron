@@ -13,32 +13,32 @@ import org.tron.api.GrpcAPI.Return;
 import org.tron.api.WalletGrpc;
 import org.tron.api.WalletGrpc.WalletBlockingStub;
 import org.tron.common.crypto.pqc.MLDSA44;
-import org.tron.common.crypto.pqc.PqAuthDigest;
+import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.utils.ByteArray;
-import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Block;
+import org.tron.protos.Protocol.PQAuthWitness;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 /**
- * Demo client that connects to {@link PqcWitnessNode} and broadcasts an ML-DSA-44
+ * Demo client that connects to {@link PQWitnessNode} and broadcasts an ML-DSA-44
  * signed transfer transaction.
  *
- * The keypair is derived from the same fixed seed used by PqcWitnessNode, so no
+ * The keypair is derived from the same fixed seed used by PQWitnessNode, so no
  * out-of-band key exchange is needed.
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcWitnessNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcClient
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
  *
  * Optional JVM args:
  *   -Dpqc.host=localhost  (default: localhost)
  *   -Dpqc.port=50051      (default: 50051)
  */
-public class PqcClient {
+public class PQClient {
 
   private static final String HOST =
       System.getProperty("pqc.host", "localhost");
@@ -56,7 +56,7 @@ public class PqcClient {
         .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
-    // ── 1. Derive user keypair from same fixed seed as PqcWitnessNode ─────
+    // ── 1. Derive user keypair from same fixed seed as PQWitnessNode ─────
     byte[] userSeed = new byte[32];
     Arrays.fill(userSeed, (byte) 0x02);
     MLDSA44 userKp = new MLDSA44(userSeed);
@@ -64,7 +64,7 @@ public class PqcClient {
     byte[] userPub    = userKp.getPublicKey();
     byte[] userPriv   = userKp.getPrivateKey();
     byte[] signerAddr = MLDSA44.computeAddress(userPub);
-    byte[] ownerAddr  = PqcWitnessNode.USER_ADDR;
+    byte[] ownerAddr  = PQWitnessNode.USER_ADDR;
 
     System.out.println("=== PQC Client ===");
     System.out.println("Connecting to " + HOST + ":" + PORT);
@@ -109,11 +109,11 @@ public class PqcClient {
 
       // ── 5. Sign with ML-DSA-44 pq_witness ──────────────────────────
       byte[] txId   = sha256(rawData.toByteArray());
-      byte[] digest = PqAuthDigest.tx(txId, 0, 0);
+      byte[] digest = PQAuthDigest.tx(txId, 0, 0);
       byte[] sig    = MLDSA44.sign(userPriv, digest);
 
       Transaction signedTx = tx.toBuilder()
-          .addPqWitness(PqAuthWitness.newBuilder()
+          .addPqWitness(PQAuthWitness.newBuilder()
               .setSignature(ByteString.copyFrom(sig)))
           .build();
 

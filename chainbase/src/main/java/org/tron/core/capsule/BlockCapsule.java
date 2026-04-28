@@ -31,8 +31,8 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.PqAuthDigest;
-import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.PQAuthDigest;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
@@ -43,7 +43,7 @@ import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.protos.Protocol.PqAuthWitness;
+import org.tron.protos.Protocol.PQAuthWitness;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.BlockHeader;
 import org.tron.protos.Protocol.Key;
@@ -179,7 +179,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
 
   }
 
-  public void setPqWitness(PqAuthWitness pqWitness) {
+  public void setPqWitness(PQAuthWitness pqWitness) {
     BlockHeader blockHeader = this.block.getBlockHeader().toBuilder()
         .setPqWitness(pqWitness).build();
     this.block = this.block.toBuilder().setBlockHeader(blockHeader).build();
@@ -198,7 +198,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
       AccountStore accountStore) throws ValidateSignatureException {
     BlockHeader header = block.getBlockHeader();
     boolean hasLegacy = !header.getWitnessSignature().isEmpty();
-    PqAuthWitness witnessAuth = header.getPqWitness();
+    PQAuthWitness witnessAuth = header.getPqWitness();
     boolean hasAuth = witnessAuth != null
         && witnessAuth.getSignature() != null
         && !witnessAuth.getSignature().isEmpty();
@@ -230,7 +230,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
           Key k = witnessPermission.getKeys(0);
           SignatureScheme ks = k.hasPqKey()
               ? k.getPqKey().getScheme() : SignatureScheme.UNKNOWN_SIG_SCHEME;
-          if (PqSignatureRegistry.contains(ks)) {
+          if (PQSignatureRegistry.contains(ks)) {
             throw new ValidateSignatureException(
                 "witness permission requires PQ scheme " + ks
                     + " but witness_signature is legacy");
@@ -255,7 +255,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   }
 
   private boolean validateWitnessAuth(DynamicPropertiesStore dynamicPropertiesStore,
-      AccountStore accountStore, byte[] witnessAccountAddress, PqAuthWitness witnessAuth)
+      AccountStore accountStore, byte[] witnessAccountAddress, PQAuthWitness witnessAuth)
       throws ValidateSignatureException {
     if (!dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
       throw new ValidateSignatureException(
@@ -280,7 +280,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
           "witness permission key at index " + keyId + " is not a PQ key");
     }
     SignatureScheme scheme = matched.getPqKey().getScheme();
-    if (!PqSignatureRegistry.contains(scheme)) {
+    if (!PQSignatureRegistry.contains(scheme)) {
       throw new ValidateSignatureException(
           "witness permission scheme " + scheme + " is not allowed for block signing");
     }
@@ -292,8 +292,8 @@ public class BlockCapsule implements ProtoCapsule<Block> {
     byte[] publicKey = matched.getPqKey().getPublicKey().toByteArray();
     byte[] signature = witnessAuth.getSignature().toByteArray();
     byte[] rawHdrHash = getRawHash().getBytes();
-    byte[] digest = PqAuthDigest.block(rawHdrHash, keyId);
-    return PqSignatureRegistry.verify(scheme, publicKey, digest, signature);
+    byte[] digest = PQAuthDigest.block(rawHdrHash, keyId);
+    return PQSignatureRegistry.verify(scheme, publicKey, digest, signature);
   }
 
   public BlockId getBlockId() {
@@ -407,7 +407,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
     if (!header.getWitnessSignature().isEmpty()) {
       return true;
     }
-    PqAuthWitness auth = header.getPqWitness();
+    PQAuthWitness auth = header.getPqWitness();
     return auth != null && !auth.getSignature().isEmpty();
   }
 

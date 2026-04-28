@@ -15,7 +15,7 @@ import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.protos.Protocol;
-import org.tron.protos.Protocol.PqAuthWitness;
+import org.tron.protos.Protocol.PQAuthWitness;
 import org.tron.protos.Protocol.Transaction;
 
 public class UtilTest extends BaseTest {
@@ -169,12 +169,12 @@ public class UtilTest extends BaseTest {
   }
 
   @Test
-  public void roundtripPqAuthWitnessJson() throws Exception {
+  public void roundtripPQAuthWitnessJson() throws Exception {
     byte[] sig = new byte[3309];
     for (int i = 0; i < sig.length; i++) {
       sig[i] = (byte) (i & 0xff);
     }
-    PqAuthWitness pqWitness = PqAuthWitness.newBuilder()
+    PQAuthWitness pqWitness = PQAuthWitness.newBuilder()
         .setKeyId(1)
         .setSignature(ByteString.copyFrom(sig))
         .build();

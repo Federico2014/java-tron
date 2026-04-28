@@ -77,19 +77,19 @@ public class Param {
       this.witnessAddress = witnessAddress;
     }
 
-    public byte[] getPqPrivateKey() {
+    public byte[] getPQPrivateKey() {
       return pqPrivateKey == null ? null : pqPrivateKey.clone();
     }
 
-    public void setPqPrivateKey(byte[] pqPrivateKey) {
+    public void setPQPrivateKey(byte[] pqPrivateKey) {
       this.pqPrivateKey = pqPrivateKey == null ? null : pqPrivateKey.clone();
     }
 
-    public byte[] getPqPublicKey() {
+    public byte[] getPQPublicKey() {
       return pqPublicKey == null ? null : pqPublicKey.clone();
     }
 
-    public void setPqPublicKey(byte[] pqPublicKey) {
+    public void setPQPublicKey(byte[] pqPublicKey) {
       this.pqPublicKey = pqPublicKey == null ? null : pqPublicKey.clone();
     }
   }

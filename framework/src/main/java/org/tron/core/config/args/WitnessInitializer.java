@@ -101,7 +101,7 @@ public class WitnessInitializer {
    * Init for PQ-only witness nodes (no legacy ECDSA key). The witness account
    * address must be supplied explicitly because there is no ECDSA key to derive it from.
    */
-  public static LocalWitnesses initFromPqOnly(String witnessAccountAddress) {
+  public static LocalWitnesses initFromPQOnly(String witnessAccountAddress) {
     if (StringUtils.isBlank(witnessAccountAddress)) {
       throw new TronError(
           "localWitnessAccountAddress must be set for PQ-only witness nodes",

@@ -6,9 +6,9 @@ import org.tron.protos.Protocol.SignatureScheme;
  * Post-quantum signature scheme facade bound to a keypair. Instance methods
  * (sign/verify/getAddress/getPublicKey/getPrivateKey) operate on the held
  * keypair. Stateless dispatch by {@link SignatureScheme} is provided by
- * {@link PqSignatureRegistry}.
+ * {@link PQSignatureRegistry}.
  */
-public interface PqSignature {
+public interface PQSignature {
 
   SignatureScheme getScheme();
 

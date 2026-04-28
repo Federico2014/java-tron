@@ -9,21 +9,21 @@ import org.tron.common.BaseTest;
 import org.tron.common.TestConstants;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.pqc.MLDSA65;
-import org.tron.common.crypto.pqc.PqAuthDigest;
+import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.protos.Protocol.Account;
 import org.tron.protos.Protocol.AccountType;
-import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Key;
+import org.tron.protos.Protocol.PQAuthWitness;
+import org.tron.protos.Protocol.PQPublicKey;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.PqPublicKey;
 import org.tron.protos.Protocol.SignatureScheme;
 
-public class BlockCapsulePqTest extends BaseTest {
+public class BlockCapsulePQTest extends BaseTest {
 
   private ECKey witnessKey;
   private byte[] witnessAddress;
@@ -46,7 +46,7 @@ public class BlockCapsulePqTest extends BaseTest {
         .setAddress(ByteString.copyFrom(witnessAddress))
         .setWeight(1);
     if (scheme == SignatureScheme.ML_DSA_65) {
-      kb.setPqKey(PqPublicKey.newBuilder()
+      kb.setPqKey(PQPublicKey.newBuilder()
           .setScheme(scheme)
           .setPublicKey(ByteString.copyFrom(pqKeypair.getPublicKey()))
           .build());
@@ -87,12 +87,12 @@ public class BlockCapsulePqTest extends BaseTest {
         ByteString.copyFrom(witnessAddress));
   }
 
-  private byte[] signPq(byte[] message) {
+  private byte[] signPQ(byte[] message) {
     return MLDSA65.sign(pqKeypair.getPrivateKey(), message);
   }
 
   @Test
-  public void legacyValidateWithoutPqAuthWitnessAcceptedBeforeActivation() throws Exception {
+  public void legacyValidateWithoutPQAuthWitnessAcceptedBeforeActivation() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.UNKNOWN_SIG_SCHEME);
@@ -113,16 +113,16 @@ public class BlockCapsulePqTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PqAuthDigest.block(block.getRawHashBytes(), 0);
-    block.setPqWitness(PqAuthWitness.newBuilder()
-        .setSignature(ByteString.copyFrom(signPq(digest)))
+    byte[] digest = PQAuthDigest.block(block.getRawHashBytes(), 0);
+    block.setPqWitness(PQAuthWitness.newBuilder()
+        .setSignature(ByteString.copyFrom(signPQ(digest)))
         .build());
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());
   }
 
   @Test(expected = ValidateSignatureException.class)
-  public void bothLegacyAndPqAuthWitnessRejected() throws Exception {
+  public void bothLegacyAndPQAuthWitnessRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
@@ -130,9 +130,9 @@ public class BlockCapsulePqTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildSignedBlock(parentHash);
-    byte[] digest = PqAuthDigest.block(block.getRawHashBytes(), 0);
-    block.setPqWitness(PqAuthWitness.newBuilder()
-        .setSignature(ByteString.copyFrom(signPq(digest)))
+    byte[] digest = PQAuthDigest.block(block.getRawHashBytes(), 0);
+    block.setPqWitness(PQAuthWitness.newBuilder()
+        .setSignature(ByteString.copyFrom(signPQ(digest)))
         .build());
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());
@@ -152,7 +152,7 @@ public class BlockCapsulePqTest extends BaseTest {
   }
 
   @Test(expected = ValidateSignatureException.class)
-  public void legacySchemeWithPqAuthWitnessOnlyRejected() throws Exception {
+  public void legacySchemeWithPQAuthWitnessOnlyRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.UNKNOWN_SIG_SCHEME);
@@ -160,9 +160,9 @@ public class BlockCapsulePqTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PqAuthDigest.block(block.getRawHashBytes(), 0);
-    block.setPqWitness(PqAuthWitness.newBuilder()
-        .setSignature(ByteString.copyFrom(signPq(digest)))
+    byte[] digest = PQAuthDigest.block(block.getRawHashBytes(), 0);
+    block.setPqWitness(PQAuthWitness.newBuilder()
+        .setSignature(ByteString.copyFrom(signPQ(digest)))
         .build());
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());
@@ -190,16 +190,16 @@ public class BlockCapsulePqTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PqAuthDigest.block(block.getRawHashBytes(), 0);
-    block.setPqWitness(PqAuthWitness.newBuilder()
-        .setSignature(ByteString.copyFrom(signPq(digest)))
+    byte[] digest = PQAuthDigest.block(block.getRawHashBytes(), 0);
+    block.setPqWitness(PQAuthWitness.newBuilder()
+        .setSignature(ByteString.copyFrom(signPQ(digest)))
         .build());
     Assert.assertTrue(block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore()));
   }
 
   @Test
-  public void tamperedPqAuthWitnessFails() throws Exception {
+  public void tamperedPQAuthWitnessFails() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
     dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
     AccountCapsule witness = buildWitnessAccount(SignatureScheme.ML_DSA_65);
@@ -207,10 +207,10 @@ public class BlockCapsulePqTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PqAuthDigest.block(block.getRawHashBytes(), 0);
-    byte[] pqSig = signPq(digest);
+    byte[] digest = PQAuthDigest.block(block.getRawHashBytes(), 0);
+    byte[] pqSig = signPQ(digest);
     pqSig[pqSig.length - 1] ^= 0x01;
-    block.setPqWitness(PqAuthWitness.newBuilder()
+    block.setPqWitness(PQAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(pqSig))
         .build());
     Assert.assertFalse(block.validateSignature(
@@ -226,10 +226,10 @@ public class BlockCapsulePqTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PqAuthDigest.block(block.getRawHashBytes(), 1);
-    block.setPqWitness(PqAuthWitness.newBuilder()
+    byte[] digest = PQAuthDigest.block(block.getRawHashBytes(), 1);
+    block.setPqWitness(PQAuthWitness.newBuilder()
         .setKeyId(1)
-        .setSignature(ByteString.copyFrom(signPq(digest)))
+        .setSignature(ByteString.copyFrom(signPQ(digest)))
         .build());
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());

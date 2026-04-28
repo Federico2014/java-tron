@@ -17,15 +17,15 @@ import org.tron.protos.Protocol.SignatureScheme;
  * FIPS 206 (draft) FN-DSA / Falcon-512 keypair-bound signer/verifier. Mirrors the
  * {@link MLDSA44} / {@link MLDSA65} / {@link SLHDSA} shape: instance methods sign/verify
  * with the bound keypair, static {@link #sign(byte[], byte[])} / {@link #verify} provide
- * stateless entry points used by {@link PqSignatureRegistry}.
+ * stateless entry points used by {@link PQSignatureRegistry}.
  *
  * <p>Falcon signatures are <strong>variable-length</strong>: {@link #SIGNATURE_LENGTH} is
- * the protocol-level upper bound, not an exact length. The {@link PqSignature#validateSignature}
+ * the protocol-level upper bound, not an exact length. The {@link PQSignature#validateSignature}
  * default treats this as {@code <= SIGNATURE_LENGTH}; ML-DSA / SLH-DSA override back to
  * strict equality. BouncyCastle 1.79's {@code FalconNIST.CRYPTO_BYTES} for Falcon-512 is
  * 690 bytes, well below the 752-byte protocol cap.
  */
-public final class FNDSA implements PqSignature {
+public final class FNDSA implements PQSignature {
 
   /**
    * Falcon-512 encoded private key from BC: f || g || F, where f and g are each

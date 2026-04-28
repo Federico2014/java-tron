@@ -54,8 +54,8 @@ import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
-import org.tron.common.crypto.pqc.PqAuthDigest;
-import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.PQAuthDigest;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.logsfilter.EventPluginLoader;
@@ -170,8 +170,8 @@ import org.tron.core.store.WitnessStore;
 import org.tron.core.utils.TransactionRegister;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
-import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Key;
+import org.tron.protos.Protocol.PQAuthWitness;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
@@ -1761,7 +1761,7 @@ public class Manager {
 
   private void signBlockCapsule(BlockCapsule blockCapsule, Miner miner) {
     SignatureScheme scheme = resolveWitnessScheme(miner);
-    if (PqSignatureRegistry.contains(scheme)) {
+    if (PQSignatureRegistry.contains(scheme)) {
       signWitnessAuth(blockCapsule, miner, scheme);
     } else {
       blockCapsule.sign(miner.getPrivateKey());
@@ -1789,15 +1789,15 @@ public class Manager {
     byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
     Permission witnessPermission = chainBaseManager.getAccountStore().get(witnessAddress)
         .getInstance().getWitnessPermission();
-    byte[] pqPrivateKey = miner.getPqPrivateKey();
+    byte[] pqPrivateKey = miner.getPQPrivateKey();
     if (pqPrivateKey == null) {
       throw new IllegalStateException(
           "witness permission requires " + scheme
               + " but local PQ private key is not configured");
     }
-    byte[] digest = PqAuthDigest.block(blockCapsule.getRawHashBytes(), 0);
-    byte[] signature = PqSignatureRegistry.sign(scheme, pqPrivateKey, digest);
-    PqAuthWitness witnessAuth = PqAuthWitness.newBuilder()
+    byte[] digest = PQAuthDigest.block(blockCapsule.getRawHashBytes(), 0);
+    byte[] signature = PQSignatureRegistry.sign(scheme, pqPrivateKey, digest);
+    PQAuthWitness witnessAuth = PQAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(signature))
         .build();
     blockCapsule.setPqWitness(witnessAuth);

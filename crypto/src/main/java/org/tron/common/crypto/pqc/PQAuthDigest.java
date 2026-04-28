@@ -12,7 +12,7 @@ import org.tron.common.utils.Sha256Hash;
  * transaction signature can never be replayed as a block signature and vice
  * versa.
  */
-public final class PqAuthDigest {
+public final class PQAuthDigest {
 
   public static final String TX_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String BLOCK_DOMAIN = "TRON_BLOCK_AUTH_V1";
@@ -20,7 +20,7 @@ public final class PqAuthDigest {
   static final byte[] TX_DOMAIN_BYTES = TX_DOMAIN.getBytes(StandardCharsets.UTF_8);
   static final byte[] BLOCK_DOMAIN_BYTES = BLOCK_DOMAIN.getBytes(StandardCharsets.UTF_8);
 
-  private PqAuthDigest() {
+  private PQAuthDigest() {
   }
 
   /**

@@ -22,9 +22,9 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
+import org.tron.protos.Protocol.PQPublicKey;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.PqPublicKey;
 import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result.code;
@@ -1042,7 +1042,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     return Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(addr)))
         .setWeight(KEY_WEIGHT)
-        .setPqKey(PqPublicKey.newBuilder()
+        .setPqKey(PQPublicKey.newBuilder()
             .setScheme(scheme)
             .setPublicKey(ByteString.copyFrom(fixedBytes(pkLen, seed)))
             .build())
@@ -1112,7 +1112,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     Key badLegacy = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS)))
         .setWeight(KEY_WEIGHT)
-        .setPqKey(PqPublicKey.newBuilder()
+        .setPqKey(PQPublicKey.newBuilder()
             .setPublicKey(ByteString.copyFrom(new byte[] {1, 2, 3}))
             .build())
         .build();
@@ -1222,7 +1222,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     Key k1 = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS)))
         .setWeight(KEY_WEIGHT)
-        .setPqKey(PqPublicKey.newBuilder()
+        .setPqKey(PQPublicKey.newBuilder()
             .setScheme(SignatureScheme.ML_DSA_44)
             .setPublicKey(ByteString.copyFrom(sharedPk))
             .build())
@@ -1230,7 +1230,7 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     Key k2 = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS1)))
         .setWeight(KEY_WEIGHT)
-        .setPqKey(PqPublicKey.newBuilder()
+        .setPqKey(PQPublicKey.newBuilder()
             .setScheme(SignatureScheme.ML_DSA_44)
             .setPublicKey(ByteString.copyFrom(sharedPk))
             .build())

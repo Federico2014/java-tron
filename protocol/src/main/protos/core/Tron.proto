@@ -17,7 +17,7 @@ enum AccountType {
   Contract = 2;
 }
 
-// Signature scheme identifier used by Permission.Key and PqWitness.
+// Signature scheme identifier used by Permission.Key and PQWitness.
 // UNKNOWN_SIG_SCHEME (0) denotes legacy keys authenticated via the existing
 // Transaction.signature / BlockHeader.witness_signature paths (ECDSA secp256k1
 // on mainnet, SM2/SM3 where applicable). Post-quantum schemes use dedicated
@@ -258,7 +258,7 @@ message Account {
 
 // Post-quantum public key: algorithm identifier paired with raw key bytes.
 // Used inside Key.pq_key; absent on legacy (ECDSA/SM2) keys.
-message PqPublicKey {
+message PQPublicKey {
   SignatureScheme scheme     = 1;
   // Raw key bytes. ML-DSA-44=1312B, ML-DSA-65=1952B, FN-DSA=896B.
   bytes           public_key = 2;
@@ -268,15 +268,14 @@ message Key {
   bytes      address = 1;  // empty for PQ-only keys
   int64      weight  = 2;
   // Post-quantum key. Absent for legacy keys.
-  PqPublicKey pq_key = 3;
-  reserved 4;              // was public_key; merged into pq_key
+  PQPublicKey pq_key = 3;
 }
 
 // Per-signer post-quantum authentication witness for a transaction or block.
 // key_id is the 0-based index of the signing key in the permission's key list.
 // key_id = 0 is the proto3 default and is omitted on the wire — single-key
 // accounts pay no overhead for this field.
-message PqAuthWitness {
+message PQAuthWitness {
   uint32 key_id    = 1;
   bytes  signature = 2;
 }
@@ -489,7 +488,7 @@ message Transaction {
   // a transaction against a PQ Permission MUST use pq_witness and empty
   // signature; a transaction against a legacy Permission MUST use signature
   // and empty pq_witness.
-  repeated PqAuthWitness pq_witness = 6;
+  repeated PQAuthWitness pq_witness = 6;
 }
 
 message TransactionInfo {
@@ -560,7 +559,7 @@ message BlockHeader {
   // Witness Permission with scheme = ML_DSA_65, pq_witness SHALL be
   // present in addition to witness_signature (Dual-Sign). Otherwise this
   // field SHALL be empty.
-  PqAuthWitness pq_witness = 3;
+  PQAuthWitness pq_witness = 3;
 }
 
 // block

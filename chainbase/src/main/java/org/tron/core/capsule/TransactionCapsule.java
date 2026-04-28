@@ -44,8 +44,8 @@ import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.PqAuthDigest;
-import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.PQAuthDigest;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.math.StrictMathWrapper;
 import org.tron.common.overlay.message.Message;
@@ -67,7 +67,7 @@ import org.tron.core.exception.TransactionExpirationException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.protos.Protocol.PqAuthWitness;
+import org.tron.protos.Protocol.PQAuthWitness;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -736,10 +736,10 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     }
 
     byte[] txid = computeRawHash(transaction).getBytes();
-    List<PqAuthWitness> witnesses = transaction.getPqWitnessList();
+    List<PQAuthWitness> witnesses = transaction.getPqWitnessList();
     java.util.Set<Integer> seen = new java.util.HashSet<>();
     long weight = 0L;
-    for (PqAuthWitness aw : witnesses) {
+    for (PQAuthWitness aw : witnesses) {
       int keyId = aw.getKeyId();
       if (!seen.add(keyId)) {
         throw new PermissionException("duplicate key_id in pq_witness");
@@ -752,20 +752,20 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
         throw new PermissionException("key at index " + keyId + " is not a PQ key");
       }
       SignatureScheme scheme = key.getPqKey().getScheme();
-      if (!PqSignatureRegistry.contains(scheme)) {
+      if (!PQSignatureRegistry.contains(scheme)) {
         throw new PermissionException("unsupported scheme: " + scheme);
       }
       if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
         throw new PermissionException(scheme + " is not activated");
       }
-      byte[] digest = PqAuthDigest.tx(txid, permissionId, keyId);
+      byte[] digest = PQAuthDigest.tx(txid, permissionId, keyId);
       byte[] pk = key.getPqKey().getPublicKey().toByteArray();
       byte[] sig = aw.getSignature().toByteArray();
-      if (pk.length != PqSignatureRegistry.getPublicKeyLength(scheme)
-          || !PqSignatureRegistry.isValidSignatureLength(scheme, sig.length)) {
+      if (pk.length != PQSignatureRegistry.getPublicKeyLength(scheme)
+          || !PQSignatureRegistry.isValidSignatureLength(scheme, sig.length)) {
         throw new PermissionException("public key or signature length mismatch");
       }
-      if (!PqSignatureRegistry.verify(scheme, pk, digest, sig)) {
+      if (!PQSignatureRegistry.verify(scheme, pk, digest, sig)) {
         throw new PermissionException("pq sig invalid");
       }
       try {

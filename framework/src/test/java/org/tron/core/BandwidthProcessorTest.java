@@ -883,7 +883,7 @@ public class BandwidthProcessorTest extends BaseTest {
   }
 
   @Test
-  public void pqPqAuthWitnessBytesSubtractedInCreateAccountCap() throws Exception {
+  public void pqPQAuthWitnessBytesSubtractedInCreateAccountCap() throws Exception {
     chainBaseManager.getDynamicPropertiesStore().saveLatestBlockHeaderTimestamp(1526647838000L);
     chainBaseManager.getDynamicPropertiesStore().saveTotalNetWeight(10_000_000L);
 
@@ -906,7 +906,7 @@ public class BandwidthProcessorTest extends BaseTest {
         .build();
 
     byte[] fakeSig = new byte[3309];
-    Protocol.PqAuthWitness pqWitness = Protocol.PqAuthWitness.newBuilder()
+    Protocol.PQAuthWitness pqWitness = Protocol.PQAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(fakeSig))
         .build();
 
@@ -940,7 +940,7 @@ public class BandwidthProcessorTest extends BaseTest {
   }
 
   @Test
-  public void pqPqAuthWitnessCountedInBandwidthUsage() throws Exception {
+  public void pqPQAuthWitnessCountedInBandwidthUsage() throws Exception {
     chainBaseManager.getDynamicPropertiesStore().saveLatestBlockHeaderTimestamp(1526647838000L);
     chainBaseManager.getDynamicPropertiesStore().saveTotalNetWeight(10_000_000L);
 
@@ -969,7 +969,7 @@ public class BandwidthProcessorTest extends BaseTest {
         .build();
 
     byte[] fakeSig = new byte[3309];
-    Protocol.PqAuthWitness pqWitness = Protocol.PqAuthWitness.newBuilder()
+    Protocol.PQAuthWitness pqWitness = Protocol.PQAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(fakeSig))
         .build();
 

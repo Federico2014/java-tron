@@ -1239,7 +1239,7 @@ public class Args extends CommonParameter {
       List<String> pqSeeds = config.getStringList(ConfigKey.LOCAL_WITNESS_SEED_PQ);
       if (!pqSeeds.isEmpty()) {
         localWitnesses = new LocalWitnesses();
-        localWitnesses.setPqSeeds(pqSeeds);
+        // Scheme must be applied before seeds — seed-length validation depends on it.
         if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
           String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);
           try {
@@ -1255,6 +1255,7 @@ public class Args extends CommonParameter {
                 + ": " + schemeName, TronError.ErrCode.WITNESS_INIT);
           }
         }
+        localWitnesses.setPqSeeds(pqSeeds);
         byte[] address = WitnessInitializer.resolvePqWitnessAddress(witnessAddr);
         if (address != null) {
           localWitnesses.setWitnessAccountAddress(address);

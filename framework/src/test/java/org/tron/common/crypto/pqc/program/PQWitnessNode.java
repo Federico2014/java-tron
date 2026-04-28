@@ -21,9 +21,9 @@ import org.tron.core.db.Manager;
 import org.tron.protos.Protocol.Account;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
+import org.tron.protos.Protocol.PQPublicKey;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.PqPublicKey;
 import org.tron.protos.Protocol.SignatureScheme;
 
 /**
@@ -31,22 +31,22 @@ import org.tron.protos.Protocol.SignatureScheme;
  *
  * Starts an in-process TRON node configured with a PQC witness keypair and
  * a user account that holds an ML-DSA-44 owner permission — ready to receive
- * transactions from {@link PqcClient}.
+ * transactions from {@link PQClient}.
  *
- * Keypairs are derived from fixed seeds so PqcClient can derive matching keys
+ * Keypairs are derived from fixed seeds so PQClient can derive matching keys
  * without any out-of-band coordination.
  *
  * Usage:
  *   Terminal 1 — start this node:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcWitnessNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PqcClient
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
  */
-public class PqcWitnessNode {
+public class PQWitnessNode {
 
-  /** Fixed seed for the ML-DSA-44 witness keypair (shared with PqcClient for derivation). */
+  /** Fixed seed for the ML-DSA-44 witness keypair (shared with PQClient for derivation). */
   static final byte[] WITNESS_SEED = filledSeed(0x01);
-  /** Fixed seed for the ML-DSA-44 user keypair (shared with PqcClient for derivation). */
+  /** Fixed seed for the ML-DSA-44 user keypair (shared with PQClient for derivation). */
   static final byte[] USER_SEED = filledSeed(0x02);
 
   /** gRPC port the node listens on. */
@@ -55,7 +55,7 @@ public class PqcWitnessNode {
   /** Full-node HTTP port. */
   static final int HTTP_PORT = 8090;
 
-  /** P2P listen port (shared with PqFullNode so it can dial in as a seed peer). */
+  /** P2P listen port (shared with PQFullNode so it can dial in as a seed peer). */
   static final int P2P_PORT = 18888;
 
   /** Fixed on-chain address for the demo user account. */
@@ -107,8 +107,8 @@ public class PqcWitnessNode {
     Manager db = context.getBean(Manager.class);
     ChainBaseManager chain = context.getBean(ChainBaseManager.class);
 
-    // ── 4. Install PQ genesis pre-state (shared with PqFullNode) ─────────
-    installPqGenesisState(db, chain, witnessPub, userPub);
+    // ── 4. Install PQ genesis pre-state (shared with PQFullNode) ─────────
+    installPQGenesisState(db, chain, witnessPub, userPub);
 
     // ── 5. Start consensus (DposTask auto-produces blocks) ───────────────
     context.getBean(ConsensusService.class).start();
@@ -117,7 +117,7 @@ public class PqcWitnessNode {
     app.startup();
 
     System.out.println("\nNode is running. Send Ctrl-C to stop.");
-    System.out.println("Run PqcClient or PqFullNode in another terminal.\n");
+    System.out.println("Run PQClient or PQFullNode in another terminal.\n");
 
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
       System.out.println("Shutting down...");
@@ -130,10 +130,10 @@ public class PqcWitnessNode {
 
   /**
    * Apply the PQ-specific pre-state that must exist on every node participating
-   * in the demo network. Both PqcWitnessNode and PqFullNode call this so their
+   * in the demo network. Both PQWitnessNode and PQFullNode call this so their
    * genesis state matches before the first PQ block is produced / received.
    */
-  static void installPqGenesisState(Manager db, ChainBaseManager chain,
+  static void installPQGenesisState(Manager db, ChainBaseManager chain,
       byte[] witnessPub, byte[] userPub) {
     byte[] witnessAddr = MLDSA44.computeAddress(witnessPub);
     ByteString witnessAddrBs = ByteString.copyFrom(witnessAddr);
@@ -150,7 +150,7 @@ public class PqcWitnessNode {
         .setId(1).setPermissionName("witness").setThreshold(1)
         .addKeys(Key.newBuilder()
             .setAddress(witnessAddrBs).setWeight(1)
-            .setPqKey(PqPublicKey.newBuilder()
+            .setPqKey(PQPublicKey.newBuilder()
                 .setScheme(SignatureScheme.ML_DSA_44)
                 .setPublicKey(ByteString.copyFrom(witnessPub))
                 .build()))
@@ -171,7 +171,7 @@ public class PqcWitnessNode {
         .setType(PermissionType.Owner).setPermissionName("owner").setThreshold(1)
         .addKeys(Key.newBuilder()
             .setAddress(signerAddrBs).setWeight(1)
-            .setPqKey(PqPublicKey.newBuilder()
+            .setPqKey(PQPublicKey.newBuilder()
                 .setScheme(SignatureScheme.ML_DSA_44)
                 .setPublicKey(ByteString.copyFrom(userPub))
                 .build()))

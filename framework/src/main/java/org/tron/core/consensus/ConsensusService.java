@@ -10,8 +10,8 @@ import org.bouncycastle.util.encoders.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.PqSignature;
-import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.PQSignature;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.consensus.Consensus;
 import org.tron.consensus.base.Param;
@@ -86,7 +86,7 @@ public class ConsensusService {
       requireSupportedPqScheme(scheme);
       for (String seed : pqSeeds) {
         byte[] seedBytes = fromHexString(seed);
-        PqSignature keypair = PqSignatureRegistry.fromSeed(scheme, seedBytes);
+        PQSignature keypair = PQSignatureRegistry.fromSeed(scheme, seedBytes);
         byte[] sk = keypair.getPrivateKey();
         byte[] pk = keypair.getPublicKey();
         byte[] pqAddress = keypair.getAddress();
@@ -96,14 +96,14 @@ public class ConsensusService {
         }
         ByteString pqAddressBs = ByteString.copyFrom(pqAddress);
         Miner miner = param.new Miner(null, pqAddressBs, pqAddressBs);
-        miner.setPqPrivateKey(sk);
-        miner.setPqPublicKey(pk);
+        miner.setPQPrivateKey(sk);
+        miner.setPQPublicKey(pk);
         miners.add(miner);
         logger.info("Add {} witness (from seed): {}, size: {}",
             scheme, Hex.toHexString(pqAddress), miners.size());
       }
     } else if (pqSeeds.size() == 1) {
-      miners.add(buildPqOnlyMinerFromSeed(param, pqSeeds.get(0)));
+      miners.add(buildPQOnlyMinerFromSeed(param, pqSeeds.get(0)));
     }
 
     param.setMiners(miners);
@@ -113,11 +113,11 @@ public class ConsensusService {
     logger.info("consensus service start success");
   }
 
-  private Miner buildPqOnlyMinerFromSeed(Param param, String pqSeed) {
+  private Miner buildPQOnlyMinerFromSeed(Param param, String pqSeed) {
     SignatureScheme scheme = Args.getLocalWitnesses().getPqScheme();
     requireSupportedPqScheme(scheme);
     byte[] seedBytes = fromHexString(pqSeed);
-    PqSignature keypair = PqSignatureRegistry.fromSeed(scheme, seedBytes);
+    PQSignature keypair = PQSignatureRegistry.fromSeed(scheme, seedBytes);
     byte[] sk = keypair.getPrivateKey();
     byte[] pk = keypair.getPublicKey();
     byte[] pqAddress = keypair.getAddress();
@@ -132,14 +132,14 @@ public class ConsensusService {
     // In multi-signature mode, the address derived from the PQ key may differ from witnessAddress.
     Miner miner = param.new Miner(null, ByteString.copyFrom(pqAddress),
         ByteString.copyFrom(witnessAddress));
-    miner.setPqPrivateKey(sk);
-    miner.setPqPublicKey(pk);
+    miner.setPQPrivateKey(sk);
+    miner.setPQPublicKey(pk);
     logger.info("Add {} witness (from seed): {}", scheme, Hex.toHexString(witnessAddress));
     return miner;
   }
 
   private static void requireSupportedPqScheme(SignatureScheme scheme) {
-    if (!PqSignatureRegistry.contains(scheme)) {
+    if (!PQSignatureRegistry.contains(scheme)) {
       throw new TronError("unsupported PQ witness scheme: " + scheme,
           TronError.ErrCode.WITNESS_INIT);
     }

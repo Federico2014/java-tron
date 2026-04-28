@@ -19,7 +19,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.MLDSA65;
-import org.tron.common.crypto.pqc.PqSignatureRegistry;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.protos.Protocol.SignatureScheme;
 
 public class FNDSATest {
@@ -263,24 +263,24 @@ public class FNDSATest {
   public void registryDispatchMatchesDirectCalls() {
     byte[] msg = "registry-dispatch".getBytes();
     byte[] sigDirect = FNDSA.sign(sk.getEncoded(), msg);
-    assertTrue(PqSignatureRegistry.verify(
+    assertTrue(PQSignatureRegistry.verify(
         SignatureScheme.FN_DSA, pk.getH(), msg, sigDirect));
-    byte[] sigViaRegistry = PqSignatureRegistry.sign(
+    byte[] sigViaRegistry = PQSignatureRegistry.sign(
         SignatureScheme.FN_DSA, sk.getEncoded(), msg);
     assertTrue(FNDSA.verify(pk.getH(), msg, sigViaRegistry));
     assertEquals(FNDSA.PUBLIC_KEY_LENGTH,
-        PqSignatureRegistry.getPublicKeyLength(SignatureScheme.FN_DSA));
+        PQSignatureRegistry.getPublicKeyLength(SignatureScheme.FN_DSA));
     assertEquals(FNDSA.SIGNATURE_LENGTH,
-        PqSignatureRegistry.getSignatureLength(SignatureScheme.FN_DSA));
+        PQSignatureRegistry.getSignatureLength(SignatureScheme.FN_DSA));
   }
 
   @Test
   public void registryIsValidSignatureLengthRespectsUpperBound() {
-    assertTrue(PqSignatureRegistry.isValidSignatureLength(SignatureScheme.FN_DSA, 1));
-    assertTrue(PqSignatureRegistry.isValidSignatureLength(
+    assertTrue(PQSignatureRegistry.isValidSignatureLength(SignatureScheme.FN_DSA, 1));
+    assertTrue(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.FN_DSA, FNDSA.SIGNATURE_LENGTH));
-    assertFalse(PqSignatureRegistry.isValidSignatureLength(SignatureScheme.FN_DSA, 0));
-    assertFalse(PqSignatureRegistry.isValidSignatureLength(
+    assertFalse(PQSignatureRegistry.isValidSignatureLength(SignatureScheme.FN_DSA, 0));
+    assertFalse(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.FN_DSA, FNDSA.SIGNATURE_LENGTH + 1));
   }
 
@@ -327,18 +327,18 @@ public class FNDSATest {
 
   @Test
   public void registryIsValidSignatureLengthForFixedSchemesIsStrictEquality() {
-    assertTrue(PqSignatureRegistry.isValidSignatureLength(
+    assertTrue(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.ML_DSA_44, MLDSA44.SIGNATURE_LENGTH));
-    assertFalse(PqSignatureRegistry.isValidSignatureLength(
+    assertFalse(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.ML_DSA_44, MLDSA44.SIGNATURE_LENGTH - 1));
-    assertFalse(PqSignatureRegistry.isValidSignatureLength(
+    assertFalse(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.ML_DSA_44, MLDSA44.SIGNATURE_LENGTH + 1));
 
-    assertTrue(PqSignatureRegistry.isValidSignatureLength(
+    assertTrue(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.ML_DSA_65, MLDSA65.SIGNATURE_LENGTH));
-    assertFalse(PqSignatureRegistry.isValidSignatureLength(
+    assertFalse(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.ML_DSA_65, MLDSA65.SIGNATURE_LENGTH - 1));
-    assertFalse(PqSignatureRegistry.isValidSignatureLength(
+    assertFalse(PQSignatureRegistry.isValidSignatureLength(
         SignatureScheme.ML_DSA_65, MLDSA65.SIGNATURE_LENGTH + 1));
   }
 }
