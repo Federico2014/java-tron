@@ -100,10 +100,15 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
     long weightSum = 0;
     List<ByteString> addressList = permission.getKeysList()
         .stream()
-        .map(x -> x.getAddress())
+        .map(Key::getAddress)
+        .filter(addr -> !addr.isEmpty())
         .distinct()
         .collect(toList());
-    if (addressList.size() != permission.getKeysList().size()) {
+    long nonEmptyAddrCount = permission.getKeysList().stream()
+        .map(Key::getAddress)
+        .filter(addr -> !addr.isEmpty())
+        .count();
+    if (addressList.size() != nonEmptyAddrCount) {
       throw new ContractValidateException(
           "address should be distinct in permission " + permission.getType());
     }
@@ -111,12 +116,12 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
 
     List<ByteString> publicKeyList = permission.getKeysList()
         .stream()
-        .map(Key::getPublicKey)
+        .map(k -> k.hasPqKey() ? k.getPqKey().getPublicKey() : ByteString.EMPTY)
         .filter(pk -> !pk.isEmpty())
         .distinct()
         .collect(toList());
     long nonEmptyPublicKeyCount = permission.getKeysList().stream()
-        .map(Key::getPublicKey)
+        .map(k -> k.hasPqKey() ? k.getPqKey().getPublicKey() : ByteString.EMPTY)
         .filter(pk -> !pk.isEmpty())
         .count();
     if (publicKeyList.size() != nonEmptyPublicKeyCount) {
@@ -125,7 +130,8 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
     }
 
     for (Key key : permission.getKeysList()) {
-      if (!DecodeUtil.addressValid(key.getAddress().toByteArray())) {
+      if (!key.getAddress().isEmpty()
+          && !DecodeUtil.addressValid(key.getAddress().toByteArray())) {
         throw new ContractValidateException("key is not a validate address");
       }
       if (key.getWeight() <= 0) {
@@ -263,15 +269,15 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
   private void validatePermissionScheme(Permission permission) throws ContractValidateException {
     DynamicPropertiesStore dynamicStore = chainBaseManager.getDynamicPropertiesStore();
 
-    SignatureScheme first = permission.getKeysList().get(0).getScheme();
+    SignatureScheme first = keyScheme(permission.getKeysList().get(0));
     for (Key key : permission.getKeysList()) {
-      SignatureScheme scheme = key.getScheme();
+      SignatureScheme scheme = keyScheme(key);
       if (scheme != first) {
         throw new ContractValidateException(
             "all keys in a permission must use the same scheme");
       }
       if (scheme == SignatureScheme.UNKNOWN_SIG_SCHEME) {
-        if (!key.getPublicKey().isEmpty()) {
+        if (key.hasPqKey() && !key.getPqKey().getPublicKey().isEmpty()) {
           throw new ContractValidateException(
               "public_key must be empty when scheme is UNKNOWN_SIG_SCHEME");
         }
@@ -285,10 +291,11 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
           throw new ContractValidateException(
               "unsupported signature scheme: " + scheme);
         }
-        if (key.getPublicKey().size() != expected) {
+        int actual = key.hasPqKey() ? key.getPqKey().getPublicKey().size() : 0;
+        if (actual != expected) {
           throw new ContractValidateException(
               "public_key length for " + scheme + " must be " + expected + " bytes, got "
-                  + key.getPublicKey().size());
+                  + actual);
         }
       }
     }
@@ -299,6 +306,10 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
       throw new ContractValidateException(
           "Witness permission only supports legacy or registered PQ schemes, got " + first);
     }
+  }
+
+  private static SignatureScheme keyScheme(Key key) {
+    return key.hasPqKey() ? key.getPqKey().getScheme() : SignatureScheme.UNKNOWN_SIG_SCHEME;
   }
 
   private static int expectedPublicKeyLength(SignatureScheme scheme) {

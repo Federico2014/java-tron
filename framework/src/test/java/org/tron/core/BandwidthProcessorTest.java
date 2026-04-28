@@ -883,7 +883,7 @@ public class BandwidthProcessorTest extends BaseTest {
   }
 
   @Test
-  public void pqAuthWitnessBytesSubtractedInCreateAccountCap() throws Exception {
+  public void pqPqAuthWitnessBytesSubtractedInCreateAccountCap() throws Exception {
     chainBaseManager.getDynamicPropertiesStore().saveLatestBlockHeaderTimestamp(1526647838000L);
     chainBaseManager.getDynamicPropertiesStore().saveTotalNetWeight(10_000_000L);
 
@@ -905,17 +905,15 @@ public class BandwidthProcessorTest extends BaseTest {
         .setAmount(100L)
         .build();
 
-    byte[] signerAddr = ByteArray.fromHexString(OWNER_ADDRESS);
     byte[] fakeSig = new byte[3309];
-    Protocol.AuthWitness authWitness = Protocol.AuthWitness.newBuilder()
-        .setSignerAddress(ByteString.copyFrom(signerAddr))
+    Protocol.PqAuthWitness pqWitness = Protocol.PqAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(fakeSig))
         .build();
 
     TransactionCapsule baseTrx = new TransactionCapsule(contract,
         chainBaseManager.getAccountStore());
     Transaction withAuth = baseTrx.getInstance().toBuilder()
-        .addAuthWitness(authWitness)
+        .addPqWitness(pqWitness)
         .build();
     TransactionCapsule trx = new TransactionCapsule(withAuth);
     TransactionTrace trace = new TransactionTrace(trx, StoreFactory.getInstance(),
@@ -923,14 +921,14 @@ public class BandwidthProcessorTest extends BaseTest {
 
     long cap = chainBaseManager.getDynamicPropertiesStore().getMaxCreateAccountTxSize();
     long rawSize = trx.getInstance().toBuilder().clearRet().build().getSerializedSize();
-    Assert.assertTrue("test precondition: raw tx must exceed cap with auth_witness",
+    Assert.assertTrue("test precondition: raw tx must exceed cap with pq_witness",
         rawSize > cap);
 
     BandwidthProcessor processor = new BandwidthProcessor(chainBaseManager);
     try {
       processor.consume(trx, trace);
     } catch (TooBigTransactionException e) {
-      Assert.fail("PQ auth_witness bytes should be deducted from create-account cap check");
+      Assert.fail("PQ pq_witness bytes should be deducted from create-account cap check");
     } catch (AccountResourceInsufficientException
         | ContractValidateException
         | TooBigTransactionResultException e) {
@@ -942,7 +940,7 @@ public class BandwidthProcessorTest extends BaseTest {
   }
 
   @Test
-  public void pqAuthWitnessCountedInBandwidthUsage() throws Exception {
+  public void pqPqAuthWitnessCountedInBandwidthUsage() throws Exception {
     chainBaseManager.getDynamicPropertiesStore().saveLatestBlockHeaderTimestamp(1526647838000L);
     chainBaseManager.getDynamicPropertiesStore().saveTotalNetWeight(10_000_000L);
 
@@ -970,17 +968,15 @@ public class BandwidthProcessorTest extends BaseTest {
         .setAmount(100L)
         .build();
 
-    byte[] signerAddr = ByteArray.fromHexString(OWNER_ADDRESS);
     byte[] fakeSig = new byte[3309];
-    Protocol.AuthWitness authWitness = Protocol.AuthWitness.newBuilder()
-        .setSignerAddress(ByteString.copyFrom(signerAddr))
+    Protocol.PqAuthWitness pqWitness = Protocol.PqAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(fakeSig))
         .build();
 
     TransactionCapsule baseTrx = new TransactionCapsule(contract,
         chainBaseManager.getAccountStore());
     Transaction withAuth = baseTrx.getInstance().toBuilder()
-        .addAuthWitness(authWitness)
+        .addPqWitness(pqWitness)
         .build();
     TransactionCapsule trx = new TransactionCapsule(withAuth);
     TransactionTrace trace = new TransactionTrace(trx, StoreFactory.getInstance(),

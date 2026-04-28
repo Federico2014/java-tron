@@ -67,7 +67,7 @@ import org.tron.core.exception.TransactionExpirationException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
@@ -489,10 +489,11 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       throw new PermissionException("permission isn't exit");
     }
     checkPermission(permissionId, permission, contract);
-    if (permission.getKeysCount() > 0
-        && permission.getKeysList().get(0).getScheme() != SignatureScheme.UNKNOWN_SIG_SCHEME) {
+    Key firstKey = permission.getKeysCount() > 0 ? permission.getKeysList().get(0) : null;
+    if (firstKey != null && firstKey.hasPqKey()
+        && firstKey.getPqKey().getScheme() != SignatureScheme.UNKNOWN_SIG_SCHEME) {
       throw new PermissionException(
-          "permission uses PQ scheme, auth_witness is required");
+          "permission uses PQ scheme, pq_witness is required");
     }
     long weight = checkWeight(permission, transaction.getSignatureList(), hash, null);
     if (weight >= permission.getThreshold()) {
@@ -648,15 +649,15 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       throws ValidateSignatureException {
     if (!isVerified) {
       int legacyCount = this.transaction.getSignatureCount();
-      int pqCount = this.transaction.getAuthWitnessCount();
+      int pqCount = this.transaction.getPqWitnessCount();
 
       if (pqCount > 0 && !dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
         throw new ValidateSignatureException(
-            "auth_witness not allowed: no post-quantum scheme is activated");
+            "pq_witness not allowed: no post-quantum scheme is activated");
       }
       if (legacyCount > 0 && pqCount > 0) {
         throw new ValidateSignatureException(
-            "signature and auth_witness are mutually exclusive");
+            "signature and pq_witness are mutually exclusive");
       }
       if (legacyCount == 0 && pqCount == 0) {
         throw new ValidateSignatureException("miss sig or contract");
@@ -727,33 +728,38 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     checkPermission(permissionId, permission, contract);
 
     if (permission.getKeysCount() == 0
-        || permission.getKeysList().get(0).getScheme() == SignatureScheme.UNKNOWN_SIG_SCHEME) {
+        || !permission.getKeysList().get(0).hasPqKey()
+        || permission.getKeysList().get(0).getPqKey().getScheme()
+            == SignatureScheme.UNKNOWN_SIG_SCHEME) {
       throw new PermissionException(
-          "permission uses legacy scheme, auth_witness is not allowed");
+          "permission uses legacy scheme, pq_witness is not allowed");
     }
 
     byte[] txid = computeRawHash(transaction).getBytes();
-    List<AuthWitness> witnesses = transaction.getAuthWitnessList();
-    java.util.Set<ByteString> seen = new java.util.HashSet<>();
+    List<PqAuthWitness> witnesses = transaction.getPqWitnessList();
+    java.util.Set<Integer> seen = new java.util.HashSet<>();
     long weight = 0L;
-    for (AuthWitness aw : witnesses) {
-      ByteString signer = aw.getSignerAddress();
-      if (!seen.add(signer)) {
-        throw new PermissionException("duplicate signer in auth_witness");
+    for (PqAuthWitness aw : witnesses) {
+      int keyId = aw.getKeyId();
+      if (!seen.add(keyId)) {
+        throw new PermissionException("duplicate key_id in pq_witness");
       }
-      Key key = findKeyByAddress(permission, signer);
-      if (key == null) {
-        throw new PermissionException("signer is not in permission");
+      if (keyId < 0 || keyId >= permission.getKeysCount()) {
+        throw new PermissionException("key_id out of range: " + keyId);
       }
-      SignatureScheme scheme = key.getScheme();
+      Key key = permission.getKeys(keyId);
+      if (!key.hasPqKey()) {
+        throw new PermissionException("key at index " + keyId + " is not a PQ key");
+      }
+      SignatureScheme scheme = key.getPqKey().getScheme();
       if (!PqSignatureRegistry.contains(scheme)) {
         throw new PermissionException("unsupported scheme: " + scheme);
       }
       if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
         throw new PermissionException(scheme + " is not activated");
       }
-      byte[] digest = PqAuthDigest.tx(txid, permissionId, signer.toByteArray());
-      byte[] pk = key.getPublicKey().toByteArray();
+      byte[] digest = PqAuthDigest.tx(txid, permissionId, keyId);
+      byte[] pk = key.getPqKey().getPublicKey().toByteArray();
       byte[] sig = aw.getSignature().toByteArray();
       if (pk.length != PqSignatureRegistry.getPublicKeyLength(scheme)
           || !PqSignatureRegistry.isValidSignatureLength(scheme, sig.length)) {
@@ -774,15 +780,6 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
   private static Sha256Hash computeRawHash(Transaction transaction) {
     return Sha256Hash.of(CommonParameter.getInstance().isECKeyCryptoEngine(),
         transaction.getRawData().toByteArray());
-  }
-
-  private static Key findKeyByAddress(Permission permission, ByteString address) {
-    for (Key k : permission.getKeysList()) {
-      if (k.getAddress().equals(address)) {
-        return k;
-      }
-    }
-    return null;
   }
 
   /**

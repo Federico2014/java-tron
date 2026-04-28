@@ -15,7 +15,7 @@ import org.tron.api.WalletGrpc.WalletBlockingStub;
 import org.tron.common.crypto.pqc.MLDSA44;
 import org.tron.common.crypto.pqc.PqAuthDigest;
 import org.tron.common.utils.ByteArray;
-import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
@@ -107,14 +107,13 @@ public class PqcClient {
 
       Transaction tx = Transaction.newBuilder().setRawData(rawData).build();
 
-      // ── 5. Sign with ML-DSA-44 auth_witness ──────────────────────────
+      // ── 5. Sign with ML-DSA-44 pq_witness ──────────────────────────
       byte[] txId   = sha256(rawData.toByteArray());
-      byte[] digest = PqAuthDigest.tx(txId, 0, signerAddr);
+      byte[] digest = PqAuthDigest.tx(txId, 0, 0);
       byte[] sig    = MLDSA44.sign(userPriv, digest);
 
       Transaction signedTx = tx.toBuilder()
-          .addAuthWitness(AuthWitness.newBuilder()
-              .setSignerAddress(ByteString.copyFrom(signerAddr))
+          .addPqWitness(PqAuthWitness.newBuilder()
               .setSignature(ByteString.copyFrom(sig)))
           .build();
 

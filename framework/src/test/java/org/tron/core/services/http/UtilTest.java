@@ -15,7 +15,7 @@ import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.protos.Protocol;
-import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Transaction;
 
 public class UtilTest extends BaseTest {
@@ -169,33 +169,32 @@ public class UtilTest extends BaseTest {
   }
 
   @Test
-  public void roundtripAuthWitnessJson() throws Exception {
-    byte[] signer = ByteArray.fromHexString(OWNER_ADDRESS);
+  public void roundtripPqAuthWitnessJson() throws Exception {
     byte[] sig = new byte[3309];
     for (int i = 0; i < sig.length; i++) {
       sig[i] = (byte) (i & 0xff);
     }
-    AuthWitness authWitness = AuthWitness.newBuilder()
-        .setSignerAddress(ByteString.copyFrom(signer))
+    PqAuthWitness pqWitness = PqAuthWitness.newBuilder()
+        .setKeyId(1)
         .setSignature(ByteString.copyFrom(sig))
         .build();
     Transaction original = Transaction.newBuilder()
         .setRawData(Transaction.raw.newBuilder().setTimestamp(1L).build())
-        .addAuthWitness(authWitness)
+        .addPqWitness(pqWitness)
         .build();
 
     String json = Util.printTransactionToJSON(original, false).toJSONString();
-    Assert.assertTrue("JSON output should contain auth_witness field",
-        json.contains("auth_witness"));
+    Assert.assertTrue("JSON output should contain pq_witness field",
+        json.contains("pq_witness"));
 
     Transaction.Builder rebuilt = Transaction.newBuilder();
     JsonFormat.merge(json, rebuilt, false);
     Transaction decoded = rebuilt.build();
 
-    Assert.assertEquals(1, decoded.getAuthWitnessCount());
-    Assert.assertEquals(authWitness.getSignerAddress(),
-        decoded.getAuthWitness(0).getSignerAddress());
-    Assert.assertEquals(authWitness.getSignature(),
-        decoded.getAuthWitness(0).getSignature());
+    Assert.assertEquals(1, decoded.getPqWitnessCount());
+    Assert.assertEquals(pqWitness.getKeyId(),
+        decoded.getPqWitness(0).getKeyId());
+    Assert.assertEquals(pqWitness.getSignature(),
+        decoded.getPqWitness(0).getSignature());
   }
 }

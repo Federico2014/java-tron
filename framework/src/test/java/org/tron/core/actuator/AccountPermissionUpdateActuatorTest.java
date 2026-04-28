@@ -24,6 +24,7 @@ import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
+import org.tron.protos.Protocol.PqPublicKey;
 import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result.code;
@@ -1041,8 +1042,10 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     return Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(addr)))
         .setWeight(KEY_WEIGHT)
-        .setScheme(scheme)
-        .setPublicKey(ByteString.copyFrom(fixedBytes(pkLen, seed)))
+        .setPqKey(PqPublicKey.newBuilder()
+            .setScheme(scheme)
+            .setPublicKey(ByteString.copyFrom(fixedBytes(pkLen, seed)))
+            .build())
         .build();
   }
 
@@ -1109,7 +1112,9 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     Key badLegacy = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS)))
         .setWeight(KEY_WEIGHT)
-        .setPublicKey(ByteString.copyFrom(new byte[] {1, 2, 3}))
+        .setPqKey(PqPublicKey.newBuilder()
+            .setPublicKey(ByteString.copyFrom(new byte[] {1, 2, 3}))
+            .build())
         .build();
     Permission owner = ownerPermissionWithKeys(
         java.util.Collections.singletonList(badLegacy), 2);
@@ -1217,14 +1222,18 @@ public class AccountPermissionUpdateActuatorTest extends BaseTest {
     Key k1 = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS)))
         .setWeight(KEY_WEIGHT)
-        .setScheme(SignatureScheme.ML_DSA_44)
-        .setPublicKey(ByteString.copyFrom(sharedPk))
+        .setPqKey(PqPublicKey.newBuilder()
+            .setScheme(SignatureScheme.ML_DSA_44)
+            .setPublicKey(ByteString.copyFrom(sharedPk))
+            .build())
         .build();
     Key k2 = Key.newBuilder()
         .setAddress(ByteString.copyFrom(ByteArray.fromHexString(KEY_ADDRESS1)))
         .setWeight(KEY_WEIGHT)
-        .setScheme(SignatureScheme.ML_DSA_44)
-        .setPublicKey(ByteString.copyFrom(sharedPk))
+        .setPqKey(PqPublicKey.newBuilder()
+            .setScheme(SignatureScheme.ML_DSA_44)
+            .setPublicKey(ByteString.copyFrom(sharedPk))
+            .build())
         .build();
     Permission owner = ownerPermissionWithKeys(java.util.Arrays.asList(k1, k2), 2);
     Permission active = activePermissionWithKeys(

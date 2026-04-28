@@ -21,7 +21,7 @@ import org.tron.core.db.Manager;
  * Both nodes share the same deterministic PQ genesis pre-state (witness account with an
  * ML-DSA-44 witness permission + demo user account with an ML-DSA-44 owner permission),
  * installed via {@link PqcWitnessNode#installPqGenesisState}. Once the witness produces
- * a block it is broadcast over P2P; this node validates {@code BlockHeader.witness_auth}
+ * a block it is broadcast over P2P; this node validates {@code BlockHeader.pq_witness}
  * against the same on-chain public key and applies the block.
  *
  * Usage:
@@ -98,7 +98,7 @@ public class PqFullNode {
     ChainBaseManager chain = context.getBean(ChainBaseManager.class);
 
     // ── 4. Install matching PQ genesis pre-state ──────────────────────────
-    // Without this the incoming witness_auth would fail to validate because
+    // Without this the incoming pq_witness would fail to validate because
     // this node wouldn't know the witness's ML-DSA-44 public key.
     PqcWitnessNode.installPqGenesisState(db, chain, witnessPub, userPub);
 

@@ -23,6 +23,7 @@ import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
+import org.tron.protos.Protocol.PqPublicKey;
 import org.tron.protos.Protocol.SignatureScheme;
 
 /**
@@ -149,8 +150,10 @@ public class PqcWitnessNode {
         .setId(1).setPermissionName("witness").setThreshold(1)
         .addKeys(Key.newBuilder()
             .setAddress(witnessAddrBs).setWeight(1)
-            .setScheme(SignatureScheme.ML_DSA_44)
-            .setPublicKey(ByteString.copyFrom(witnessPub)))
+            .setPqKey(PqPublicKey.newBuilder()
+                .setScheme(SignatureScheme.ML_DSA_44)
+                .setPublicKey(ByteString.copyFrom(witnessPub))
+                .build()))
         .build();
     db.getAccountStore().put(witnessAddr, new AccountCapsule(Account.newBuilder()
         .setAddress(witnessAddrBs).setType(AccountType.Normal)
@@ -168,8 +171,10 @@ public class PqcWitnessNode {
         .setType(PermissionType.Owner).setPermissionName("owner").setThreshold(1)
         .addKeys(Key.newBuilder()
             .setAddress(signerAddrBs).setWeight(1)
-            .setScheme(SignatureScheme.ML_DSA_44)
-            .setPublicKey(ByteString.copyFrom(userPub)))
+            .setPqKey(PqPublicKey.newBuilder()
+                .setScheme(SignatureScheme.ML_DSA_44)
+                .setPublicKey(ByteString.copyFrom(userPub))
+                .build()))
         .build();
     AccountCapsule userCapsule = new AccountCapsule(
         ByteString.copyFrom(USER_ADDR), ByteString.copyFromUtf8("pquser"), AccountType.Normal);

@@ -170,7 +170,8 @@ import org.tron.core.store.WitnessStore;
 import org.tron.core.utils.TransactionRegister;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
-import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.PqAuthWitness;
+import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
@@ -1780,7 +1781,8 @@ public class Manager {
     if (witnessPermission.getKeysCount() == 0) {
       return SignatureScheme.UNKNOWN_SIG_SCHEME;
     }
-    return witnessPermission.getKeys(0).getScheme();
+    Key k = witnessPermission.getKeys(0);
+    return k.hasPqKey() ? k.getPqKey().getScheme() : SignatureScheme.UNKNOWN_SIG_SCHEME;
   }
 
   private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner, SignatureScheme scheme) {
@@ -1793,14 +1795,12 @@ public class Manager {
           "witness permission requires " + scheme
               + " but local PQ private key is not configured");
     }
-    byte[] signerAddress = witnessPermission.getKeys(0).getAddress().toByteArray();
-    byte[] digest = PqAuthDigest.block(blockCapsule.getRawHashBytes(), signerAddress);
+    byte[] digest = PqAuthDigest.block(blockCapsule.getRawHashBytes(), 0);
     byte[] signature = PqSignatureRegistry.sign(scheme, pqPrivateKey, digest);
-    AuthWitness witnessAuth = AuthWitness.newBuilder()
-        .setSignerAddress(ByteString.copyFrom(signerAddress))
+    PqAuthWitness witnessAuth = PqAuthWitness.newBuilder()
         .setSignature(ByteString.copyFrom(signature))
         .build();
-    blockCapsule.setWitnessAuth(witnessAuth);
+    blockCapsule.setPqWitness(witnessAuth);
   }
 
   private void filterOwnerAddress(TransactionCapsule transactionCapsule, Set<String> result) {

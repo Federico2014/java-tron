@@ -43,7 +43,7 @@ import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.protos.Protocol.AuthWitness;
+import org.tron.protos.Protocol.PqAuthWitness;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.BlockHeader;
 import org.tron.protos.Protocol.Key;
@@ -179,9 +179,9 @@ public class BlockCapsule implements ProtoCapsule<Block> {
 
   }
 
-  public void setWitnessAuth(AuthWitness authWitness) {
+  public void setPqWitness(PqAuthWitness pqWitness) {
     BlockHeader blockHeader = this.block.getBlockHeader().toBuilder()
-        .setWitnessAuth(authWitness).build();
+        .setPqWitness(pqWitness).build();
     this.block = this.block.toBuilder().setBlockHeader(blockHeader).build();
   }
 
@@ -198,14 +198,14 @@ public class BlockCapsule implements ProtoCapsule<Block> {
       AccountStore accountStore) throws ValidateSignatureException {
     BlockHeader header = block.getBlockHeader();
     boolean hasLegacy = !header.getWitnessSignature().isEmpty();
-    AuthWitness witnessAuth = header.getWitnessAuth();
+    PqAuthWitness witnessAuth = header.getPqWitness();
     boolean hasAuth = witnessAuth != null
         && witnessAuth.getSignature() != null
         && !witnessAuth.getSignature().isEmpty();
 
     if (hasLegacy && hasAuth) {
       throw new ValidateSignatureException(
-          "witness_signature and witness_auth are mutually exclusive");
+          "witness_signature and pq_witness are mutually exclusive");
     }
     if (!hasLegacy && !hasAuth) {
       throw new ValidateSignatureException("missing witness signature");
@@ -226,12 +226,15 @@ public class BlockCapsule implements ProtoCapsule<Block> {
       AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
       if (accountCapsule != null && accountCapsule.getInstance().hasWitnessPermission()) {
         Permission witnessPermission = accountCapsule.getInstance().getWitnessPermission();
-        if (witnessPermission.getKeysCount() > 0
-            && PqSignatureRegistry.contains(witnessPermission.getKeys(0).getScheme())) {
-          throw new ValidateSignatureException(
-              "witness permission requires PQ scheme "
-                  + witnessPermission.getKeys(0).getScheme()
-                  + " but witness_signature is legacy");
+        if (witnessPermission.getKeysCount() > 0) {
+          Key k = witnessPermission.getKeys(0);
+          SignatureScheme ks = k.hasPqKey()
+              ? k.getPqKey().getScheme() : SignatureScheme.UNKNOWN_SIG_SCHEME;
+          if (PqSignatureRegistry.contains(ks)) {
+            throw new ValidateSignatureException(
+                "witness permission requires PQ scheme " + ks
+                    + " but witness_signature is legacy");
+          }
         }
       }
     }
@@ -252,11 +255,11 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   }
 
   private boolean validateWitnessAuth(DynamicPropertiesStore dynamicPropertiesStore,
-      AccountStore accountStore, byte[] witnessAccountAddress, AuthWitness witnessAuth)
+      AccountStore accountStore, byte[] witnessAccountAddress, PqAuthWitness witnessAuth)
       throws ValidateSignatureException {
     if (!dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
       throw new ValidateSignatureException(
-          "witness_auth present but no post-quantum scheme is activated");
+          "pq_witness present but no post-quantum scheme is activated");
     }
     AccountCapsule accountCapsule = accountStore.get(witnessAccountAddress);
     Permission witnessPermission = null;
@@ -265,9 +268,18 @@ public class BlockCapsule implements ProtoCapsule<Block> {
     }
     if (witnessPermission == null || witnessPermission.getKeysCount() == 0) {
       throw new ValidateSignatureException(
-          "witness_auth present but witness permission is not configured");
+          "pq_witness present but witness permission is not configured");
     }
-    SignatureScheme scheme = witnessPermission.getKeys(0).getScheme();
+    int keyId = witnessAuth.getKeyId();
+    if (keyId < 0 || keyId >= witnessPermission.getKeysCount()) {
+      throw new ValidateSignatureException("pq_witness key_id out of range: " + keyId);
+    }
+    Key matched = witnessPermission.getKeys(keyId);
+    if (!matched.hasPqKey()) {
+      throw new ValidateSignatureException(
+          "witness permission key at index " + keyId + " is not a PQ key");
+    }
+    SignatureScheme scheme = matched.getPqKey().getScheme();
     if (!PqSignatureRegistry.contains(scheme)) {
       throw new ValidateSignatureException(
           "witness permission scheme " + scheme + " is not allowed for block signing");
@@ -277,22 +289,10 @@ public class BlockCapsule implements ProtoCapsule<Block> {
           "witness permission scheme " + scheme + " is not activated");
     }
 
-    byte[] signerAddr = witnessAuth.getSignerAddress().toByteArray();
-    Key matched = null;
-    for (Key k : witnessPermission.getKeysList()) {
-      if (Arrays.equals(k.getAddress().toByteArray(), signerAddr)) {
-        matched = k;
-        break;
-      }
-    }
-    if (matched == null) {
-      throw new ValidateSignatureException(
-          "witness_auth signer not found in witness permission");
-    }
-    byte[] publicKey = matched.getPublicKey().toByteArray();
+    byte[] publicKey = matched.getPqKey().getPublicKey().toByteArray();
     byte[] signature = witnessAuth.getSignature().toByteArray();
     byte[] rawHdrHash = getRawHash().getBytes();
-    byte[] digest = PqAuthDigest.block(rawHdrHash, signerAddr);
+    byte[] digest = PqAuthDigest.block(rawHdrHash, keyId);
     return PqSignatureRegistry.verify(scheme, publicKey, digest, signature);
   }
 
@@ -407,7 +407,7 @@ public class BlockCapsule implements ProtoCapsule<Block> {
     if (!header.getWitnessSignature().isEmpty()) {
       return true;
     }
-    AuthWitness auth = header.getWitnessAuth();
+    PqAuthWitness auth = header.getPqWitness();
     return auth != null && !auth.getSignature().isEmpty();
   }
 

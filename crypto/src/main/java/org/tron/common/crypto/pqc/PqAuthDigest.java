@@ -26,31 +26,35 @@ public final class PqAuthDigest {
   /**
    * Transaction-level PQ authentication digest.
    *
-   * <pre>digest = SHA-256("TRON_TX_AUTH_V1" || txid || permission_id_be4 || signer_address)</pre>
+   * <pre>digest = SHA-256("TRON_TX_AUTH_V1" || txid || permission_id_be4 || key_id_be4)</pre>
+   *
+   * <p>{@code keyId} is the 0-based index of the signing key in the permission's key list.
+   * For single-key permissions the caller passes 0.
    */
-  public static byte[] tx(byte[] txid, int permissionId, byte[] signerAddress) {
+  public static byte[] tx(byte[] txid, int permissionId, int keyId) {
     requireNonNull(txid, "txid");
-    requireNonNull(signerAddress, "signerAddress");
     MessageDigest md = Sha256Hash.newDigest();
     md.update(TX_DOMAIN_BYTES);
     md.update(txid);
     md.update(intToBe4(permissionId));
-    md.update(signerAddress);
+    md.update(intToBe4(keyId));
     return md.digest();
   }
 
   /**
    * Block-level PQ authentication digest.
    *
-   * <pre>digest = SHA-256("TRON_BLOCK_AUTH_V1" || block_header_raw_hash || witness_address)</pre>
+   * <pre>digest = SHA-256("TRON_BLOCK_AUTH_V1" || block_header_raw_hash || key_id_be4)</pre>
+   *
+   * <p>{@code keyId} is the 0-based index of the signing key in the witness permission's key list.
+   * For the typical single-key witness permission the caller passes 0.
    */
-  public static byte[] block(byte[] blockHeaderRawHash, byte[] witnessAddress) {
+  public static byte[] block(byte[] blockHeaderRawHash, int keyId) {
     requireNonNull(blockHeaderRawHash, "blockHeaderRawHash");
-    requireNonNull(witnessAddress, "witnessAddress");
     MessageDigest md = Sha256Hash.newDigest();
     md.update(BLOCK_DOMAIN_BYTES);
     md.update(blockHeaderRawHash);
-    md.update(witnessAddress);
+    md.update(intToBe4(keyId));
     return md.digest();
   }
 
@@ -63,7 +67,7 @@ public final class PqAuthDigest {
     };
   }
 
-  private static void requireNonNull(byte[] b, String name) {
+  static void requireNonNull(byte[] b, String name) {
     if (b == null) {
       throw new IllegalArgumentException(name + " must not be null");
     }
