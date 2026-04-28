@@ -4,12 +4,17 @@ import static org.junit.Assert.fail;
 
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
+import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.tron.common.BaseTest;
 import org.tron.common.TestConstants;
+import org.tron.common.crypto.pqc.FNDSA;
+import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.MLDSA65;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.StringUtil;
 import org.tron.core.Wallet;
@@ -19,6 +24,8 @@ import org.tron.core.config.args.Args;
 import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.protos.Protocol.AccountType;
+import org.tron.protos.Protocol.PQPublicKey;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction.Result.code;
 import org.tron.protos.contract.AccountContract.AccountCreateContract;
 import org.tron.protos.contract.AssetIssueContractOuterClass;
@@ -218,6 +225,133 @@ public class CreateAccountActuatorTest extends BaseTest {
     actuatorTest.setNullDBManagerMsg("No account store or contract store!");
     actuatorTest.nullDBManger();
 
+  }
+
+  private static byte[] filledSeed(int value, int length) {
+    byte[] seed = new byte[length];
+    Arrays.fill(seed, (byte) value);
+    return seed;
+  }
+
+  private Any pqContract(String ownerAddress, byte[] accountAddress,
+      SignatureScheme scheme, byte[] pqPublicKey) {
+    return Any.pack(
+        AccountCreateContract.newBuilder()
+            .setOwnerAddress(ByteString.copyFrom(ByteArray.fromHexString(ownerAddress)))
+            .setAccountAddress(ByteString.copyFrom(accountAddress))
+            .setPqKey(PQPublicKey.newBuilder()
+                .setScheme(scheme)
+                .setPublicKey(ByteString.copyFrom(pqPublicKey))
+                .build())
+            .build());
+  }
+
+  private void runPqHappyPath(SignatureScheme scheme, byte[] pqPublicKey) {
+    dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
+    if (scheme == SignatureScheme.FN_DSA) {
+      dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    } else {
+      dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    }
+    byte[] derivedAddress = PQSignatureRegistry.computeAddress(scheme, pqPublicKey);
+    dbManager.getAccountStore().delete(derivedAddress);
+
+    CreateAccountActuator actuator = new CreateAccountActuator();
+    actuator.setChainBaseManager(dbManager.getChainBaseManager())
+        .setAny(pqContract(OWNER_ADDRESS_SECOND, derivedAddress, scheme, pqPublicKey));
+    TransactionResultCapsule ret = new TransactionResultCapsule();
+    try {
+      actuator.validate();
+      actuator.execute(ret);
+      Assert.assertEquals(code.SUCESS, ret.getInstance().getRet());
+
+      AccountCapsule created = dbManager.getAccountStore().get(derivedAddress);
+      Assert.assertNotNull(created);
+      // Owner permission bound to PQ key, address field empty.
+      Assert.assertEquals(1, created.getInstance().getOwnerPermission().getKeysCount());
+      Assert.assertEquals(ByteString.EMPTY,
+          created.getInstance().getOwnerPermission().getKeys(0).getAddress());
+      Assert.assertEquals(scheme,
+          created.getInstance().getOwnerPermission().getKeys(0).getPqKey().getScheme());
+      Assert.assertEquals(ByteString.copyFrom(pqPublicKey),
+          created.getInstance().getOwnerPermission().getKeys(0).getPqKey().getPublicKey());
+      // Active permission bound to same PQ key.
+      Assert.assertEquals(1, created.getInstance().getActivePermissionCount());
+      Assert.assertEquals(scheme,
+          created.getInstance().getActivePermission(0).getKeys(0).getPqKey().getScheme());
+    } catch (ContractValidateException | ContractExeException e) {
+      logger.info(e.getMessage());
+      Assert.fail(e.getMessage());
+    }
+  }
+
+  @Test
+  public void createPqAccount_mlDsa44_success() {
+    MLDSA44 kp = new MLDSA44(filledSeed(0x11, MLDSA44.SEED_LENGTH));
+    runPqHappyPath(SignatureScheme.ML_DSA_44, kp.getPublicKey());
+  }
+
+  @Test
+  public void createPqAccount_mlDsa65_success() {
+    MLDSA65 kp = new MLDSA65(filledSeed(0x12, MLDSA65.SEED_LENGTH));
+    runPqHappyPath(SignatureScheme.ML_DSA_65, kp.getPublicKey());
+  }
+
+  @Test
+  public void createPqAccount_fnDsa_success() {
+    FNDSA kp = new FNDSA(filledSeed(0x13, FNDSA.SEED_LENGTH));
+    runPqHappyPath(SignatureScheme.FN_DSA, kp.getPublicKey());
+  }
+
+  @Test
+  public void createPqAccount_addressMismatch() {
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    MLDSA44 kp = new MLDSA44(filledSeed(0x21, MLDSA44.SEED_LENGTH));
+    byte[] wrongAddress = ByteArray.fromHexString(OWNER_ADDRESS_FIRST);
+
+    CreateAccountActuator actuator = new CreateAccountActuator();
+    actuator.setChainBaseManager(dbManager.getChainBaseManager())
+        .setAny(pqContract(OWNER_ADDRESS_SECOND, wrongAddress,
+            SignatureScheme.ML_DSA_44, kp.getPublicKey()));
+    TransactionResultCapsule ret = new TransactionResultCapsule();
+    processAndCheckInvalid(actuator, ret,
+        "account_address does not match the address derived from pq_key",
+        "account_address does not match the address derived from pq_key");
+  }
+
+  @Test
+  public void createPqAccount_wrongPubKeyLength() {
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    byte[] truncated = new byte[MLDSA44.PUBLIC_KEY_LENGTH - 1];
+    byte[] derivedAddress = ByteArray.fromHexString(OWNER_ADDRESS_FIRST);
+
+    CreateAccountActuator actuator = new CreateAccountActuator();
+    actuator.setChainBaseManager(dbManager.getChainBaseManager())
+        .setAny(pqContract(OWNER_ADDRESS_SECOND, derivedAddress,
+            SignatureScheme.ML_DSA_44, truncated));
+    TransactionResultCapsule ret = new TransactionResultCapsule();
+    processAndCheckInvalid(actuator, ret,
+        "Invalid PQ public key length for scheme ML_DSA_44",
+        "Invalid PQ public key length for scheme ML_DSA_44");
+  }
+
+  @Test
+  public void createPqAccount_schemeNotActivated() {
+    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    MLDSA44 kp = new MLDSA44(filledSeed(0x31, MLDSA44.SEED_LENGTH));
+    byte[] derivedAddress = PQSignatureRegistry.computeAddress(
+        SignatureScheme.ML_DSA_44, kp.getPublicKey());
+    dbManager.getAccountStore().delete(derivedAddress);
+
+    CreateAccountActuator actuator = new CreateAccountActuator();
+    actuator.setChainBaseManager(dbManager.getChainBaseManager())
+        .setAny(pqContract(OWNER_ADDRESS_SECOND, derivedAddress,
+            SignatureScheme.ML_DSA_44, kp.getPublicKey()));
+    TransactionResultCapsule ret = new TransactionResultCapsule();
+    processAndCheckInvalid(actuator, ret,
+        "PQ scheme not activated: ML_DSA_44",
+        "PQ scheme not activated: ML_DSA_44");
   }
 
   private void processAndCheckInvalid(CreateAccountActuator actuator, TransactionResultCapsule ret,

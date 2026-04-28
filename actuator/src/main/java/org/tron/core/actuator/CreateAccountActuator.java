@@ -4,8 +4,10 @@ import static org.tron.core.actuator.ActuatorConstant.NOT_EXIST_STR;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+import java.util.Arrays;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
+import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.common.utils.DecodeUtil;
 import org.tron.common.utils.StringUtil;
 import org.tron.core.capsule.AccountCapsule;
@@ -15,6 +17,8 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.protos.Protocol.PQPublicKey;
+import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result.code;
 import org.tron.protos.contract.AccountContract.AccountCreateContract;
@@ -118,6 +122,25 @@ public class CreateAccountActuator extends AbstractActuator {
 
     if (accountStore.has(accountAddress)) {
       throw new ContractValidateException("Account has existed");
+    }
+
+    if (contract.hasPqKey()) {
+      PQPublicKey pq = contract.getPqKey();
+      SignatureScheme scheme = pq.getScheme();
+      DynamicPropertiesStore dyn = chainBaseManager.getDynamicPropertiesStore();
+      if (!dyn.isPqSchemeAllowed(scheme)) {
+        throw new ContractValidateException("PQ scheme not activated: " + scheme);
+      }
+      byte[] pubKey = pq.getPublicKey().toByteArray();
+      if (pubKey.length != PQSignatureRegistry.getPublicKeyLength(scheme)) {
+        throw new ContractValidateException(
+            "Invalid PQ public key length for scheme " + scheme);
+      }
+      byte[] derived = PQSignatureRegistry.computeAddress(scheme, pubKey);
+      if (!Arrays.equals(derived, accountAddress)) {
+        throw new ContractValidateException(
+            "account_address does not match the address derived from pq_key");
+      }
     }
 
     return true;

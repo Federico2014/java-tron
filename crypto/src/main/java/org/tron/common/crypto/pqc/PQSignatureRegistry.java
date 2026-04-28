@@ -3,6 +3,7 @@ package org.tron.common.crypto.pqc;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
+import org.tron.common.crypto.Hash;
 import org.tron.protos.Protocol.SignatureScheme;
 
 /**
@@ -142,6 +143,21 @@ public final class PQSignatureRegistry {
 
   public static PQSignature fromSeed(SignatureScheme scheme, byte[] seed) {
     return require(scheme).ops.fromSeed(seed);
+  }
+
+  /**
+   * Derive the 21-byte TRON address from a PQ public key. Uses
+   * {@code Hash.sha3omit12(publicKey)} so the mapping matches the existing
+   * {@link PQSignature#getAddress()} contract.
+   */
+  public static byte[] computeAddress(SignatureScheme scheme, byte[] publicKey) {
+    SchemeInfo info = require(scheme);
+    if (publicKey == null || publicKey.length != info.publicKeyLength) {
+      throw new IllegalArgumentException(
+          "invalid public key length for " + scheme + ": "
+              + (publicKey == null ? -1 : publicKey.length));
+    }
+    return Hash.sha3omit12(publicKey);
   }
 
   private static SchemeInfo require(SignatureScheme scheme) {
