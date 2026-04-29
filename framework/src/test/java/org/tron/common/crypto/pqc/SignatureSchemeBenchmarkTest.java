@@ -9,8 +9,8 @@ import org.tron.common.crypto.Hash;
 
 /**
  * Micro-benchmark comparing key generation, signing and verification latency for
- * secp256k1 ECDSA (ECKey), ML-DSA-44 and ML-DSA-65. Numbers are reported in
- * microseconds (avg of {@link #ITERATIONS} iterations after {@link #WARMUP} warm-up rounds).
+ * secp256k1 ECDSA (ECKey), ML-DSA-44, ML-DSA-65 and FN-DSA / Falcon-512. Numbers are reported
+ * in microseconds (avg of {@link #ITERATIONS} iterations after {@link #WARMUP} warm-up rounds).
  */
 public class SignatureSchemeBenchmarkTest {
 
@@ -24,6 +24,7 @@ public class SignatureSchemeBenchmarkTest {
     Result eckey = benchEcKey();
     Result mldsa44 = benchMlDsa44();
     Result mldsa65 = benchMlDsa65();
+    Result fndsa = benchFnDsa();
 
     System.out.println(String.format(Locale.ROOT,
         "=== Signature scheme benchmark (avg over %d iterations, warmup %d) ===",
@@ -35,6 +36,7 @@ public class SignatureSchemeBenchmarkTest {
     printResult(eckey);
     printResult(mldsa44);
     printResult(mldsa65);
+    printResult(fndsa);
   }
 
   private Result benchEcKey() {
@@ -139,6 +141,38 @@ public class SignatureSchemeBenchmarkTest {
       verifyNs += System.nanoTime() - t0;
     }
     return new Result("ML-DSA-65", keygenNs, signNs, verifyNs);
+  }
+
+  private Result benchFnDsa() {
+    for (int i = 0; i < WARMUP; i++) {
+      FNDSA k = new FNDSA();
+      byte[] sig = k.sign(MESSAGE);
+      k.verify(MESSAGE, sig);
+    }
+
+    long keygenNs = 0;
+    FNDSA[] keys = new FNDSA[ITERATIONS];
+    for (int i = 0; i < ITERATIONS; i++) {
+      long t0 = System.nanoTime();
+      keys[i] = new FNDSA();
+      keygenNs += System.nanoTime() - t0;
+    }
+
+    long signNs = 0;
+    byte[][] sigs = new byte[ITERATIONS][];
+    for (int i = 0; i < ITERATIONS; i++) {
+      long t0 = System.nanoTime();
+      sigs[i] = keys[i].sign(MESSAGE);
+      signNs += System.nanoTime() - t0;
+    }
+
+    long verifyNs = 0;
+    for (int i = 0; i < ITERATIONS; i++) {
+      long t0 = System.nanoTime();
+      keys[i].verify(MESSAGE, sigs[i]);
+      verifyNs += System.nanoTime() - t0;
+    }
+    return new Result("FN-DSA-512", keygenNs, signNs, verifyNs);
   }
 
   private static void printResult(Result r) {

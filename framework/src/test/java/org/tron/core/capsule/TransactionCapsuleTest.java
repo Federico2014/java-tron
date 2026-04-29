@@ -309,7 +309,10 @@ public class TransactionCapsuleTest extends BaseTest {
     return Transaction.newBuilder().setRawData(rawData).build();
   }
 
-  /** Returns [serializedSize, packSize, maxTxPerBlock] for ECKey, ML-DSA-44, ML-DSA-65. */
+  /**
+   * Returns [serializedSize, packSize, maxTxPerBlock] rows ordered by signature size:
+   * ECKey, FN-DSA-512, ML-DSA-44, ML-DSA-65.
+   */
   private long[][] measureSizes(Transaction baseTx) {
     final long blockLimit = 2_000_000L;
 
@@ -319,6 +322,19 @@ public class TransactionCapsuleTest extends BaseTest {
     ecCap.sign(ecKey.getPrivKeyBytes());
     long ecSerial = ecCap.getInstance().toByteArray().length;
     long ecPack = ecCap.computeTrxSizeForBlockMessage();
+
+    // FN-DSA-512: variable-length signature (<= 752 bytes) in pq_witness
+    FNDSA kpFn = new FNDSA();
+    byte[] txidFn = Sha256Hash.of(true, baseTx.getRawData().toByteArray()).getBytes();
+    byte[] sigFn = FNDSA.sign(kpFn.getPrivateKey(), PQAuthDigest.tx(txidFn, 0, 0));
+    Transaction txFn = baseTx.toBuilder()
+        .addPqWitness(PQAuthWitness.newBuilder()
+            .setSignature(ByteString.copyFrom(sigFn))
+            .build())
+        .build();
+    TransactionCapsule capFn = new TransactionCapsule(txFn);
+    long dFnSerial = txFn.toByteArray().length;
+    long dFnPack = capFn.computeTrxSizeForBlockMessage();
 
     // ML-DSA-44: 2420-byte signature in pq_witness
     MLDSA44 kp44 = new MLDSA44();
@@ -348,6 +364,7 @@ public class TransactionCapsuleTest extends BaseTest {
 
     return new long[][]{
         {ecSerial,  ecPack,  blockLimit / ecPack},
+        {dFnSerial, dFnPack, blockLimit / dFnPack},
         {d44Serial, d44Pack, blockLimit / d44Pack},
         {d65Serial, d65Pack, blockLimit / d65Pack}
     };
@@ -358,19 +375,19 @@ public class TransactionCapsuleTest extends BaseTest {
     long[][] trx   = measureSizes(buildTransferTx(PQ_OWNER_HEX, 0));
     long[][] trc20 = measureSizes(buildTrc20TransferTx(PQ_OWNER_HEX, 0));
 
-    String[] labels = {"ECKey (ECDSA)", "ML-DSA-44", "ML-DSA-65"};
+    String[] labels = {"ECKey (ECDSA)", "FN-DSA-512", "ML-DSA-44", "ML-DSA-65"};
     System.out.println("=== TRX transfer ===");
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       System.out.printf("  %s: serial=%d B  pack=%d B  maxTx/block=%d%n",
           labels[i], trx[i][0], trx[i][1], trx[i][2]);
     }
     System.out.println("=== TRC20 transfer ===");
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       System.out.printf("  %s: serial=%d B  pack=%d B  maxTx/block=%d%n",
           labels[i], trc20[i][0], trc20[i][1], trc20[i][2]);
     }
 
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
       Assert.assertTrue(trx[i + 1][0]   > trx[i][0]);
       Assert.assertTrue(trc20[i + 1][0] > trc20[i][0]);
       Assert.assertTrue(trx[i + 1][2]   < trx[i][2]);
