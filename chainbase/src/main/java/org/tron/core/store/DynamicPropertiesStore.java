@@ -21,7 +21,7 @@ import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.capsule.BytesCapsule;
 import org.tron.core.config.Parameter.ChainConstant;
-import org.tron.protos.Protocol.SignatureScheme;
+import org.tron.protos.Protocol.PQScheme;
 import org.tron.core.db.TronStoreWithRevoking;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ItemNotFoundException;
@@ -240,8 +240,6 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
       "ALLOW_TVM_SELFDESTRUCT_RESTRICTION".getBytes();
 
   private static final byte[] ALLOW_TVM_OSAKA = "ALLOW_TVM_OSAKA".getBytes();
-
-  private static final byte[] ALLOW_ML_DSA = "ALLOW_ML_DSA".getBytes();
 
   private static final byte[] ALLOW_FN_DSA = "ALLOW_FN_DSA".getBytes();
 
@@ -2998,21 +2996,6 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
     this.put(ALLOW_TVM_OSAKA, new BytesCapsule(ByteArray.fromLong(value)));
   }
 
-  public long getAllowMlDsa() {
-    return Optional.ofNullable(getUnchecked(ALLOW_ML_DSA))
-        .map(BytesCapsule::getData)
-        .map(ByteArray::toLong)
-        .orElse(CommonParameter.getInstance().getAllowMlDsa());
-  }
-
-  public void saveAllowMlDsa(long value) {
-    this.put(ALLOW_ML_DSA, new BytesCapsule(ByteArray.fromLong(value)));
-  }
-
-  public boolean allowMlDsa() {
-    return getAllowMlDsa() == 1L;
-  }
-
   public long getAllowFnDsa() {
     return Optional.ofNullable(getUnchecked(ALLOW_FN_DSA))
         .map(BytesCapsule::getData)
@@ -3030,22 +3013,19 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
 
   /** Returns true iff at least one post-quantum signature scheme is currently activated. */
   public boolean isAnyPqSchemeAllowed() {
-    return allowMlDsa() || allowFnDsa();
+    return allowFnDsa();
   }
 
   /**
-   * Per-scheme governance check. ML-DSA-44 and ML-DSA-65 are gated by a single
-   * {@code ALLOW_ML_DSA} flag; FN-DSA has its own flag. Non-PQ schemes return false.
+   * Per-scheme governance check. V2 launches with FN-DSA-512 only. Future schemes will
+   * each get their own flag.
    */
-  public boolean isPqSchemeAllowed(SignatureScheme scheme) {
+  public boolean isPqSchemeAllowed(PQScheme scheme) {
     if (scheme == null) {
       return false;
     }
     switch (scheme) {
-      case ML_DSA_44:
-      case ML_DSA_65:
-        return allowMlDsa();
-      case FN_DSA:
+      case FN_DSA_512:
         return allowFnDsa();
       default:
         return false;

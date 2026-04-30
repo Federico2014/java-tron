@@ -27,10 +27,6 @@ message AccountCreateContract {
   bytes owner_address = 1;
   bytes account_address = 2;
   AccountType type = 3;
-  // Optional PQ public key. If set, account_address must equal
-  // sha3omit12(pq_key.public_key) and the new account's default Owner/Active
-  // permissions are bound to this PQ key (no ECDSA participation).
-  PQPublicKey pq_key = 4;
 }
 
 // Update account name. Account name is not unique now.

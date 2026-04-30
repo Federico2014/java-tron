@@ -9,7 +9,7 @@ import org.tron.common.crypto.Hash;
 
 /**
  * Micro-benchmark comparing key generation, signing and verification latency for
- * secp256k1 ECDSA (ECKey), ML-DSA-44, ML-DSA-65 and FN-DSA / Falcon-512. Numbers are reported
+ * secp256k1 ECDSA (ECKey) and FN-DSA / Falcon-512. Numbers are reported
  * in microseconds (avg of {@link #ITERATIONS} iterations after {@link #WARMUP} warm-up rounds).
  */
 public class SignatureSchemeBenchmarkTest {
@@ -22,8 +22,6 @@ public class SignatureSchemeBenchmarkTest {
   @Test
   public void benchmarkAllSchemes() {
     Result eckey = benchEcKey();
-    Result mldsa44 = benchMlDsa44();
-    Result mldsa65 = benchMlDsa65();
     Result fndsa = benchFnDsa();
 
     System.out.println(String.format(Locale.ROOT,
@@ -34,8 +32,6 @@ public class SignatureSchemeBenchmarkTest {
         "scheme", "keygen (us)", "sign (us)", "verify (us)"));
     System.out.println("-------------+--------------+--------------+--------------");
     printResult(eckey);
-    printResult(mldsa44);
-    printResult(mldsa65);
     printResult(fndsa);
   }
 
@@ -77,70 +73,6 @@ public class SignatureSchemeBenchmarkTest {
       verifyNs += System.nanoTime() - t0;
     }
     return new Result("ECKey(secp)", keygenNs, signNs, verifyNs);
-  }
-
-  private Result benchMlDsa44() {
-    for (int i = 0; i < WARMUP; i++) {
-      MLDSA44 k = new MLDSA44();
-      byte[] sig = k.sign(MESSAGE);
-      k.verify(MESSAGE, sig);
-    }
-
-    long keygenNs = 0;
-    MLDSA44[] keys = new MLDSA44[ITERATIONS];
-    for (int i = 0; i < ITERATIONS; i++) {
-      long t0 = System.nanoTime();
-      keys[i] = new MLDSA44();
-      keygenNs += System.nanoTime() - t0;
-    }
-
-    long signNs = 0;
-    byte[][] sigs = new byte[ITERATIONS][];
-    for (int i = 0; i < ITERATIONS; i++) {
-      long t0 = System.nanoTime();
-      sigs[i] = keys[i].sign(MESSAGE);
-      signNs += System.nanoTime() - t0;
-    }
-
-    long verifyNs = 0;
-    for (int i = 0; i < ITERATIONS; i++) {
-      long t0 = System.nanoTime();
-      keys[i].verify(MESSAGE, sigs[i]);
-      verifyNs += System.nanoTime() - t0;
-    }
-    return new Result("ML-DSA-44", keygenNs, signNs, verifyNs);
-  }
-
-  private Result benchMlDsa65() {
-    for (int i = 0; i < WARMUP; i++) {
-      MLDSA65 k = new MLDSA65();
-      byte[] sig = k.sign(MESSAGE);
-      k.verify(MESSAGE, sig);
-    }
-
-    long keygenNs = 0;
-    MLDSA65[] keys = new MLDSA65[ITERATIONS];
-    for (int i = 0; i < ITERATIONS; i++) {
-      long t0 = System.nanoTime();
-      keys[i] = new MLDSA65();
-      keygenNs += System.nanoTime() - t0;
-    }
-
-    long signNs = 0;
-    byte[][] sigs = new byte[ITERATIONS][];
-    for (int i = 0; i < ITERATIONS; i++) {
-      long t0 = System.nanoTime();
-      sigs[i] = keys[i].sign(MESSAGE);
-      signNs += System.nanoTime() - t0;
-    }
-
-    long verifyNs = 0;
-    for (int i = 0; i < ITERATIONS; i++) {
-      long t0 = System.nanoTime();
-      keys[i].verify(MESSAGE, sigs[i]);
-      verifyNs += System.nanoTime() - t0;
-    }
-    return new Result("ML-DSA-65", keygenNs, signNs, verifyNs);
   }
 
   private Result benchFnDsa() {

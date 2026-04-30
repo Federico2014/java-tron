@@ -25,10 +25,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.PQSignatureRegistry;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.core.config.Parameter.ChainConstant;
 import org.tron.core.exception.TronError;
-import org.tron.protos.Protocol.SignatureScheme;
+import org.tron.protos.Protocol.PQScheme;
 
 @Slf4j(topic = "app")
 public class LocalWitnesses {
@@ -38,18 +38,17 @@ public class LocalWitnesses {
 
   /**
    * PQ seed values in hex format. The expected byte length depends on
-   * {@link #pqScheme}: 32 bytes (64 hex chars) for ML-DSA-44 / ML-DSA-65,
-   * 48 bytes (96 hex chars) for FN-DSA.
+   * {@link #pqScheme}: 48 bytes (96 hex chars) for FN-DSA-512.
    */
   @Getter
   private List<String> pqSeeds = Lists.newArrayList();
 
   /** PQ signature scheme used to derive keys from {@link #pqSeeds}. */
   @Getter
-  private SignatureScheme pqScheme = SignatureScheme.ML_DSA_65;
+  private PQScheme pqScheme = PQScheme.FN_DSA_512;
 
-  public void setPqScheme(SignatureScheme pqScheme) {
-    if (pqScheme == null || !PQSignatureRegistry.contains(pqScheme)) {
+  public void setPqScheme(PQScheme pqScheme) {
+    if (pqScheme == null || !PQSchemeRegistry.contains(pqScheme)) {
       throw new TronError("unsupported PQ signature scheme: " + pqScheme,
           TronError.ErrCode.WITNESS_INIT);
     }
@@ -122,14 +121,14 @@ public class LocalWitnesses {
   /**
    * PQ seed values used to derive signing keys under {@link #pqScheme}. Each seed must
    * be a hex string whose byte length matches the scheme's required seed size; callers
-   * must therefore set the scheme via {@link #setPqScheme(SignatureScheme)} before
+   * must therefore set the scheme via {@link #setPqScheme(PQScheme)} before
    * calling this method when targeting a non-default scheme.
    */
   public void setPqSeeds(final List<String> pqSeeds) {
     if (CollectionUtils.isEmpty(pqSeeds)) {
       return;
     }
-    int expectedSeedLen = PQSignatureRegistry.getSeedLength(pqScheme);
+    int expectedSeedLen = PQSchemeRegistry.getSeedLength(pqScheme);
     for (String seed : pqSeeds) {
       validatePqSeed(seed, expectedSeedLen);
     }

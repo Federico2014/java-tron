@@ -8,7 +8,7 @@ import java.util.Collections;
 import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
-import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.config.DefaultConfig;
@@ -19,7 +19,7 @@ import org.tron.core.db.Manager;
  * Demo fullnode that dials {@link PQWitnessNode} via P2P and syncs PQ-signed blocks.
  *
  * Both nodes share the same deterministic PQ genesis pre-state (witness account with an
- * ML-DSA-44 witness permission + demo user account with an ML-DSA-44 owner permission),
+ * FN-DSA-512 witness permission + demo user account with an FN-DSA-512 owner permission),
  * installed via {@link PQWitnessNode#installPQGenesisState}. Once the witness produces
  * a block it is broadcast over P2P; this node validates {@code BlockHeader.pq_witness}
  * against the same on-chain public key and applies the block.
@@ -56,8 +56,8 @@ public class PQFullNode {
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
     // ── 1. Derive the same deterministic keys used by PQWitnessNode ──────
-    MLDSA44 witnessKp = new MLDSA44(PQWitnessNode.WITNESS_SEED);
-    MLDSA44 userKp    = new MLDSA44(PQWitnessNode.USER_SEED);
+    FNDSA witnessKp = new FNDSA(PQWitnessNode.WITNESS_SEED);
+    FNDSA userKp    = new FNDSA(PQWitnessNode.USER_SEED);
 
     byte[] witnessPub = witnessKp.getPublicKey();
     byte[] userPub    = userKp.getPublicKey();
@@ -68,7 +68,7 @@ public class PQFullNode {
     System.out.println("HTTP port:      " + HTTP_PORT);
     System.out.println("P2P port:       " + P2P_PORT);
     System.out.println("Witness address (expected): "
-        + ByteArray.toHexString(MLDSA44.computeAddress(witnessPub)));
+        + ByteArray.toHexString(FNDSA.computeAddress(witnessPub)));
 
     // ── 2. Configure node (no -w: this is a pure fullnode) ────────────────
     File dbDir = Files.createTempDirectory("pqc-fullnode-").toFile();
@@ -99,7 +99,7 @@ public class PQFullNode {
 
     // ── 4. Install matching PQ genesis pre-state ──────────────────────────
     // Without this the incoming pq_witness would fail to validate because
-    // this node wouldn't know the witness's ML-DSA-44 public key.
+    // this node wouldn't know the witness's FN-DSA-512 public key.
     PQWitnessNode.installPQGenesisState(db, chain, witnessPub, userPub);
 
     // ── 5. Start P2P + gRPC (no ConsensusService.start — we don't produce) ─

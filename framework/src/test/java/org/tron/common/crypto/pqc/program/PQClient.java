@@ -12,17 +12,18 @@ import org.tron.api.GrpcAPI.EmptyMessage;
 import org.tron.api.GrpcAPI.Return;
 import org.tron.api.WalletGrpc;
 import org.tron.api.WalletGrpc.WalletBlockingStub;
-import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.utils.ByteArray;
 import org.tron.protos.Protocol.Block;
-import org.tron.protos.Protocol.PQAuthWitness;
+import org.tron.protos.Protocol.PQScheme;
+import org.tron.protos.Protocol.PQWitness;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 /**
- * Demo client that connects to {@link PQWitnessNode} and broadcasts an ML-DSA-44
+ * Demo client that connects to {@link PQWitnessNode} and broadcasts an FN-DSA-512
  * signed transfer transaction.
  *
  * The keypair is derived from the same fixed seed used by PQWitnessNode, so no
@@ -57,13 +58,13 @@ public class PQClient {
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
     // ── 1. Derive user keypair from same fixed seed as PQWitnessNode ─────
-    byte[] userSeed = new byte[32];
+    byte[] userSeed = new byte[FNDSA.SEED_LENGTH];
     Arrays.fill(userSeed, (byte) 0x02);
-    MLDSA44 userKp = new MLDSA44(userSeed);
+    FNDSA userKp = new FNDSA(userSeed);
 
     byte[] userPub    = userKp.getPublicKey();
     byte[] userPriv   = userKp.getPrivateKey();
-    byte[] signerAddr = MLDSA44.computeAddress(userPub);
+    byte[] signerAddr = FNDSA.computeAddress(userPub);
     byte[] ownerAddr  = PQWitnessNode.USER_ADDR;
 
     System.out.println("=== PQC Client ===");
@@ -107,13 +108,15 @@ public class PQClient {
 
       Transaction tx = Transaction.newBuilder().setRawData(rawData).build();
 
-      // ── 5. Sign with ML-DSA-44 pq_witness ──────────────────────────
+      // ── 5. Sign with FN-DSA-512 pq_witness ─────────────────────────────
       byte[] txId   = sha256(rawData.toByteArray());
-      byte[] digest = PQAuthDigest.tx(txId, 0, 0);
-      byte[] sig    = MLDSA44.sign(userPriv, digest);
+      byte[] digest = PQAuthDigest.tx(txId, 0);
+      byte[] sig    = FNDSA.sign(userPriv, digest);
 
       Transaction signedTx = tx.toBuilder()
-          .addPqWitness(PQAuthWitness.newBuilder()
+          .addPqWitness(PQWitness.newBuilder()
+              .setScheme(PQScheme.FN_DSA_512)
+              .setPublicKey(ByteString.copyFrom(userPub))
               .setSignature(ByteString.copyFrom(sig)))
           .build();
 

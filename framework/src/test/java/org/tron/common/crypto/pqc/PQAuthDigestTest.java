@@ -3,7 +3,6 @@ package org.tron.common.crypto.pqc;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -26,16 +25,14 @@ public class PQAuthDigestTest {
   public void txDigestEqualsExpectedSha256() throws Exception {
     byte[] txid = new byte[] {0x11, 0x22, 0x33, 0x44};
     int permissionId = 2;
-    int keyId = 3;
 
     MessageDigest md = MessageDigest.getInstance("SHA-256");
     md.update("TRON_TX_AUTH_V1".getBytes(StandardCharsets.UTF_8));
     md.update(txid);
     md.update(be4(permissionId));
-    md.update(be4(keyId));
     byte[] expected = md.digest();
 
-    byte[] actual = PQAuthDigest.tx(txid, permissionId, keyId);
+    byte[] actual = PQAuthDigest.tx(txid, permissionId);
     assertArrayEquals(expected, actual);
     assertEquals(32, actual.length);
   }
@@ -46,15 +43,13 @@ public class PQAuthDigestTest {
     for (int i = 0; i < hdrHash.length; i++) {
       hdrHash[i] = (byte) i;
     }
-    int keyId = 0;
 
     MessageDigest md = MessageDigest.getInstance("SHA-256");
     md.update("TRON_BLOCK_AUTH_V1".getBytes(StandardCharsets.UTF_8));
     md.update(hdrHash);
-    md.update(be4(keyId));
     byte[] expected = md.digest();
 
-    byte[] actual = PQAuthDigest.block(hdrHash, keyId);
+    byte[] actual = PQAuthDigest.block(hdrHash);
     assertArrayEquals(expected, actual);
     assertEquals(32, actual.length);
   }
@@ -62,33 +57,17 @@ public class PQAuthDigestTest {
   @Test
   public void txAndBlockDigestsDifferForSameContext() {
     byte[] shared = new byte[32];
-    byte[] txDigest = PQAuthDigest.tx(shared, 0, 0);
-    byte[] blockDigest = PQAuthDigest.block(shared, 0);
+    byte[] txDigest = PQAuthDigest.tx(shared, 0);
+    byte[] blockDigest = PQAuthDigest.block(shared);
     assertFalse("tx and block digests must not collide for shared inputs",
         java.util.Arrays.equals(txDigest, blockDigest));
   }
 
   @Test
-  public void differentKeyIdsProduceDifferentTxDigest() {
-    byte[] txid = new byte[32];
-    assertNotEquals(
-        new String(PQAuthDigest.tx(txid, 0, 0)),
-        new String(PQAuthDigest.tx(txid, 0, 1)));
-  }
-
-  @Test
   public void differentPermissionIdsProduceDifferentDigest() {
     byte[] txid = new byte[32];
-    byte[] d0 = PQAuthDigest.tx(txid, 0, 0);
-    byte[] d1 = PQAuthDigest.tx(txid, 1, 0);
-    assertFalse(java.util.Arrays.equals(d0, d1));
-  }
-
-  @Test
-  public void differentKeyIdsProduceDifferentBlockDigest() {
-    byte[] hdr = new byte[32];
-    byte[] d0 = PQAuthDigest.block(hdr, 0);
-    byte[] d1 = PQAuthDigest.block(hdr, 1);
+    byte[] d0 = PQAuthDigest.tx(txid, 0);
+    byte[] d1 = PQAuthDigest.tx(txid, 1);
     assertFalse(java.util.Arrays.equals(d0, d1));
   }
 
@@ -101,7 +80,7 @@ public class PQAuthDigestTest {
   @Test
   public void nullTxidRejected() {
     try {
-      PQAuthDigest.tx(null, 0, 0);
+      PQAuthDigest.tx(null, 0);
       fail("null txid should be rejected");
     } catch (IllegalArgumentException expected) {
       assertTrue(expected.getMessage().contains("txid"));
@@ -111,7 +90,7 @@ public class PQAuthDigestTest {
   @Test
   public void nullBlockHeaderHashRejected() {
     try {
-      PQAuthDigest.block(null, 0);
+      PQAuthDigest.block(null);
       fail("null blockHeaderRawHash should be rejected");
     } catch (IllegalArgumentException expected) {
       assertTrue(expected.getMessage().contains("blockHeaderRawHash"));

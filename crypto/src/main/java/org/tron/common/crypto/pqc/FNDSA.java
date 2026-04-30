@@ -10,20 +10,19 @@ import org.bouncycastle.pqc.crypto.falcon.FalconParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
-import org.tron.common.crypto.Hash;
-import org.tron.protos.Protocol.SignatureScheme;
+import org.tron.protos.Protocol.PQScheme;
 
 /**
- * FIPS 206 (draft) FN-DSA / Falcon-512 keypair-bound signer/verifier. Mirrors the
- * {@link MLDSA44} / {@link MLDSA65} / {@link SLHDSA} shape: instance methods sign/verify
- * with the bound keypair, static {@link #sign(byte[], byte[])} / {@link #verify} provide
- * stateless entry points used by {@link PQSignatureRegistry}.
+ * FIPS 206 (draft) FN-DSA / Falcon-512 keypair-bound signer/verifier. Instance
+ * methods sign/verify with the bound keypair, static {@link #sign(byte[], byte[])}
+ * / {@link #verify} provide stateless entry points used by
+ * {@link PQSchemeRegistry}.
  *
- * <p>Falcon signatures are <strong>variable-length</strong>: {@link #SIGNATURE_LENGTH} is
- * the protocol-level upper bound, not an exact length. The {@link PQSignature#validateSignature}
- * default treats this as {@code <= SIGNATURE_LENGTH}; ML-DSA / SLH-DSA override back to
- * strict equality. BouncyCastle 1.79's {@code FalconNIST.CRYPTO_BYTES} for Falcon-512 is
- * 690 bytes, well below the 752-byte protocol cap.
+ * <p>Falcon signatures are <strong>variable-length</strong>: {@link #SIGNATURE_LENGTH}
+ * is the protocol-level upper bound, not an exact length. The
+ * {@link PQSignature#validateSignature} default treats this as
+ * {@code <= SIGNATURE_LENGTH}. BouncyCastle 1.79's {@code FalconNIST.CRYPTO_BYTES}
+ * for Falcon-512 is 690 bytes, well below the 752-byte protocol cap.
  */
 public final class FNDSA implements PQSignature {
 
@@ -77,8 +76,8 @@ public final class FNDSA implements PQSignature {
   }
 
   @Override
-  public SignatureScheme getScheme() {
-    return SignatureScheme.FN_DSA;
+  public PQScheme getScheme() {
+    return PQScheme.FN_DSA_512;
   }
 
   @Override
@@ -109,7 +108,7 @@ public final class FNDSA implements PQSignature {
 
   @Override
   public byte[] getAddress() {
-    return Hash.sha3omit12(publicKey);
+    return PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, publicKey);
   }
 
   @Override
@@ -172,11 +171,7 @@ public final class FNDSA implements PQSignature {
   }
 
   public static byte[] computeAddress(byte[] publicKey) {
-    if (publicKey == null || publicKey.length != PUBLIC_KEY_LENGTH) {
-      throw new IllegalArgumentException(
-          "FN-DSA public key length must be " + PUBLIC_KEY_LENGTH);
-    }
-    return Hash.sha3omit12(publicKey);
+    return PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, publicKey);
   }
 
   private static AsymmetricCipherKeyPair generateKeyPair(SecureRandom random) {

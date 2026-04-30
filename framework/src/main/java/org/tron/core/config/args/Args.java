@@ -79,7 +79,7 @@ import org.tron.p2p.dns.update.DnsType;
 import org.tron.p2p.dns.update.PublishConfig;
 import org.tron.p2p.utils.NetUtil;
 import org.tron.program.Version;
-import org.tron.protos.Protocol.SignatureScheme;
+import org.tron.protos.Protocol.PQScheme;
 
 @Slf4j(topic = "app")
 @NoArgsConstructor
@@ -1043,10 +1043,6 @@ public class Args extends CommonParameter {
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) : 0;
 
-    PARAMETER.allowMlDsa =
-        config.hasPath(ConfigKey.COMMITTEE_ALLOW_ML_DSA) ? config
-            .getInt(ConfigKey.COMMITTEE_ALLOW_ML_DSA) : 0;
-
     PARAMETER.allowFnDsa =
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_FN_DSA) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_FN_DSA) : 0;
@@ -1194,9 +1190,8 @@ public class Args extends CommonParameter {
     }
   }
 
-  private static final EnumSet<SignatureScheme> WITNESS_PQ_SEED_SCHEMES = EnumSet.of(
-      SignatureScheme.ML_DSA_44, SignatureScheme.ML_DSA_65,
-      SignatureScheme.FN_DSA);
+  private static final EnumSet<PQScheme> WITNESS_PQ_SEED_SCHEMES = EnumSet.of(
+      PQScheme.FN_DSA_512);
 
   private static void initLocalWitnesses(Config config, CLIParameter cmd) {
     // not a witness node, skip
@@ -1243,7 +1238,7 @@ public class Args extends CommonParameter {
         if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
           String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);
           try {
-            SignatureScheme scheme = SignatureScheme.valueOf(schemeName);
+            PQScheme scheme = PQScheme.valueOf(schemeName);
             if (!WITNESS_PQ_SEED_SCHEMES.contains(scheme)) {
               throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
                   + ": " + schemeName + "; valid values: " + WITNESS_PQ_SEED_SCHEMES,

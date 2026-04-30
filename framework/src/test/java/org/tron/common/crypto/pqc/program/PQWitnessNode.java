@@ -9,7 +9,8 @@ import java.util.Collections;
 import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
-import org.tron.common.crypto.pqc.MLDSA44;
+import org.tron.common.crypto.pqc.FNDSA;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.capsule.AccountCapsule;
@@ -21,16 +22,15 @@ import org.tron.core.db.Manager;
 import org.tron.protos.Protocol.Account;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
-import org.tron.protos.Protocol.PQPublicKey;
+import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.SignatureScheme;
 
 /**
- * Demo witness node with ML-DSA-44 block production.
+ * Demo witness node with FN-DSA-512 block production.
  *
  * Starts an in-process TRON node configured with a PQC witness keypair and
- * a user account that holds an ML-DSA-44 owner permission — ready to receive
+ * a user account that holds an FN-DSA-512 owner permission — ready to receive
  * transactions from {@link PQClient}.
  *
  * Keypairs are derived from fixed seeds so PQClient can derive matching keys
@@ -44,9 +44,9 @@ import org.tron.protos.Protocol.SignatureScheme;
  */
 public class PQWitnessNode {
 
-  /** Fixed seed for the ML-DSA-44 witness keypair (shared with PQClient for derivation). */
+  /** Fixed seed for the FN-DSA-512 witness keypair (shared with PQClient for derivation). */
   static final byte[] WITNESS_SEED = filledSeed(0x01);
-  /** Fixed seed for the ML-DSA-44 user keypair (shared with PQClient for derivation). */
+  /** Fixed seed for the FN-DSA-512 user keypair (shared with PQClient for derivation). */
   static final byte[] USER_SEED = filledSeed(0x02);
 
   /** gRPC port the node listens on. */
@@ -70,21 +70,21 @@ public class PQWitnessNode {
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
     // ── 1. Derive deterministic keypairs ──────────────────────────────────
-    MLDSA44 witnessKp = new MLDSA44(WITNESS_SEED);
-    MLDSA44 userKp    = new MLDSA44(USER_SEED);
+    FNDSA witnessKp = new FNDSA(WITNESS_SEED);
+    FNDSA userKp    = new FNDSA(USER_SEED);
 
     byte[] witnessPub  = witnessKp.getPublicKey();
-    byte[] witnessAddr = MLDSA44.computeAddress(witnessPub);
+    byte[] witnessAddr = FNDSA.computeAddress(witnessPub);
     byte[] userPub     = userKp.getPublicKey();
-    byte[] signerAddr  = MLDSA44.computeAddress(userPub);
+    byte[] signerAddr  = FNDSA.computeAddress(userPub);
 
     System.out.println("=== PQC Witness Node ===");
-    System.out.println("Witness address (ML-DSA-44): " + ByteArray.toHexString(witnessAddr));
-    System.out.println("User address:                " + ByteArray.toHexString(USER_ADDR));
-    System.out.println("User signer address:         " + ByteArray.toHexString(signerAddr));
-    System.out.println("gRPC port:                   " + GRPC_PORT);
-    System.out.println("HTTP port:                   " + HTTP_PORT);
-    System.out.println("P2P port:                    " + P2P_PORT);
+    System.out.println("Witness address (FN-DSA-512): " + ByteArray.toHexString(witnessAddr));
+    System.out.println("User address:                 " + ByteArray.toHexString(USER_ADDR));
+    System.out.println("User signer address:          " + ByteArray.toHexString(signerAddr));
+    System.out.println("gRPC port:                    " + GRPC_PORT);
+    System.out.println("HTTP port:                    " + HTTP_PORT);
+    System.out.println("P2P port:                     " + P2P_PORT);
 
     // ── 2. Configure node ─────────────────────────────────────────────────
     File dbDir = Files.createTempDirectory("pqc-node-").toFile();
@@ -135,25 +135,22 @@ public class PQWitnessNode {
    */
   static void installPQGenesisState(Manager db, ChainBaseManager chain,
       byte[] witnessPub, byte[] userPub) {
-    byte[] witnessAddr = MLDSA44.computeAddress(witnessPub);
+    byte[] witnessAddr = PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, witnessPub);
     ByteString witnessAddrBs = ByteString.copyFrom(witnessAddr);
-    byte[] signerAddr = MLDSA44.computeAddress(userPub);
+    byte[] signerAddr = PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, userPub);
     ByteString signerAddrBs = ByteString.copyFrom(signerAddr);
 
-    // Activate ML-DSA on the local chain params.
-    db.getDynamicPropertiesStore().saveAllowMlDsa(1L);
+    // Activate FN-DSA on the local chain params.
+    db.getDynamicPropertiesStore().saveAllowFnDsa(1L);
     db.getDynamicPropertiesStore().saveAllowMultiSign(1L);
 
-    // Witness account with ML-DSA-44 witness permission.
+    // Witness account with FN-DSA-512 witness permission. Address-as-fingerprint
+    // binds the public key in-band; no separate pq_key field is stored.
     Permission witnessPerm = Permission.newBuilder()
         .setType(PermissionType.Witness)
         .setId(1).setPermissionName("witness").setThreshold(1)
         .addKeys(Key.newBuilder()
-            .setAddress(witnessAddrBs).setWeight(1)
-            .setPqKey(PQPublicKey.newBuilder()
-                .setScheme(SignatureScheme.ML_DSA_44)
-                .setPublicKey(ByteString.copyFrom(witnessPub))
-                .build()))
+            .setAddress(witnessAddrBs).setWeight(1))
         .build();
     db.getAccountStore().put(witnessAddr, new AccountCapsule(Account.newBuilder()
         .setAddress(witnessAddrBs).setType(AccountType.Normal)
@@ -166,15 +163,11 @@ public class PQWitnessNode {
     chain.getWitnessScheduleStore().saveActiveWitnesses(new ArrayList<>());
     chain.addWitness(witnessAddrBs);
 
-    // User account with ML-DSA-44 owner permission.
+    // User account with FN-DSA-512 owner permission.
     Permission userOwnerPerm = Permission.newBuilder()
         .setType(PermissionType.Owner).setPermissionName("owner").setThreshold(1)
         .addKeys(Key.newBuilder()
-            .setAddress(signerAddrBs).setWeight(1)
-            .setPqKey(PQPublicKey.newBuilder()
-                .setScheme(SignatureScheme.ML_DSA_44)
-                .setPublicKey(ByteString.copyFrom(userPub))
-                .build()))
+            .setAddress(signerAddrBs).setWeight(1))
         .build();
     AccountCapsule userCapsule = new AccountCapsule(
         ByteString.copyFrom(USER_ADDR), ByteString.copyFromUtf8("pquser"), AccountType.Normal);
@@ -184,7 +177,7 @@ public class PQWitnessNode {
   }
 
   private static byte[] filledSeed(int value) {
-    byte[] seed = new byte[32];
+    byte[] seed = new byte[FNDSA.SEED_LENGTH];
     Arrays.fill(seed, (byte) value);
     return seed;
   }

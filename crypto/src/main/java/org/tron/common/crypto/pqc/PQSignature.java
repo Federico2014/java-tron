@@ -1,16 +1,16 @@
 package org.tron.common.crypto.pqc;
 
-import org.tron.protos.Protocol.SignatureScheme;
+import org.tron.protos.Protocol.PQScheme;
 
 /**
  * Post-quantum signature scheme facade bound to a keypair. Instance methods
  * (sign/verify/getAddress/getPublicKey/getPrivateKey) operate on the held
- * keypair. Stateless dispatch by {@link SignatureScheme} is provided by
- * {@link PQSignatureRegistry}.
+ * keypair. Stateless dispatch by {@link PQScheme} is provided by
+ * {@link PQSchemeRegistry}.
  */
 public interface PQSignature {
 
-  SignatureScheme getScheme();
+  PQScheme getScheme();
 
   int getPrivateKeyLength();
 
@@ -22,7 +22,11 @@ public interface PQSignature {
 
   byte[] getPublicKey();
 
-  /** 21-byte TRON address derived from the held public key. */
+  /**
+   * 21-byte TRON address derived from the held public key as
+   * {@code 0x41 ‖ deriveHash(scheme, public_key)[0:20]} (see
+   * {@link PQSchemeRegistry#computeAddress}).
+   */
   byte[] getAddress();
 
   /** Sign {@code message} with the held private key; returns the raw signature. */
@@ -54,8 +58,8 @@ public interface PQSignature {
   }
 
   /**
-   * Default upper-bound check, sufficient for variable-length schemes (FN-DSA).
-   * Fixed-length schemes (ML-DSA-44 / ML-DSA-65) override this with strict equality.
+   * Default upper-bound check, sufficient for variable-length schemes (FN_DSA_512).
+   * Fixed-length schemes override this with strict equality.
    */
   default void validateSignature(byte[] signature) {
     if (signature == null || signature.length == 0 || signature.length > getSignatureLength()) {

@@ -905,8 +905,11 @@ public class BandwidthProcessorTest extends BaseTest {
         .setAmount(100L)
         .build();
 
-    byte[] fakeSig = new byte[3309];
-    Protocol.PQAuthWitness pqWitness = Protocol.PQAuthWitness.newBuilder()
+    byte[] fakeSig = new byte[752];
+    byte[] fakePub = new byte[897];
+    Protocol.PQWitness pqWitness = Protocol.PQWitness.newBuilder()
+        .setScheme(Protocol.PQScheme.FN_DSA_512)
+        .setPublicKey(ByteString.copyFrom(fakePub))
         .setSignature(ByteString.copyFrom(fakeSig))
         .build();
 
@@ -929,10 +932,6 @@ public class BandwidthProcessorTest extends BaseTest {
       processor.consume(trx, trace);
     } catch (TooBigTransactionException e) {
       Assert.fail("PQ pq_witness bytes should be deducted from create-account cap check");
-    } catch (AccountResourceInsufficientException
-        | ContractValidateException
-        | TooBigTransactionResultException e) {
-      // acceptable: other code paths — we only care about the cap check
     } finally {
       chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(OWNER_ADDRESS));
       chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(TO_ADDRESS));
@@ -968,8 +967,11 @@ public class BandwidthProcessorTest extends BaseTest {
         .setAmount(100L)
         .build();
 
-    byte[] fakeSig = new byte[3309];
-    Protocol.PQAuthWitness pqWitness = Protocol.PQAuthWitness.newBuilder()
+    byte[] fakeSig = new byte[752];
+    byte[] fakePub = new byte[897];
+    Protocol.PQWitness pqWitness = Protocol.PQWitness.newBuilder()
+        .setScheme(Protocol.PQScheme.FN_DSA_512)
+        .setPublicKey(ByteString.copyFrom(fakePub))
         .setSignature(ByteString.copyFrom(fakeSig))
         .build();
 

@@ -250,7 +250,6 @@ final class ConfigKey {
   public static final String COMMITTEE_ALLOW_TVM_BLOB = "committee.allowTvmBlob";
   public static final String COMMITTEE_PROPOSAL_EXPIRE_TIME = "committee.proposalExpireTime";
   public static final String COMMITTEE_ALLOW_TVM_OSAKA = "committee.allowTvmOsaka";
-  public static final String COMMITTEE_ALLOW_ML_DSA = "committee.allowMlDsa";
   public static final String COMMITTEE_ALLOW_FN_DSA = "committee.allowFnDsa";
   public static final String ALLOW_ACCOUNT_ASSET_OPTIMIZATION =
       "committee.allowAccountAssetOptimization";

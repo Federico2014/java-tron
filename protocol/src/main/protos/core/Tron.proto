@@ -17,20 +17,13 @@ enum AccountType {
   Contract = 2;
 }
 
-// Signature scheme identifier used by Permission.Key and PQWitness.
-// UNKNOWN_SIG_SCHEME (0) denotes legacy keys authenticated via the existing
-// Transaction.signature / BlockHeader.witness_signature paths (ECDSA secp256k1
-// on mainnet, SM2/SM3 where applicable). Post-quantum schemes use dedicated
-// pq_witness / pq_witness fields.
-enum SignatureScheme {
-  UNKNOWN_SIG_SCHEME = 0;
-  ECDSA_SECP256K1 = 1;
-  SM2_SM3 = 2;
-  ML_DSA_44 = 3;
-  ML_DSA_65 = 4;
-  FN_DSA = 6;
-  reserved 5;
-  reserved 7 to 15;
+// Post-quantum signature scheme identifier used by PQWitness.
+// FN_DSA_512 = 0 is the proto3 default — it never appears on the wire,
+// so all current-era PQ witnesses pay zero bytes for the scheme tag.
+// New schemes are reserved for future activation (see PQSchemeRegistry).
+enum PQScheme {
+  FN_DSA_512 = 0;
+  reserved 1 to 15;
 }
 
 // AccountId, (name, address) use name, (null, address) use address, (name, null) use name,
@@ -256,28 +249,19 @@ message Account {
   int64 acquired_delegated_frozenV2_balance_for_bandwidth = 37;
 }
 
-// Post-quantum public key: algorithm identifier paired with raw key bytes.
-// Used inside Key.pq_key; absent on legacy (ECDSA/SM2) keys.
-message PQPublicKey {
-  SignatureScheme scheme     = 1;
-  // Raw key bytes. ML-DSA-44=1312B, ML-DSA-65=1952B, FN-DSA=896B.
-  bytes           public_key = 2;
-}
-
 message Key {
-  bytes      address = 1;  // empty for PQ-only keys
-  int64      weight  = 2;
-  // Post-quantum key. Absent for legacy keys.
-  PQPublicKey pq_key = 3;
+  bytes address = 1;
+  int64 weight  = 2;
 }
 
 // Per-signer post-quantum authentication witness for a transaction or block.
-// key_id is the 0-based index of the signing key in the permission's key list.
-// key_id = 0 is the proto3 default and is omitted on the wire — single-key
-// accounts pay no overhead for this field.
-message PQAuthWitness {
-  uint32 key_id    = 1;
-  bytes  signature = 2;
+// The signing public key is carried in-band; node verifies binding via
+//   derived_addr = 0x41 ‖ deriveHash(scheme, public_key)[0:20]
+// and matches against Permission.keys[].address.
+message PQWitness {
+  PQScheme scheme     = 1;
+  bytes    public_key = 2;
+  bytes    signature  = 3;
 }
 
 message DelegatedResource {
@@ -484,11 +468,12 @@ message Transaction {
   // only support size = 1,  repeated list here for muti-sig extension
   repeated bytes signature = 2;
   repeated Result ret = 5;
-  // Post-quantum authentication witnesses. Mutually exclusive with signature:
-  // a transaction against a PQ Permission MUST use pq_witness and empty
-  // signature; a transaction against a legacy Permission MUST use signature
-  // and empty pq_witness.
-  repeated PQAuthWitness pq_witness = 6;
+  // Post-quantum authentication witnesses. Each entry binds a signing
+  // public key to its derived address and the corresponding signature.
+  // ECDSA signatures (`signature` above) and PQWitness entries may co-exist
+  // on multi-sig transactions, contributing weight independently to the
+  // permission's threshold.
+  repeated PQWitness pq_witness = 6;
 }
 
 message TransactionInfo {
@@ -555,11 +540,12 @@ message BlockHeader {
   }
   raw raw_data = 1;
   bytes witness_signature = 2;
-  // Post-quantum witness authentication. When the producing SR has a
-  // Witness Permission with scheme = ML_DSA_65, pq_witness SHALL be
-  // present in addition to witness_signature (Dual-Sign). Otherwise this
-  // field SHALL be empty.
-  PQAuthWitness pq_witness = 3;
+  // Post-quantum block signature. Exactly one of {witness_signature,
+  // pq_witness} SHALL be present per block: SRs with an ECDSA-only Witness
+  // Permission set witness_signature; SRs whose Witness Permission carries a
+  // PQ-derived Key set pq_witness instead. The verifier dispatches by which
+  // field is populated.
+  PQWitness pq_witness = 3;
 }
 
 // block

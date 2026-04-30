@@ -60,11 +60,6 @@ public class Constant {
   // Crypto engine
   public static final String ECKey_ENGINE = "ECKey";
 
-  // Post-quantum (ML-DSA / FIPS 204) signature constants
-  public static final int ML_DSA_44_PUBLIC_KEY_LENGTH = 1312;
-  public static final int ML_DSA_44_SIGNATURE_LENGTH = 2420;
-  public static final int ML_DSA_65_PUBLIC_KEY_LENGTH = 1952;
-  public static final int ML_DSA_65_SIGNATURE_LENGTH = 3309;
   // Post-quantum (FIPS 206 draft) FN-DSA / Falcon-512 signature constants.
   // Falcon signatures are variable-length; SIGNATURE_MAX_LENGTH is the protocol-level
   // upper bound, not an exact length.

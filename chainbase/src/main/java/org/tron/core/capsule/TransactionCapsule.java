@@ -45,7 +45,7 @@ import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.crypto.pqc.PQAuthDigest;
-import org.tron.common.crypto.pqc.PQSignatureRegistry;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.math.StrictMathWrapper;
 import org.tron.common.overlay.message.Message;
@@ -67,11 +67,11 @@ import org.tron.core.exception.TransactionExpirationException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.protos.Protocol.PQAuthWitness;
 import org.tron.protos.Protocol.Key;
+import org.tron.protos.Protocol.PQScheme;
+import org.tron.protos.Protocol.PQWitness;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result;
@@ -489,17 +489,25 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       throw new PermissionException("permission isn't exit");
     }
     checkPermission(permissionId, permission, contract);
-    Key firstKey = permission.getKeysCount() > 0 ? permission.getKeysList().get(0) : null;
-    if (firstKey != null && firstKey.hasPqKey()
-        && firstKey.getPqKey().getScheme() != SignatureScheme.UNKNOWN_SIG_SCHEME) {
-      throw new PermissionException(
-          "permission uses PQ scheme, pq_witness is required");
+
+    // Hybrid weight: ECDSA signatures and PQ witnesses share one threshold
+    // check. The two domains derive distinct addresses (Keccak vs SHA-256
+    // tagged with 0x41), so a key entry contributes to at most one path.
+    java.util.Set<ByteString> signedAddresses = new java.util.HashSet<>();
+    List<ByteString> approveList = new ArrayList<>();
+    long weight = checkWeight(permission, transaction.getSignatureList(), hash, approveList);
+    signedAddresses.addAll(approveList);
+
+    if (transaction.getPqWitnessCount() > 0) {
+      try {
+        weight = StrictMathWrapper.addExact(weight,
+            validatePQSignature(transaction, permission, signedAddresses,
+                dynamicPropertiesStore));
+      } catch (ArithmeticException e) {
+        throw new PermissionException("weight overflow");
+      }
     }
-    long weight = checkWeight(permission, transaction.getSignatureList(), hash, null);
-    if (weight >= permission.getThreshold()) {
-      return true;
-    }
-    return false;
+    return weight >= permission.getThreshold();
   }
 
   public void resetResult() {
@@ -655,35 +663,13 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
         throw new ValidateSignatureException(
             "pq_witness not allowed: no post-quantum scheme is activated");
       }
-      if (legacyCount > 0 && pqCount > 0) {
-        throw new ValidateSignatureException(
-            "signature and pq_witness are mutually exclusive");
-      }
       if (legacyCount == 0 && pqCount == 0) {
         throw new ValidateSignatureException("miss sig or contract");
       }
       if (this.transaction.getRawData().getContractCount() <= 0) {
         throw new ValidateSignatureException("miss sig or contract");
       }
-      if (pqCount > 0) {
-        if (pqCount > dynamicPropertiesStore.getTotalSignNum()) {
-          throw new ValidateSignatureException("too many signatures");
-        }
-        try {
-          if (!validateStructuredSignature(
-              this.transaction, accountStore, dynamicPropertiesStore)) {
-            isVerified = false;
-            throw new ValidateSignatureException("sig error");
-          }
-        } catch (PermissionException e) {
-          isVerified = false;
-          throw new ValidateSignatureException(e.getMessage());
-        }
-        isVerified = true;
-        return true;
-      }
-
-      if (legacyCount > dynamicPropertiesStore.getTotalSignNum()) {
+      if (legacyCount + pqCount > dynamicPropertiesStore.getTotalSignNum()) {
         throw new ValidateSignatureException("too many signatures");
       }
 
@@ -703,78 +689,72 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     return true;
   }
 
-  static boolean validateStructuredSignature(Transaction transaction,
-      AccountStore accountStore, DynamicPropertiesStore dynamicPropertiesStore)
+  /**
+   * Verify {@code transaction.pq_witness[]} entries against {@code permission}
+   * and return the combined weight contributed by valid PQ witnesses.
+   *
+   * <p>V2 four-step verification per witness:
+   * <ol>
+   *   <li>Resolve the permission context (caller passes {@code permission}).</li>
+   *   <li>Derive the 21-byte address from {@code witness.public_key} via the
+   *       scheme's fingerprint hash.</li>
+   *   <li>Match against {@code permission.keys[].address}; reject duplicates
+   *       and addresses already counted by the legacy ECDSA path.</li>
+   *   <li>Verify the signature over
+   *       {@code SHA-256(domain || txid || permission_id_be4)}.</li>
+   * </ol>
+   */
+  static long validatePQSignature(Transaction transaction, Permission permission,
+      java.util.Set<ByteString> signedAddresses,
+      DynamicPropertiesStore dynamicPropertiesStore)
       throws PermissionException {
-    Transaction.Contract contract = transaction.getRawData().getContractList().get(0);
-    int permissionId = contract.getPermissionId();
-    byte[] owner = getOwner(contract);
-    AccountCapsule account = accountStore.get(owner);
-    Permission permission = null;
-    if (account == null) {
-      if (permissionId == 0) {
-        permission = AccountCapsule.getDefaultPermission(ByteString.copyFrom(owner));
-      }
-      if (permissionId == 2) {
-        permission = AccountCapsule
-            .createDefaultActivePermission(ByteString.copyFrom(owner), dynamicPropertiesStore);
-      }
-    } else {
-      permission = account.getPermissionById(permissionId);
-    }
-    if (permission == null) {
-      throw new PermissionException("permission isn't exit");
-    }
-    checkPermission(permissionId, permission, contract);
-
-    if (permission.getKeysCount() == 0
-        || !permission.getKeysList().get(0).hasPqKey()
-        || permission.getKeysList().get(0).getPqKey().getScheme()
-            == SignatureScheme.UNKNOWN_SIG_SCHEME) {
-      throw new PermissionException(
-          "permission uses legacy scheme, pq_witness is not allowed");
-    }
-
+    int permissionId = transaction.getRawData().getContract(0).getPermissionId();
     byte[] txid = computeRawHash(transaction).getBytes();
-    List<PQAuthWitness> witnesses = transaction.getPqWitnessList();
-    java.util.Set<Integer> seen = new java.util.HashSet<>();
+    byte[] digest = PQAuthDigest.tx(txid, permissionId);
+
     long weight = 0L;
-    for (PQAuthWitness aw : witnesses) {
-      int keyId = aw.getKeyId();
-      if (!seen.add(keyId)) {
-        throw new PermissionException("duplicate key_id in pq_witness");
-      }
-      if (keyId < 0 || keyId >= permission.getKeysCount()) {
-        throw new PermissionException("key_id out of range: " + keyId);
-      }
-      Key key = permission.getKeys(keyId);
-      if (!key.hasPqKey()) {
-        throw new PermissionException("key at index " + keyId + " is not a PQ key");
-      }
-      SignatureScheme scheme = key.getPqKey().getScheme();
-      if (!PQSignatureRegistry.contains(scheme)) {
-        throw new PermissionException("unsupported scheme: " + scheme);
+    for (PQWitness witness : transaction.getPqWitnessList()) {
+      PQScheme scheme = witness.getScheme();
+      if (!PQSchemeRegistry.contains(scheme)) {
+        throw new PermissionException("unsupported pq scheme: " + scheme);
       }
       if (!dynamicPropertiesStore.isPqSchemeAllowed(scheme)) {
         throw new PermissionException(scheme + " is not activated");
       }
-      byte[] digest = PQAuthDigest.tx(txid, permissionId, keyId);
-      byte[] pk = key.getPqKey().getPublicKey().toByteArray();
-      byte[] sig = aw.getSignature().toByteArray();
-      if (pk.length != PQSignatureRegistry.getPublicKeyLength(scheme)
-          || !PQSignatureRegistry.isValidSignatureLength(scheme, sig.length)) {
+      byte[] pk = witness.getPublicKey().toByteArray();
+      byte[] sig = witness.getSignature().toByteArray();
+      if (pk.length != PQSchemeRegistry.getPublicKeyLength(scheme)
+          || !PQSchemeRegistry.isValidSignatureLength(scheme, sig.length)) {
         throw new PermissionException("public key or signature length mismatch");
       }
-      if (!PQSignatureRegistry.verify(scheme, pk, digest, sig)) {
+      byte[] derivedAddr = PQSchemeRegistry.computeAddress(scheme, pk);
+      ByteString addrBs = ByteString.copyFrom(derivedAddr);
+      if (!signedAddresses.add(addrBs)) {
+        throw new PermissionException(
+            encode58Check(derivedAddr) + " has signed twice!");
+      }
+      Key matched = null;
+      for (Key k : permission.getKeysList()) {
+        if (k.getAddress().equals(addrBs)) {
+          matched = k;
+          break;
+        }
+      }
+      if (matched == null) {
+        throw new PermissionException(
+            "pq_witness public key derives to " + encode58Check(derivedAddr)
+                + " but it is not contained of permission.");
+      }
+      if (!PQSchemeRegistry.verify(scheme, pk, digest, sig)) {
         throw new PermissionException("pq sig invalid");
       }
       try {
-        weight = StrictMathWrapper.addExact(weight, key.getWeight());
+        weight = StrictMathWrapper.addExact(weight, matched.getWeight());
       } catch (ArithmeticException e) {
         throw new PermissionException("weight overflow");
       }
     }
-    return weight >= permission.getThreshold();
+    return weight;
   }
 
   private static Sha256Hash computeRawHash(Transaction transaction) {

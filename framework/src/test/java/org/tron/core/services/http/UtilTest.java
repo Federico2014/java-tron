@@ -15,7 +15,8 @@ import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.protos.Protocol;
-import org.tron.protos.Protocol.PQAuthWitness;
+import org.tron.protos.Protocol.PQScheme;
+import org.tron.protos.Protocol.PQWitness;
 import org.tron.protos.Protocol.Transaction;
 
 public class UtilTest extends BaseTest {
@@ -169,13 +170,18 @@ public class UtilTest extends BaseTest {
   }
 
   @Test
-  public void roundtripPQAuthWitnessJson() throws Exception {
-    byte[] sig = new byte[3309];
+  public void roundtripPQWitnessJson() throws Exception {
+    byte[] sig = new byte[752];
+    byte[] pubKey = new byte[897];
     for (int i = 0; i < sig.length; i++) {
       sig[i] = (byte) (i & 0xff);
     }
-    PQAuthWitness pqWitness = PQAuthWitness.newBuilder()
-        .setKeyId(1)
+    for (int i = 0; i < pubKey.length; i++) {
+      pubKey[i] = (byte) ((i * 7) & 0xff);
+    }
+    PQWitness pqWitness = PQWitness.newBuilder()
+        .setScheme(PQScheme.FN_DSA_512)
+        .setPublicKey(ByteString.copyFrom(pubKey))
         .setSignature(ByteString.copyFrom(sig))
         .build();
     Transaction original = Transaction.newBuilder()
@@ -192,8 +198,10 @@ public class UtilTest extends BaseTest {
     Transaction decoded = rebuilt.build();
 
     Assert.assertEquals(1, decoded.getPqWitnessCount());
-    Assert.assertEquals(pqWitness.getKeyId(),
-        decoded.getPqWitness(0).getKeyId());
+    Assert.assertEquals(pqWitness.getScheme(),
+        decoded.getPqWitness(0).getScheme());
+    Assert.assertEquals(pqWitness.getPublicKey(),
+        decoded.getPqWitness(0).getPublicKey());
     Assert.assertEquals(pqWitness.getSignature(),
         decoded.getPqWitness(0).getSignature());
   }

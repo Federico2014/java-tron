@@ -128,7 +128,8 @@ public class FnDsaPrecompileTest {
     FNDSA key = new FNDSA();
     byte[] pk = key.getPublicKey();
     // sig_len = 0 is invalid (must be >= 1)
-    byte[] input = new byte[32 + 2 + pk.length];
+    // input must be >= MIN_INPUT_LEN (931 = 32 + 2 + 1 + 896) to reach the sigLen check
+    byte[] input = new byte[32 + 2 + pk.length + 1];
     System.arraycopy(MESSAGE_HASH, 0, input, 0, 32);
     // sig_len bytes = 0x00 0x00 → sigLen = 0
     System.arraycopy(pk, 0, input, 34, pk.length);

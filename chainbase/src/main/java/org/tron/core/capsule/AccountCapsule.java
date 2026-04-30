@@ -46,7 +46,6 @@ import org.tron.protos.Protocol.Account.Frozen;
 import org.tron.protos.Protocol.Account.UnFreezeV2;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
-import org.tron.protos.Protocol.PQPublicKey;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
 import org.tron.protos.Protocol.Vote;
@@ -99,22 +98,6 @@ public class AccountCapsule implements ProtoCapsule<Account>, Comparable<Account
    */
   public AccountCapsule(final AccountCreateContract contract, long createTime,
       boolean withDefaultPermission, DynamicPropertiesStore dynamicPropertiesStore) {
-    if (contract.hasPqKey()) {
-      Permission owner = createDefaultPqOwnerPermission(contract.getPqKey());
-      Permission active = createDefaultPqActivePermission(contract.getPqKey(),
-          dynamicPropertiesStore);
-
-      this.account = Account.newBuilder()
-          .setType(contract.getType())
-          .setAddress(contract.getAccountAddress())
-          .setTypeValue(contract.getTypeValue())
-          .setCreateTime(createTime)
-          .setOwnerPermission(owner)
-          .addActivePermission(active)
-          .build();
-      return;
-    }
-
     if (withDefaultPermission) {
       Permission owner = createDefaultOwnerPermission(contract.getAccountAddress());
       Permission active = createDefaultActivePermission(contract.getAccountAddress(),
@@ -240,50 +223,6 @@ public class AccountCapsule implements ProtoCapsule<Account>, Comparable<Account
     active.addKeys(key);
 
     return active.build();
-  }
-
-  /**
-   * Default Owner permission bound to a PQ public key. The {@code address}
-   * field is left empty — the PQ key is authoritative and resolved by
-   * {@code key_id} during witness verification.
-   */
-  public static Permission createDefaultPqOwnerPermission(PQPublicKey pqKey) {
-    Key key = Key.newBuilder()
-        .setAddress(ByteString.EMPTY)
-        .setWeight(1)
-        .setPqKey(pqKey)
-        .build();
-
-    return Permission.newBuilder()
-        .setType(PermissionType.Owner)
-        .setId(0)
-        .setPermissionName("owner")
-        .setThreshold(1)
-        .setParentId(0)
-        .addKeys(key)
-        .build();
-  }
-
-  /**
-   * Default Active permission bound to a PQ public key.
-   */
-  public static Permission createDefaultPqActivePermission(PQPublicKey pqKey,
-      DynamicPropertiesStore dynamicPropertiesStore) {
-    Key key = Key.newBuilder()
-        .setAddress(ByteString.EMPTY)
-        .setWeight(1)
-        .setPqKey(pqKey)
-        .build();
-
-    return Permission.newBuilder()
-        .setType(PermissionType.Active)
-        .setId(2)
-        .setPermissionName("active")
-        .setThreshold(1)
-        .setParentId(0)
-        .setOperations(getActiveDefaultOperations(dynamicPropertiesStore))
-        .addKeys(key)
-        .build();
   }
 
   public static Permission createDefaultWitnessPermission(ByteString address) {

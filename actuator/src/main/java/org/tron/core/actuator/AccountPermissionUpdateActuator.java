@@ -16,14 +16,9 @@ import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractValidateException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.common.crypto.pqc.FNDSA;
-import org.tron.common.crypto.pqc.MLDSA44;
-import org.tron.common.crypto.pqc.MLDSA65;
-import org.tron.common.crypto.pqc.PQSignatureRegistry;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result.code;
 import org.tron.protos.contract.AccountContract.AccountPermissionUpdateContract;
@@ -101,37 +96,15 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
     List<ByteString> addressList = permission.getKeysList()
         .stream()
         .map(Key::getAddress)
-        .filter(addr -> !addr.isEmpty())
         .distinct()
         .collect(toList());
-    long nonEmptyAddrCount = permission.getKeysList().stream()
-        .map(Key::getAddress)
-        .filter(addr -> !addr.isEmpty())
-        .count();
-    if (addressList.size() != nonEmptyAddrCount) {
+    if (addressList.size() != permission.getKeysList().size()) {
       throw new ContractValidateException(
           "address should be distinct in permission " + permission.getType());
     }
-    validatePermissionScheme(permission);
-
-    List<ByteString> publicKeyList = permission.getKeysList()
-        .stream()
-        .map(k -> k.hasPqKey() ? k.getPqKey().getPublicKey() : ByteString.EMPTY)
-        .filter(pk -> !pk.isEmpty())
-        .distinct()
-        .collect(toList());
-    long nonEmptyPublicKeyCount = permission.getKeysList().stream()
-        .map(k -> k.hasPqKey() ? k.getPqKey().getPublicKey() : ByteString.EMPTY)
-        .filter(pk -> !pk.isEmpty())
-        .count();
-    if (publicKeyList.size() != nonEmptyPublicKeyCount) {
-      throw new ContractValidateException(
-          "public_key should be distinct in permission " + permission.getType());
-    }
 
     for (Key key : permission.getKeysList()) {
-      if (!key.getAddress().isEmpty()
-          && !DecodeUtil.addressValid(key.getAddress().toByteArray())) {
+      if (!DecodeUtil.addressValid(key.getAddress().toByteArray())) {
         throw new ContractValidateException("key is not a validate address");
       }
       if (key.getWeight() <= 0) {
@@ -266,74 +239,4 @@ public class AccountPermissionUpdateActuator extends AbstractActuator {
     return chainBaseManager.getDynamicPropertiesStore().getUpdateAccountPermissionFee();
   }
 
-  private void validatePermissionScheme(Permission permission) throws ContractValidateException {
-    DynamicPropertiesStore dynamicStore = chainBaseManager.getDynamicPropertiesStore();
-
-    SignatureScheme first = keyScheme(permission.getKeysList().get(0));
-    for (Key key : permission.getKeysList()) {
-      SignatureScheme scheme = keyScheme(key);
-      if (scheme != first) {
-        throw new ContractValidateException(
-            "all keys in a permission must use the same scheme");
-      }
-      if (scheme == SignatureScheme.UNKNOWN_SIG_SCHEME) {
-        if (key.hasPqKey() && !key.getPqKey().getPublicKey().isEmpty()) {
-          throw new ContractValidateException(
-              "public_key must be empty when scheme is UNKNOWN_SIG_SCHEME");
-        }
-      } else {
-        if (!dynamicStore.isPqSchemeAllowed(scheme)) {
-          throw new ContractValidateException(
-              schemeNotActivatedMessage(scheme) + ", scheme " + scheme + " is not allowed");
-        }
-        int expected = expectedPublicKeyLength(scheme);
-        if (expected < 0) {
-          throw new ContractValidateException(
-              "unsupported signature scheme: " + scheme);
-        }
-        int actual = key.hasPqKey() ? key.getPqKey().getPublicKey().size() : 0;
-        if (actual != expected) {
-          throw new ContractValidateException(
-              "public_key length for " + scheme + " must be " + expected + " bytes, got "
-                  + actual);
-        }
-      }
-    }
-
-    if (permission.getType() == PermissionType.Witness
-        && first != SignatureScheme.UNKNOWN_SIG_SCHEME
-        && !PQSignatureRegistry.contains(first)) {
-      throw new ContractValidateException(
-          "Witness permission only supports legacy or registered PQ schemes, got " + first);
-    }
-  }
-
-  private static SignatureScheme keyScheme(Key key) {
-    return key.hasPqKey() ? key.getPqKey().getScheme() : SignatureScheme.UNKNOWN_SIG_SCHEME;
-  }
-
-  private static int expectedPublicKeyLength(SignatureScheme scheme) {
-    switch (scheme) {
-      case ML_DSA_44:
-        return MLDSA44.PUBLIC_KEY_LENGTH;
-      case ML_DSA_65:
-        return MLDSA65.PUBLIC_KEY_LENGTH;
-      case FN_DSA:
-        return FNDSA.PUBLIC_KEY_LENGTH;
-      default:
-        return -1;
-    }
-  }
-
-  private static String schemeNotActivatedMessage(SignatureScheme scheme) {
-    switch (scheme) {
-      case ML_DSA_44:
-      case ML_DSA_65:
-        return "ML-DSA is not activated";
-      case FN_DSA:
-        return "FN-DSA is not activated";
-      default:
-        return scheme + " is not activated";
-    }
-  }
 }

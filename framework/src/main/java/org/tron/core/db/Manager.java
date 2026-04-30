@@ -55,7 +55,7 @@ import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
 import org.tron.common.crypto.pqc.PQAuthDigest;
-import org.tron.common.crypto.pqc.PQSignatureRegistry;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.logsfilter.EventPluginLoader;
@@ -170,10 +170,9 @@ import org.tron.core.store.WitnessStore;
 import org.tron.core.utils.TransactionRegister;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
-import org.tron.protos.Protocol.Key;
-import org.tron.protos.Protocol.PQAuthWitness;
+import org.tron.protos.Protocol.PQScheme;
+import org.tron.protos.Protocol.PQWitness;
 import org.tron.protos.Protocol.Permission;
-import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract;
 import org.tron.protos.Protocol.TransactionInfo;
@@ -1760,47 +1759,53 @@ public class Manager {
   }
 
   private void signBlockCapsule(BlockCapsule blockCapsule, Miner miner) {
-    SignatureScheme scheme = resolveWitnessScheme(miner);
-    if (PQSignatureRegistry.contains(scheme)) {
+    PQScheme scheme = resolveWitnessScheme(miner);
+    if (scheme != null && PQSchemeRegistry.contains(scheme)) {
       signWitnessAuth(blockCapsule, miner, scheme);
     } else {
       blockCapsule.sign(miner.getPrivateKey());
     }
   }
 
-  private SignatureScheme resolveWitnessScheme(Miner miner) {
+  private PQScheme resolveWitnessScheme(Miner miner) {
     if (!chainBaseManager.getDynamicPropertiesStore().isAnyPqSchemeAllowed()) {
-      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+      return null;
+    }
+    PQScheme scheme = miner.getPqScheme();
+    if (scheme == null || !PQSchemeRegistry.contains(scheme)) {
+      return null;
+    }
+    if (!chainBaseManager.getDynamicPropertiesStore().isPqSchemeAllowed(scheme)) {
+      return null;
     }
     byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
     AccountCapsule accountCapsule = chainBaseManager.getAccountStore().get(witnessAddress);
     if (accountCapsule == null || !accountCapsule.getInstance().hasWitnessPermission()) {
-      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+      return null;
     }
     Permission witnessPermission = accountCapsule.getInstance().getWitnessPermission();
     if (witnessPermission.getKeysCount() == 0) {
-      return SignatureScheme.UNKNOWN_SIG_SCHEME;
+      return null;
     }
-    Key k = witnessPermission.getKeys(0);
-    return k.hasPqKey() ? k.getPqKey().getScheme() : SignatureScheme.UNKNOWN_SIG_SCHEME;
+    return scheme;
   }
 
-  private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner, SignatureScheme scheme) {
-    byte[] witnessAddress = miner.getWitnessAddress().toByteArray();
-    Permission witnessPermission = chainBaseManager.getAccountStore().get(witnessAddress)
-        .getInstance().getWitnessPermission();
+  private void signWitnessAuth(BlockCapsule blockCapsule, Miner miner, PQScheme scheme) {
     byte[] pqPrivateKey = miner.getPQPrivateKey();
-    if (pqPrivateKey == null) {
+    byte[] pqPublicKey = miner.getPQPublicKey();
+    if (pqPrivateKey == null || pqPublicKey == null) {
       throw new IllegalStateException(
           "witness permission requires " + scheme
-              + " but local PQ private key is not configured");
+              + " but local PQ key material is not configured");
     }
-    byte[] digest = PQAuthDigest.block(blockCapsule.getRawHashBytes(), 0);
-    byte[] signature = PQSignatureRegistry.sign(scheme, pqPrivateKey, digest);
-    PQAuthWitness witnessAuth = PQAuthWitness.newBuilder()
+    byte[] digest = PQAuthDigest.block(blockCapsule.getRawHashBytes());
+    byte[] signature = PQSchemeRegistry.sign(scheme, pqPrivateKey, digest);
+    PQWitness pqWitness = PQWitness.newBuilder()
+        .setScheme(scheme)
+        .setPublicKey(ByteString.copyFrom(pqPublicKey))
         .setSignature(ByteString.copyFrom(signature))
         .build();
-    blockCapsule.setPqWitness(witnessAuth);
+    blockCapsule.setPqWitness(pqWitness);
   }
 
   private void filterOwnerAddress(TransactionCapsule transactionCapsule, Set<String> result) {

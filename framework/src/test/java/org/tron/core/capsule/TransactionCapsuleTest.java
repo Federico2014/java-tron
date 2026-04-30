@@ -15,9 +15,8 @@ import org.tron.common.BaseTest;
 import org.tron.common.TestConstants;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.pqc.FNDSA;
-import org.tron.common.crypto.pqc.MLDSA44;
-import org.tron.common.crypto.pqc.MLDSA65;
 import org.tron.common.crypto.pqc.PQAuthDigest;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.common.utils.StringUtil;
@@ -26,11 +25,10 @@ import org.tron.core.config.args.Args;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
-import org.tron.protos.Protocol.PQAuthWitness;
-import org.tron.protos.Protocol.PQPublicKey;
+import org.tron.protos.Protocol.PQScheme;
+import org.tron.protos.Protocol.PQWitness;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
-import org.tron.protos.Protocol.SignatureScheme;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result;
@@ -87,21 +85,17 @@ public class TransactionCapsuleTest extends BaseTest {
     Assert.assertEquals(SUCCESS, transactionCapsule.getInstance().getRet(0).getContractRet());
   }
 
-  // --------------------- ML-DSA pq_witness verification ---------------------
+  // --------------------- FN-DSA pq_witness verification (V2) ---------------------
 
   private static final String PQ_OWNER_HEX =
       "41abd4b9367799eaa3197fecb144eb71de1e049abc";
-  private static final String PQ_SIGNER_HEX =
+  private static final String PQ_TO_HEX =
       "41548794500882809695a8a687866e76d4271a1abc";
-
-  private byte[] sign(MLDSA44 kp, byte[] msg) {
-    return MLDSA44.sign(kp.getPrivateKey(), msg);
-  }
 
   private Transaction buildTransferTx(String ownerHex, int permissionId) {
     TransferContract transfer = TransferContract.newBuilder()
         .setOwnerAddress(ByteString.copyFrom(ByteArray.fromHexString(ownerHex)))
-        .setToAddress(ByteString.copyFrom(ByteArray.fromHexString(PQ_SIGNER_HEX)))
+        .setToAddress(ByteString.copyFrom(ByteArray.fromHexString(PQ_TO_HEX)))
         .setAmount(1L)
         .build();
     Transaction.Contract c = Transaction.Contract.newBuilder()
@@ -113,17 +107,18 @@ public class TransactionCapsuleTest extends BaseTest {
     return Transaction.newBuilder().setRawData(rawData).build();
   }
 
+  /**
+   * V2: bind the PQ public key to the permission via address-as-fingerprint.
+   * The signer address is derived from the public key by the scheme's
+   * fingerprint hash (see {@link PQSchemeRegistry#computeAddress}).
+   */
   private void putAccountWithPQPermission(
-      String ownerHex, byte[] pqPublicKey, SignatureScheme scheme) {
+      String ownerHex, byte[] pqPublicKey, PQScheme scheme) {
     byte[] addr = ByteArray.fromHexString(ownerHex);
-    byte[] signerAddr = ByteArray.fromHexString(PQ_SIGNER_HEX);
+    byte[] signerAddr = PQSchemeRegistry.computeAddress(scheme, pqPublicKey);
     Key pqKey = Key.newBuilder()
         .setAddress(ByteString.copyFrom(signerAddr))
         .setWeight(1L)
-        .setPqKey(PQPublicKey.newBuilder()
-            .setScheme(scheme)
-            .setPublicKey(ByteString.copyFrom(pqPublicKey))
-            .build())
         .build();
     Permission owner = Permission.newBuilder()
         .setType(PermissionType.Owner)
@@ -139,11 +134,12 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void pqWitnessBeforeActivationRejected() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
     dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0).toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(new byte[2420]))
+        .addPqWitness(PQWitness.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(new byte[FNDSA.PUBLIC_KEY_LENGTH]))
+            .setSignature(ByteString.copyFrom(new byte[FNDSA.SIGNATURE_LENGTH]))
             .build())
         .build();
     TransactionCapsule cap = new TransactionCapsule(tx);
@@ -157,37 +153,20 @@ public class TransactionCapsuleTest extends BaseTest {
   }
 
   @Test
-  public void signatureAndPQAuthWitnessAreMutuallyExclusive() {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
-    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0).toBuilder()
-        .addSignature(ByteString.copyFrom(new byte[65]))
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(new byte[2420]))
-            .build())
-        .build();
-    TransactionCapsule cap = new TransactionCapsule(tx);
-    try {
-      cap.validatePubSignature(dbManager.getAccountStore(),
-          dbManager.getDynamicPropertiesStore());
-      Assert.fail("should reject when both signature and pq_witness present");
-    } catch (ValidateSignatureException e) {
-      Assert.assertTrue(e.getMessage().contains("mutually exclusive"));
-    }
-  }
-
-  @Test
-  public void validPQAuthWitnessAccepted() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
-    MLDSA44 kp = new MLDSA44();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
+  public void validPQWitnessAccepted() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
 
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
     byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
-    byte[] sig = sign(kp, digest);
+    byte[] digest = PQAuthDigest.tx(txid, 0);
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
 
     Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
+        .addPqWitness(PQWitness.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
             .setSignature(ByteString.copyFrom(sig))
             .build())
         .build();
@@ -198,43 +177,47 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void duplicateSignerRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
-    MLDSA44 kp = new MLDSA44();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
 
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
     byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
-    byte[] sig = sign(kp, digest);
-    PQAuthWitness aw = PQAuthWitness.newBuilder()
+    byte[] digest = PQAuthDigest.tx(txid, 0);
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
+    PQWitness w = PQWitness.newBuilder()
+        .setScheme(PQScheme.FN_DSA_512)
+        .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
         .setSignature(ByteString.copyFrom(sig))
         .build();
-    Transaction signed = tx.toBuilder().addPqWitness(aw).addPqWitness(aw).build();
+    Transaction signed = tx.toBuilder().addPqWitness(w).addPqWitness(w).build();
 
     TransactionCapsule cap = new TransactionCapsule(signed);
     try {
       cap.validatePubSignature(dbManager.getAccountStore(),
           dbManager.getDynamicPropertiesStore());
-      Assert.fail("duplicate key_id should be rejected");
+      Assert.fail("duplicate signer should be rejected");
     } catch (ValidateSignatureException e) {
-      Assert.assertTrue(e.getMessage().contains("duplicate key_id"));
+      Assert.assertTrue(e.getMessage().contains("has signed twice"));
     }
   }
 
   @Test
-  public void tamperedPQAuthWitnessRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
-    MLDSA44 kp = new MLDSA44();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
+  public void tamperedPQWitnessRejected() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
 
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
     byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
-    byte[] sig = sign(kp, digest);
+    byte[] digest = PQAuthDigest.tx(txid, 0);
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
     sig[0] ^= 0x01;
 
     Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
+        .addPqWitness(PQWitness.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
             .setSignature(ByteString.copyFrom(sig))
             .build())
         .build();
@@ -250,18 +233,21 @@ public class TransactionCapsuleTest extends BaseTest {
 
   @Test
   public void signerNotInPermissionRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
-    MLDSA44 kp = new MLDSA44();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_44);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    FNDSA known = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, known.getPublicKey(), PQScheme.FN_DSA_512);
 
+    // Sign with a *different* keypair → derived address is not in the permission.
+    FNDSA stranger = new FNDSA();
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
     byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 1);
-    byte[] sig = sign(kp, digest);
+    byte[] digest = PQAuthDigest.tx(txid, 0);
+    byte[] sig = FNDSA.sign(stranger.getPrivateKey(), digest);
 
     Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setKeyId(1)
+        .addPqWitness(PQWitness.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(stranger.getPublicKey()))
             .setSignature(ByteString.copyFrom(sig))
             .build())
         .build();
@@ -269,9 +255,9 @@ public class TransactionCapsuleTest extends BaseTest {
     try {
       cap.validatePubSignature(dbManager.getAccountStore(),
           dbManager.getDynamicPropertiesStore());
-      Assert.fail("out-of-range key_id should be rejected");
+      Assert.fail("signer outside permission should be rejected");
     } catch (ValidateSignatureException e) {
-      Assert.assertTrue(e.getMessage().contains("key_id out of range"));
+      Assert.assertTrue(e.getMessage().contains("not contained of permission"));
     }
   }
 
@@ -279,10 +265,9 @@ public class TransactionCapsuleTest extends BaseTest {
    * TRC20 transfer(address,uint256) call data: 4-byte selector + 32-byte address + 32-byte amount.
    */
   private Transaction buildTrc20TransferTx(String ownerHex, int permissionId) {
-    // transfer(address,uint256) selector
     byte[] selector = ByteArray.fromHexString("a9059cbb");
     byte[] toAddrPadded = new byte[32];
-    byte[] toRaw = ByteArray.fromHexString(PQ_SIGNER_HEX.substring(2)); // strip "41"
+    byte[] toRaw = ByteArray.fromHexString(PQ_TO_HEX.substring(2)); // strip "41"
     System.arraycopy(toRaw, 0, toAddrPadded, 12, 20);
     byte[] amountPadded = new byte[32];
     amountPadded[31] = (byte) 100; // 100 tokens
@@ -311,7 +296,7 @@ public class TransactionCapsuleTest extends BaseTest {
 
   /**
    * Returns [serializedSize, packSize, maxTxPerBlock] rows ordered by signature size:
-   * ECKey, FN-DSA-512, ML-DSA-44, ML-DSA-65.
+   * ECKey, FN-DSA-512.
    */
   private long[][] measureSizes(Transaction baseTx) {
     final long blockLimit = 2_000_000L;
@@ -323,12 +308,14 @@ public class TransactionCapsuleTest extends BaseTest {
     long ecSerial = ecCap.getInstance().toByteArray().length;
     long ecPack = ecCap.computeTrxSizeForBlockMessage();
 
-    // FN-DSA-512: variable-length signature (<= 752 bytes) in pq_witness
+    // FN-DSA-512: variable-length signature (<= 752 bytes) + 897-byte public key
     FNDSA kpFn = new FNDSA();
     byte[] txidFn = Sha256Hash.of(true, baseTx.getRawData().toByteArray()).getBytes();
-    byte[] sigFn = FNDSA.sign(kpFn.getPrivateKey(), PQAuthDigest.tx(txidFn, 0, 0));
+    byte[] sigFn = FNDSA.sign(kpFn.getPrivateKey(), PQAuthDigest.tx(txidFn, 0));
     Transaction txFn = baseTx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
+        .addPqWitness(PQWitness.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(kpFn.getPublicKey()))
             .setSignature(ByteString.copyFrom(sigFn))
             .build())
         .build();
@@ -336,37 +323,9 @@ public class TransactionCapsuleTest extends BaseTest {
     long dFnSerial = txFn.toByteArray().length;
     long dFnPack = capFn.computeTrxSizeForBlockMessage();
 
-    // ML-DSA-44: 2420-byte signature in pq_witness
-    MLDSA44 kp44 = new MLDSA44();
-    byte[] txid44 = Sha256Hash.of(true, baseTx.getRawData().toByteArray()).getBytes();
-    byte[] sig44 = MLDSA44.sign(kp44.getPrivateKey(), PQAuthDigest.tx(txid44, 0, 0));
-    Transaction tx44 = baseTx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(sig44))
-            .build())
-        .build();
-    TransactionCapsule cap44 = new TransactionCapsule(tx44);
-    long d44Serial = tx44.toByteArray().length;
-    long d44Pack = cap44.computeTrxSizeForBlockMessage();
-
-    // ML-DSA-65: 3309-byte signature in pq_witness
-    MLDSA65 kp65 = new MLDSA65();
-    byte[] txid65 = Sha256Hash.of(true, baseTx.getRawData().toByteArray()).getBytes();
-    byte[] sig65 = MLDSA65.sign(kp65.getPrivateKey(), PQAuthDigest.tx(txid65, 0, 0));
-    Transaction tx65 = baseTx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(sig65))
-            .build())
-        .build();
-    TransactionCapsule cap65 = new TransactionCapsule(tx65);
-    long d65Serial = tx65.toByteArray().length;
-    long d65Pack = cap65.computeTrxSizeForBlockMessage();
-
     return new long[][]{
         {ecSerial,  ecPack,  blockLimit / ecPack},
         {dFnSerial, dFnPack, blockLimit / dFnPack},
-        {d44Serial, d44Pack, blockLimit / d44Pack},
-        {d65Serial, d65Pack, blockLimit / d65Pack}
     };
   }
 
@@ -375,111 +334,40 @@ public class TransactionCapsuleTest extends BaseTest {
     long[][] trx   = measureSizes(buildTransferTx(PQ_OWNER_HEX, 0));
     long[][] trc20 = measureSizes(buildTrc20TransferTx(PQ_OWNER_HEX, 0));
 
-    String[] labels = {"ECKey (ECDSA)", "FN-DSA-512", "ML-DSA-44", "ML-DSA-65"};
+    String[] labels = {"ECKey (ECDSA)", "FN-DSA-512"};
     System.out.println("=== TRX transfer ===");
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < labels.length; i++) {
       System.out.printf("  %s: serial=%d B  pack=%d B  maxTx/block=%d%n",
           labels[i], trx[i][0], trx[i][1], trx[i][2]);
     }
     System.out.println("=== TRC20 transfer ===");
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < labels.length; i++) {
       System.out.printf("  %s: serial=%d B  pack=%d B  maxTx/block=%d%n",
           labels[i], trc20[i][0], trc20[i][1], trc20[i][2]);
     }
 
-    for (int i = 0; i < 3; i++) {
-      Assert.assertTrue(trx[i + 1][0]   > trx[i][0]);
-      Assert.assertTrue(trc20[i + 1][0] > trc20[i][0]);
-      Assert.assertTrue(trx[i + 1][2]   < trx[i][2]);
-      Assert.assertTrue(trc20[i + 1][2] < trc20[i][2]);
-    }
+    // FN-DSA-512 envelope is larger than ECKey, so it fits fewer txs per block.
+    Assert.assertTrue(trx[1][0] > trx[0][0]);
+    Assert.assertTrue(trc20[1][0] > trc20[0][0]);
+    Assert.assertTrue(trx[1][2] < trx[0][2]);
+    Assert.assertTrue(trc20[1][2] < trc20[0][2]);
   }
 
   @Test
-  public void mlDsa65PQAuthWitnessAlsoAccepted() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(1L);
-    MLDSA65 kp = new MLDSA65();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.ML_DSA_65);
-
-    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
-    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
-    byte[] sig = MLDSA65.sign(kp.getPrivateKey(), digest);
-
-    Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(sig))
-            .build())
-        .build();
-    TransactionCapsule cap = new TransactionCapsule(signed);
-    Assert.assertTrue(cap.validatePubSignature(dbManager.getAccountStore(),
-        dbManager.getDynamicPropertiesStore()));
-  }
-
-  @Test
-  public void fnDsaPQAuthWitnessAccepted() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
-    FNDSA kp = new FNDSA();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.FN_DSA);
-
-    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
-    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
-    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
-    Assert.assertTrue("FN-DSA signature must be within protocol bound",
-        sig.length > 0 && sig.length <= FNDSA.SIGNATURE_LENGTH);
-
-    Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(sig))
-            .build())
-        .build();
-    TransactionCapsule cap = new TransactionCapsule(signed);
-    Assert.assertTrue(cap.validatePubSignature(dbManager.getAccountStore(),
-        dbManager.getDynamicPropertiesStore()));
-  }
-
-  @Test
-  public void fnDsaTamperedPQAuthWitnessRejected() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
-    FNDSA kp = new FNDSA();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.FN_DSA);
-
-    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
-    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
-    byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
-    sig[0] ^= 0x01;
-
-    Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
-            .setSignature(ByteString.copyFrom(sig))
-            .build())
-        .build();
-    TransactionCapsule cap = new TransactionCapsule(signed);
-    try {
-      cap.validatePubSignature(dbManager.getAccountStore(),
-          dbManager.getDynamicPropertiesStore());
-      Assert.fail("tampered FN-DSA signature should be rejected");
-    } catch (ValidateSignatureException e) {
-      Assert.assertTrue(e.getMessage().contains("pq sig invalid"));
-    }
-  }
-
-  @Test
-  public void fnDsaPQAuthWitnessRejectedWhenNotActivated() throws Exception {
-    dbManager.getDynamicPropertiesStore().saveAllowMlDsa(0L);
+  public void fnDsaPQWitnessRejectedWhenNotActivated() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
     FNDSA kp = new FNDSA();
-    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), SignatureScheme.FN_DSA);
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
 
     Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
     byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, 0, 0);
+    byte[] digest = PQAuthDigest.tx(txid, 0);
     byte[] sig = FNDSA.sign(kp.getPrivateKey(), digest);
 
     Transaction signed = tx.toBuilder()
-        .addPqWitness(PQAuthWitness.newBuilder()
+        .addPqWitness(PQWitness.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
             .setSignature(ByteString.copyFrom(sig))
             .build())
         .build();
@@ -489,7 +377,7 @@ public class TransactionCapsuleTest extends BaseTest {
           dbManager.getDynamicPropertiesStore());
       Assert.fail("FN-DSA must be rejected when ALLOW_FN_DSA is 0");
     } catch (ValidateSignatureException expected) {
-      // accepted: rejection path triggered
+      Assert.assertTrue(expected.getMessage().contains("no post-quantum scheme is activated"));
     }
   }
 }

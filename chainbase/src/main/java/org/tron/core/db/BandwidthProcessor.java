@@ -143,11 +143,11 @@ public class BandwidthProcessor extends ResourceProcessor {
           long sigOverhead = signatureCount * PER_SIGN_LENGTH;
           if (trx.getInstance().getPqWitnessCount() > 0) {
             long pqWitnessBytes = 0L;
-            for (org.tron.protos.Protocol.PQAuthWitness aw
+            for (org.tron.protos.Protocol.PQWitness aw
                 : trx.getInstance().getPqWitnessList()) {
               pqWitnessBytes += aw.getSerializedSize();
             }
-            sigOverhead = pqWitnessBytes;
+            sigOverhead += pqWitnessBytes;
           }
           long createAccountBytesSize = trx.getInstance().toBuilder().clearRet()
               .build().getSerializedSize() - sigOverhead;

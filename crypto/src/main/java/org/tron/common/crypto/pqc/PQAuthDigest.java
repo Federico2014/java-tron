@@ -11,14 +11,20 @@ import org.tron.common.utils.Sha256Hash;
  * context fields. They differ between transaction and block flows so a
  * transaction signature can never be replayed as a block signature and vice
  * versa.
+ *
+ * <p><b>V2.</b> Address-as-fingerprint binding (0x41 ‖ deriveHash(pk)[0:20])
+ * makes the signing key uniquely identifiable from the witness public_key
+ * itself, so the digest no longer needs to bind a {@code key_id}. The
+ * permission_id is still bound for transactions because it selects which
+ * permission's keys[] is consulted.
  */
 public final class PQAuthDigest {
 
   public static final String TX_DOMAIN = "TRON_TX_AUTH_V1";
   public static final String BLOCK_DOMAIN = "TRON_BLOCK_AUTH_V1";
 
-  static final byte[] TX_DOMAIN_BYTES = TX_DOMAIN.getBytes(StandardCharsets.UTF_8);
-  static final byte[] BLOCK_DOMAIN_BYTES = BLOCK_DOMAIN.getBytes(StandardCharsets.UTF_8);
+  private static final byte[] TX_DOMAIN_BYTES = TX_DOMAIN.getBytes(StandardCharsets.UTF_8);
+  private static final byte[] BLOCK_DOMAIN_BYTES = BLOCK_DOMAIN.getBytes(StandardCharsets.UTF_8);
 
   private PQAuthDigest() {
   }
@@ -26,35 +32,27 @@ public final class PQAuthDigest {
   /**
    * Transaction-level PQ authentication digest.
    *
-   * <pre>digest = SHA-256("TRON_TX_AUTH_V1" || txid || permission_id_be4 || key_id_be4)</pre>
-   *
-   * <p>{@code keyId} is the 0-based index of the signing key in the permission's key list.
-   * For single-key permissions the caller passes 0.
+   * <pre>digest = SHA-256("TRON_TX_AUTH_V1" || txid || permission_id_be4)</pre>
    */
-  public static byte[] tx(byte[] txid, int permissionId, int keyId) {
+  public static byte[] tx(byte[] txid, int permissionId) {
     requireNonNull(txid, "txid");
     MessageDigest md = Sha256Hash.newDigest();
     md.update(TX_DOMAIN_BYTES);
     md.update(txid);
     md.update(intToBe4(permissionId));
-    md.update(intToBe4(keyId));
     return md.digest();
   }
 
   /**
    * Block-level PQ authentication digest.
    *
-   * <pre>digest = SHA-256("TRON_BLOCK_AUTH_V1" || block_header_raw_hash || key_id_be4)</pre>
-   *
-   * <p>{@code keyId} is the 0-based index of the signing key in the witness permission's key list.
-   * For the typical single-key witness permission the caller passes 0.
+   * <pre>digest = SHA-256("TRON_BLOCK_AUTH_V1" || block_header_raw_hash)</pre>
    */
-  public static byte[] block(byte[] blockHeaderRawHash, int keyId) {
+  public static byte[] block(byte[] blockHeaderRawHash) {
     requireNonNull(blockHeaderRawHash, "blockHeaderRawHash");
     MessageDigest md = Sha256Hash.newDigest();
     md.update(BLOCK_DOMAIN_BYTES);
     md.update(blockHeaderRawHash);
-    md.update(intToBe4(keyId));
     return md.digest();
   }
 

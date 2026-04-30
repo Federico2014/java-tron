@@ -17,10 +17,7 @@ import org.bouncycastle.pqc.crypto.falcon.FalconPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.falcon.FalconSigner;
 import org.junit.Before;
 import org.junit.Test;
-import org.tron.common.crypto.pqc.MLDSA44;
-import org.tron.common.crypto.pqc.MLDSA65;
-import org.tron.common.crypto.pqc.PQSignatureRegistry;
-import org.tron.protos.Protocol.SignatureScheme;
+import org.tron.protos.Protocol.PQScheme;
 
 public class FNDSATest {
 
@@ -56,7 +53,7 @@ public class FNDSATest {
 
   @Test
   public void schemeAndLengthsMatchFips206Draft() {
-    assertEquals(SignatureScheme.FN_DSA, keypair.getScheme());
+    assertEquals(PQScheme.FN_DSA_512, keypair.getScheme());
     assertEquals(FNDSA.PUBLIC_KEY_LENGTH, keypair.getPublicKeyLength());
     assertEquals(FNDSA.SIGNATURE_LENGTH, keypair.getSignatureLength());
     assertEquals(FNDSA.PRIVATE_KEY_LENGTH, keypair.getPrivateKeyLength());
@@ -263,82 +260,31 @@ public class FNDSATest {
   public void registryDispatchMatchesDirectCalls() {
     byte[] msg = "registry-dispatch".getBytes();
     byte[] sigDirect = FNDSA.sign(sk.getEncoded(), msg);
-    assertTrue(PQSignatureRegistry.verify(
-        SignatureScheme.FN_DSA, pk.getH(), msg, sigDirect));
-    byte[] sigViaRegistry = PQSignatureRegistry.sign(
-        SignatureScheme.FN_DSA, sk.getEncoded(), msg);
+    assertTrue(PQSchemeRegistry.verify(
+        PQScheme.FN_DSA_512, pk.getH(), msg, sigDirect));
+    byte[] sigViaRegistry = PQSchemeRegistry.sign(
+        PQScheme.FN_DSA_512, sk.getEncoded(), msg);
     assertTrue(FNDSA.verify(pk.getH(), msg, sigViaRegistry));
     assertEquals(FNDSA.PUBLIC_KEY_LENGTH,
-        PQSignatureRegistry.getPublicKeyLength(SignatureScheme.FN_DSA));
+        PQSchemeRegistry.getPublicKeyLength(PQScheme.FN_DSA_512));
     assertEquals(FNDSA.SIGNATURE_LENGTH,
-        PQSignatureRegistry.getSignatureLength(SignatureScheme.FN_DSA));
+        PQSchemeRegistry.getSignatureLength(PQScheme.FN_DSA_512));
   }
 
   @Test
   public void registryIsValidSignatureLengthRespectsUpperBound() {
-    assertTrue(PQSignatureRegistry.isValidSignatureLength(SignatureScheme.FN_DSA, 1));
-    assertTrue(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.FN_DSA, FNDSA.SIGNATURE_LENGTH));
-    assertFalse(PQSignatureRegistry.isValidSignatureLength(SignatureScheme.FN_DSA, 0));
-    assertFalse(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.FN_DSA, FNDSA.SIGNATURE_LENGTH + 1));
-  }
-
-  // ----- B.8 regression: fixed-length schemes still enforce strict equality -----
-
-  @Test
-  public void mlDsa44ValidateSignatureRemainsStrictEquality() {
-    MLDSA44 mlDsa44 = new MLDSA44();
-    // exact length passes
-    mlDsa44.validateSignature(new byte[MLDSA44.SIGNATURE_LENGTH]);
-    // shorter rejected
-    try {
-      mlDsa44.validateSignature(new byte[MLDSA44.SIGNATURE_LENGTH - 1]);
-      fail("ML-DSA-44 must reject undersized signature");
-    } catch (IllegalArgumentException expected) {
-      assertTrue(expected.getMessage().contains("signature length"));
-    }
-    // longer rejected
-    try {
-      mlDsa44.validateSignature(new byte[MLDSA44.SIGNATURE_LENGTH + 1]);
-      fail("ML-DSA-44 must reject oversized signature");
-    } catch (IllegalArgumentException expected) {
-      assertTrue(expected.getMessage().contains("signature length"));
-    }
+    assertTrue(PQSchemeRegistry.isValidSignatureLength(PQScheme.FN_DSA_512, 1));
+    assertTrue(PQSchemeRegistry.isValidSignatureLength(
+        PQScheme.FN_DSA_512, FNDSA.SIGNATURE_LENGTH));
+    assertFalse(PQSchemeRegistry.isValidSignatureLength(PQScheme.FN_DSA_512, 0));
+    assertFalse(PQSchemeRegistry.isValidSignatureLength(
+        PQScheme.FN_DSA_512, FNDSA.SIGNATURE_LENGTH + 1));
   }
 
   @Test
-  public void mlDsa65ValidateSignatureRemainsStrictEquality() {
-    MLDSA65 mlDsa65 = new MLDSA65();
-    mlDsa65.validateSignature(new byte[MLDSA65.SIGNATURE_LENGTH]);
-    try {
-      mlDsa65.validateSignature(new byte[MLDSA65.SIGNATURE_LENGTH - 1]);
-      fail("ML-DSA-65 must reject undersized signature");
-    } catch (IllegalArgumentException expected) {
-      assertTrue(expected.getMessage().contains("signature length"));
-    }
-    try {
-      mlDsa65.validateSignature(new byte[MLDSA65.SIGNATURE_LENGTH + 1]);
-      fail("ML-DSA-65 must reject oversized signature");
-    } catch (IllegalArgumentException expected) {
-      assertTrue(expected.getMessage().contains("signature length"));
-    }
-  }
-
-  @Test
-  public void registryIsValidSignatureLengthForFixedSchemesIsStrictEquality() {
-    assertTrue(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.ML_DSA_44, MLDSA44.SIGNATURE_LENGTH));
-    assertFalse(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.ML_DSA_44, MLDSA44.SIGNATURE_LENGTH - 1));
-    assertFalse(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.ML_DSA_44, MLDSA44.SIGNATURE_LENGTH + 1));
-
-    assertTrue(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.ML_DSA_65, MLDSA65.SIGNATURE_LENGTH));
-    assertFalse(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.ML_DSA_65, MLDSA65.SIGNATURE_LENGTH - 1));
-    assertFalse(PQSignatureRegistry.isValidSignatureLength(
-        SignatureScheme.ML_DSA_65, MLDSA65.SIGNATURE_LENGTH + 1));
+  public void registryComputeAddressMatchesDirect() {
+    assertArrayEquals(
+        FNDSA.computeAddress(pk.getH()),
+        PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, pk.getH()));
   }
 }

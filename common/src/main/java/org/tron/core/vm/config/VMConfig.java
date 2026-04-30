@@ -63,8 +63,6 @@ public class VMConfig {
 
   private static boolean ALLOW_TVM_OSAKA = false;
 
-  private static boolean ALLOW_ML_DSA = false;
-
   private static boolean ALLOW_FN_DSA = false;
 
   private VMConfig() {
@@ -182,10 +180,6 @@ public class VMConfig {
     ALLOW_TVM_OSAKA = allow == 1;
   }
 
-  public static void initAllowMlDsa(long allow) {
-    ALLOW_ML_DSA = allow == 1;
-  }
-
   public static void initAllowFnDsa(long allow) {
     ALLOW_FN_DSA = allow == 1;
   }
@@ -292,10 +286,6 @@ public class VMConfig {
 
   public static boolean allowTvmOsaka() {
     return ALLOW_TVM_OSAKA;
-  }
-
-  public static boolean allowMlDsa() {
-    return ALLOW_ML_DSA;
   }
 
   public static boolean allowFnDsa() {
