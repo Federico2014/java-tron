@@ -1,10 +1,9 @@
 package org.tron.common.crypto.pqc;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
+import org.tron.common.crypto.Hash;
 import org.tron.protos.Protocol.PQScheme;
 
 /**
@@ -15,11 +14,10 @@ import org.tron.protos.Protocol.PQScheme;
  * registered — they flow through the existing {@code SignInterface} path.
  *
  * <p><b>Address binding (V2).</b> A PQ-derived TRON address is
- * {@code 0x41 ‖ deriveHash(scheme, public_key)[0:20]}. The hash function is
- * scheme-specific (see {@link #deriveHash}). For {@code FN_DSA_512} the hash
- * is {@code SHA-256(public_key)} — distinct from the ECDSA flow's
- * {@code Keccak-256(public_key)[12..32]} so that PQ and ECDSA addresses
- * cannot collide.
+ * {@code 0x41 ‖ deriveHash(scheme, public_key)[12..32]}, matching the ECDSA
+ * flow's {@code 0x41 ‖ Keccak-256(public_key)[12..32]} so PQ and ECDSA
+ * addresses share the same derivation shape. The hash function is scheme-
+ * specific (see {@link #deriveHash}); {@code FN_DSA_512} uses Keccak-256.
  */
 public final class PQSchemeRegistry {
 
@@ -34,21 +32,16 @@ public final class PQSchemeRegistry {
 
   /**
    * Fingerprint hash used to derive a 21-byte TRON address from a PQ public key.
-   * V2 first launch uses SHA-256 for FN_DSA_512; later schemes may bind to a
-   * different hash if the PQ scheme has its own canonical fingerprint.
+   * V2 first launch uses Keccak-256 for FN_DSA_512 to match the ECDSA address
+   * derivation; later schemes may bind to a different hash if the PQ scheme has
+   * its own canonical fingerprint.
    */
   public interface FingerprintHash {
     /** Returns the full digest of {@code data} (no truncation). */
     byte[] digest(byte[] data);
   }
 
-  private static final FingerprintHash SHA_256 = data -> {
-    try {
-      return MessageDigest.getInstance("SHA-256").digest(data);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 not available", e);
-    }
-  };
+  private static final FingerprintHash KECCAK_256 = Hash::sha3;
 
   private static final class SchemeInfo {
     final int publicKeyLength;
@@ -73,7 +66,7 @@ public final class PQSchemeRegistry {
     EnumMap<PQScheme, SchemeInfo> m = new EnumMap<>(PQScheme.class);
     m.put(PQScheme.FN_DSA_512, new SchemeInfo(
         FNDSA.PUBLIC_KEY_LENGTH, FNDSA.SIGNATURE_LENGTH, FNDSA.SEED_LENGTH,
-        SHA_256,
+        KECCAK_256,
         new SignatureOps() {
           @Override
           public byte[] sign(byte[] privateKey, byte[] message) {
@@ -155,13 +148,14 @@ public final class PQSchemeRegistry {
 
   /**
    * Derive the 21-byte TRON address from a PQ public key as
-   * {@code 0x41 ‖ deriveHash(scheme, public_key)[0:20]}.
+   * {@code 0x41 ‖ deriveHash(scheme, public_key)[12..32]} — the rightmost 20
+   * bytes of the digest, matching the ECDSA address derivation slice.
    */
   public static byte[] computeAddress(PQScheme scheme, byte[] publicKey) {
     byte[] h = deriveHash(scheme, publicKey);
     byte[] addr = new byte[21];
     addr[0] = 0x41;
-    System.arraycopy(h, 0, addr, 1, 20);
+    System.arraycopy(h, h.length - 20, addr, 1, 20);
     return addr;
   }
 

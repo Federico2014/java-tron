@@ -12,7 +12,7 @@ import org.tron.common.utils.Sha256Hash;
  * transaction signature can never be replayed as a block signature and vice
  * versa.
  *
- * <p><b>V2.</b> Address-as-fingerprint binding (0x41 ‖ deriveHash(pk)[0:20])
+ * <p><b>V2.</b> Address-as-fingerprint binding (0x41 ‖ deriveHash(pk)[12..32])
  * makes the signing key uniquely identifiable from the witness public_key
  * itself, so the digest no longer needs to bind a {@code key_id}. The
  * permission_id is still bound for transactions because it selects which

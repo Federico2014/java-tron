@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import org.junit.Test;
+import org.tron.common.crypto.Hash;
 import org.tron.protos.Protocol.PQScheme;
 
 /**
@@ -35,14 +36,12 @@ public class FNDSAKatTest {
     final byte[] seed;
     final String pkSha256;
     final String skSha256;
-    final String addressHex;
 
-    KatVector(String label, byte[] seed, String pkSha256, String skSha256, String addressHex) {
+    KatVector(String label, byte[] seed, String pkSha256, String skSha256) {
       this.label = label;
       this.seed = seed;
       this.pkSha256 = pkSha256;
       this.skSha256 = skSha256;
-      this.addressHex = addressHex;
     }
   }
 
@@ -71,24 +70,19 @@ public class FNDSAKatTest {
   private static final KatVector[] VECTORS = {
       new KatVector("incrementing", seedIncrementing(),
           "1cc09837c6931f9c5988e59ad0acd4e8bc5f13e274573d0edb444822cd4afc90",
-          "960a83b03e1a8a075002be97f7a92959a2b60c91184cabac06172d8821c32d6a",
-          "411cc09837c6931f9c5988e59ad0acd4e8bc5f13e2"),
+          "960a83b03e1a8a075002be97f7a92959a2b60c91184cabac06172d8821c32d6a"),
       new KatVector("all_zero", seedFilled(0x00),
           "708a446d675ee40027562aa2f853b9de0d9c876a08187133bb227c6d372aa1f2",
-          "fb05b4c139c8fd08b9ae3ecf3da9cc375623aeef38b20ecdb5bbd8c7c02e7324",
-          "41708a446d675ee40027562aa2f853b9de0d9c876a"),
+          "fb05b4c139c8fd08b9ae3ecf3da9cc375623aeef38b20ecdb5bbd8c7c02e7324"),
       new KatVector("all_ff", seedFilled(0xff),
           "4744e8d541a208ae10f62f5175c6eda7b695f3fd32b2145a38f8b16665a350b0",
-          "e9adaa331dd9dc8d5881578e25bee75050105d7885bc7eac4e5e7f7fbba5612d",
-          "414744e8d541a208ae10f62f5175c6eda7b695f3fd"),
+          "e9adaa331dd9dc8d5881578e25bee75050105d7885bc7eac4e5e7f7fbba5612d"),
       new KatVector("all_aa", seedFilled(0xaa),
           "0894fd3551559bf8dbfd2ca828081c4f6998a16d65e63c595cf24178a2f952d3",
-          "b2c4678087cba90219fb590bf618a88eb663db96c1ad9c572ff86d38e8d78e1f",
-          "410894fd3551559bf8dbfd2ca828081c4f6998a16d"),
+          "b2c4678087cba90219fb590bf618a88eb663db96c1ad9c572ff86d38e8d78e1f"),
       new KatVector("descending", seedDescending(),
           "d2191201811bf061040a012d1799dcdacb055e844d99164e0ddc45c71007d829",
-          "dce0af30c51875158f3ea7c24b4ced289f49ce6123148994dc2a79548e678c2f",
-          "41d2191201811bf061040a012d1799dcdacb055e84"),
+          "dce0af30c51875158f3ea7c24b4ced289f49ce6123148994dc2a79548e678c2f"),
   };
 
   private static byte[] sha256(byte[] in) {
@@ -105,15 +99,6 @@ public class FNDSAKatTest {
       sb.append(String.format("%02x", x));
     }
     return sb.toString();
-  }
-
-  private static byte[] unhex(String s) {
-    int n = s.length() / 2;
-    byte[] out = new byte[n];
-    for (int i = 0; i < n; i++) {
-      out[i] = (byte) Integer.parseInt(s.substring(i * 2, i * 2 + 2), 16);
-    }
-    return out;
   }
 
   @Test
@@ -138,8 +123,6 @@ public class FNDSAKatTest {
       byte[] addr = k.getAddress();
       assertEquals(v.label + ": address length",
           21, addr.length);
-      assertEquals(v.label + ": address hex must match KAT vector",
-          v.addressHex, hex(addr));
 
       byte[] viaRegistry =
           PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, k.getPublicKey());
@@ -149,15 +132,15 @@ public class FNDSAKatTest {
   }
 
   @Test
-  public void addressIsExactly0x41PlusSha256First20BytesOfPublicKey() {
+  public void addressIsExactly0x41PlusKeccak256RightmostBytesOfPublicKey() {
     for (KatVector v : VECTORS) {
       FNDSA k = new FNDSA(v.seed);
       byte[] pk = k.getPublicKey();
-      byte[] hash = sha256(pk);
+      byte[] hash = Hash.sha3(pk);
       byte[] expected = new byte[21];
       expected[0] = 0x41;
-      System.arraycopy(hash, 0, expected, 1, 20);
-      assertArrayEquals(v.label + ": address must be 0x41 ‖ SHA-256(pk)[0:20]",
+      System.arraycopy(hash, hash.length - 20, expected, 1, 20);
+      assertArrayEquals(v.label + ": address must be 0x41 ‖ Keccak-256(pk)[12..32]",
           expected, k.getAddress());
     }
   }
@@ -181,7 +164,7 @@ public class FNDSAKatTest {
     for (KatVector v : VECTORS) {
       pkDigests.add(v.pkSha256);
       skDigests.add(v.skSha256);
-      addresses.add(v.addressHex);
+      addresses.add(hex(new FNDSA(v.seed).getAddress()));
     }
     assertEquals("KAT pk digests must be pairwise distinct",
         VECTORS.length, pkDigests.size());
@@ -189,21 +172,6 @@ public class FNDSAKatTest {
         VECTORS.length, skDigests.size());
     assertEquals("KAT addresses must be pairwise distinct",
         VECTORS.length, addresses.size());
-  }
-
-  @Test
-  public void everyVectorAddressMatchesItsPkDigestPrefix() {
-    for (KatVector v : VECTORS) {
-      byte[] pkDigest = unhex(v.pkSha256);
-      byte[] expectedAddr = unhex(v.addressHex);
-      assertEquals(v.label + ": address must start with 0x41",
-          (byte) 0x41, expectedAddr[0]);
-      for (int i = 0; i < 20; i++) {
-        assertEquals(v.label + ": address byte " + (i + 1)
-                + " must equal pk SHA-256 byte " + i,
-            pkDigest[i], expectedAddr[i + 1]);
-      }
-    }
   }
 
   @Test

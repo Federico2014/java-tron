@@ -24,7 +24,7 @@ public interface PQSignature {
 
   /**
    * 21-byte TRON address derived from the held public key as
-   * {@code 0x41 ‖ deriveHash(scheme, public_key)[0:20]} (see
+   * {@code 0x41 ‖ deriveHash(scheme, public_key)[12..32]} (see
    * {@link PQSchemeRegistry#computeAddress}).
    */
   byte[] getAddress();
