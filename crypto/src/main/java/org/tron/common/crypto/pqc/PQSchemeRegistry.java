@@ -18,6 +18,12 @@ import org.tron.protos.Protocol.PQScheme;
  * flow's {@code 0x41 ‖ Keccak-256(public_key)[12..32]} so PQ and ECDSA
  * addresses share the same derivation shape. The hash function is scheme-
  * specific (see {@link #deriveHash}); {@code FN_DSA_512} uses Keccak-256.
+ *
+ * <p><b>Wire-format default.</b> {@code UNKNOWN_PQ_SCHEME = 0} is the proto3
+ * default (reserved for the {@code UNKNOWN_} API-evolution slot); on the wire
+ * it is interpreted as {@code FN_DSA_512} so V2-launch witnesses pay zero
+ * bytes for the scheme tag. All public methods normalize via
+ * {@link #resolve(PQScheme)} before dispatch.
  */
 public final class PQSchemeRegistry {
 
@@ -89,8 +95,23 @@ public final class PQSchemeRegistry {
   private PQSchemeRegistry() {
   }
 
+  /**
+   * Map a wire-format {@link PQScheme} to its registered scheme. The proto3
+   * default {@code UNKNOWN_PQ_SCHEME} is normalized to {@code FN_DSA_512} so
+   * V2-launch witnesses that omit the scheme tag are decoded as Falcon-512.
+   * {@code null} and {@code UNRECOGNIZED} pass through unchanged so the
+   * caller-side {@code contains}/{@code require} checks reject them.
+   */
+  public static PQScheme resolve(PQScheme scheme) {
+    if (scheme == PQScheme.UNKNOWN_PQ_SCHEME) {
+      return PQScheme.FN_DSA_512;
+    }
+    return scheme;
+  }
+
   public static boolean contains(PQScheme scheme) {
-    return scheme != null && SCHEMES.containsKey(scheme);
+    PQScheme resolved = resolve(scheme);
+    return resolved != null && SCHEMES.containsKey(resolved);
   }
 
   public static int getPublicKeyLength(PQScheme scheme) {
@@ -112,8 +133,9 @@ public final class PQSchemeRegistry {
    * any {@code 1..max}.
    */
   public static boolean isValidSignatureLength(PQScheme scheme, int length) {
-    SchemeInfo info = require(scheme);
-    if (scheme == PQScheme.FN_DSA_512) {
+    PQScheme resolved = resolve(scheme);
+    SchemeInfo info = require(resolved);
+    if (resolved == PQScheme.FN_DSA_512) {
       return length > 0 && length <= info.signatureLength;
     }
     return length == info.signatureLength;
@@ -163,7 +185,8 @@ public final class PQSchemeRegistry {
     if (scheme == null) {
       throw new IllegalArgumentException("scheme must not be null");
     }
-    SchemeInfo info = SCHEMES.get(scheme);
+    PQScheme resolved = resolve(scheme);
+    SchemeInfo info = SCHEMES.get(resolved);
     if (info == null) {
       throw new IllegalArgumentException(
           "no PQSignature registered for scheme: " + scheme);

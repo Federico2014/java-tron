@@ -3025,6 +3025,7 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
       return false;
     }
     switch (scheme) {
+      case UNKNOWN_PQ_SCHEME: // proto3 default → Falcon-512 (see PQSchemeRegistry#resolve)
       case FN_DSA_512:
         return allowFnDsa();
       default:

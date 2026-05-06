@@ -287,4 +287,27 @@ public class FNDSATest {
         FNDSA.computeAddress(pk.getH()),
         PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, pk.getH()));
   }
+
+  @Test
+  public void unknownPqSchemeResolvesToFnDsa512() {
+    assertEquals(PQScheme.FN_DSA_512,
+        PQSchemeRegistry.resolve(PQScheme.UNKNOWN_PQ_SCHEME));
+    assertTrue(PQSchemeRegistry.contains(PQScheme.UNKNOWN_PQ_SCHEME));
+    assertEquals(FNDSA.PUBLIC_KEY_LENGTH,
+        PQSchemeRegistry.getPublicKeyLength(PQScheme.UNKNOWN_PQ_SCHEME));
+    assertEquals(FNDSA.SIGNATURE_LENGTH,
+        PQSchemeRegistry.getSignatureLength(PQScheme.UNKNOWN_PQ_SCHEME));
+    assertTrue(PQSchemeRegistry.isValidSignatureLength(
+        PQScheme.UNKNOWN_PQ_SCHEME, FNDSA.SIGNATURE_LENGTH));
+    assertArrayEquals(
+        FNDSA.computeAddress(pk.getH()),
+        PQSchemeRegistry.computeAddress(PQScheme.UNKNOWN_PQ_SCHEME, pk.getH()));
+
+    byte[] msg = "unknown-resolves-to-falcon".getBytes();
+    byte[] sig = PQSchemeRegistry.sign(
+        PQScheme.UNKNOWN_PQ_SCHEME, sk.getEncoded(), msg);
+    assertTrue(PQSchemeRegistry.verify(
+        PQScheme.UNKNOWN_PQ_SCHEME, pk.getH(), msg, sig));
+    assertTrue(FNDSA.verify(pk.getH(), msg, sig));
+  }
 }
