@@ -9,6 +9,8 @@ import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -493,9 +495,11 @@ public class RpcApiServicesTest {
 
   @Test
   public void testScanNoteByIvk() {
+    ByteString dummyKey32 = ByteString.copyFrom(new byte[32]);
     IvkDecryptParameters message = IvkDecryptParameters.newBuilder()
         .setStartBlockIndex(0)
         .setEndBlockIndex(1)
+        .setIvk(dummyKey32)
         .build();
     assertNotNull(blockingStubFull.scanNoteByIvk(message));
     assertNotNull(blockingStubSolidity.scanNoteByIvk(message));
@@ -504,9 +508,13 @@ public class RpcApiServicesTest {
 
   @Test
   public void testScanAndMarkNoteByIvk() {
+    ByteString dummyKey32 = ByteString.copyFrom(new byte[32]);
     IvkDecryptAndMarkParameters message = IvkDecryptAndMarkParameters.newBuilder()
         .setStartBlockIndex(0)
         .setEndBlockIndex(1)
+        .setIvk(dummyKey32)
+        .setAk(dummyKey32)
+        .setNk(dummyKey32)
         .build();
     assertNotNull(blockingStubFull.scanAndMarkNoteByIvk(message));
     assertNotNull(blockingStubSolidity.scanAndMarkNoteByIvk(message));
@@ -536,9 +544,15 @@ public class RpcApiServicesTest {
 
   @Test
   public void testScanShieldedTRC20NotesByIvk() {
+    ByteString dummyKey32 = ByteString.copyFrom(new byte[32]);
+    ByteString dummyAddr21 = ByteString.copyFrom(new byte[21]);
     IvkDecryptTRC20Parameters message = IvkDecryptTRC20Parameters.newBuilder()
         .setStartBlockIndex(1)
         .setEndBlockIndex(10)
+        .setIvk(dummyKey32)
+        .setAk(dummyKey32)
+        .setNk(dummyKey32)
+        .setShieldedTRC20ContractAddress(dummyAddr21)
         .build();
     assertNotNull(blockingStubFull.scanShieldedTRC20NotesByIvk(message));
     assertNotNull(blockingStubSolidity.scanShieldedTRC20NotesByIvk(message));
@@ -547,13 +561,84 @@ public class RpcApiServicesTest {
 
   @Test
   public void testScanShieldedTRC20NotesByOvk() {
+    ByteString dummyKey32 = ByteString.copyFrom(new byte[32]);
+    ByteString dummyAddr21 = ByteString.copyFrom(new byte[21]);
     OvkDecryptTRC20Parameters message = OvkDecryptTRC20Parameters.newBuilder()
         .setStartBlockIndex(1)
         .setEndBlockIndex(10)
+        .setOvk(dummyKey32)
+        .setShieldedTRC20ContractAddress(dummyAddr21)
         .build();
     assertNotNull(blockingStubFull.scanShieldedTRC20NotesByOvk(message));
     assertNotNull(blockingStubSolidity.scanShieldedTRC20NotesByOvk(message));
     assertNotNull(blockingStubPBFT.scanShieldedTRC20NotesByOvk(message));
+  }
+
+  @Test
+  public void testScanNoteByIvkRejectsInvalidLength() {
+    IvkDecryptParameters message = IvkDecryptParameters.newBuilder()
+        .setStartBlockIndex(0)
+        .setEndBlockIndex(1)
+        .setIvk(ByteString.copyFrom(new byte[31]))
+        .build();
+    try {
+      blockingStubFull.scanNoteByIvk(message);
+      Assert.fail("Expected INVALID_ARGUMENT");
+    } catch (StatusRuntimeException e) {
+      Assert.assertEquals(Status.Code.INVALID_ARGUMENT, e.getStatus().getCode());
+    }
+  }
+
+  @Test
+  public void testScanAndMarkNoteByIvkRejectsInvalidLength() {
+    ByteString dummyKey32 = ByteString.copyFrom(new byte[32]);
+    IvkDecryptAndMarkParameters message = IvkDecryptAndMarkParameters.newBuilder()
+        .setStartBlockIndex(0)
+        .setEndBlockIndex(1)
+        .setIvk(ByteString.copyFrom(new byte[31]))
+        .setAk(dummyKey32)
+        .setNk(dummyKey32)
+        .build();
+    try {
+      blockingStubFull.scanAndMarkNoteByIvk(message);
+      Assert.fail("Expected INVALID_ARGUMENT");
+    } catch (StatusRuntimeException e) {
+      Assert.assertEquals(Status.Code.INVALID_ARGUMENT, e.getStatus().getCode());
+    }
+  }
+
+  @Test
+  public void testScanShieldedTRC20NotesByIvkRejectsInvalidLength() {
+    IvkDecryptTRC20Parameters message = IvkDecryptTRC20Parameters.newBuilder()
+        .setStartBlockIndex(1)
+        .setEndBlockIndex(10)
+        .setIvk(ByteString.copyFrom(new byte[31]))
+        .setAk(ByteString.copyFrom(new byte[32]))
+        .setNk(ByteString.copyFrom(new byte[32]))
+        .setShieldedTRC20ContractAddress(ByteString.copyFrom(new byte[21]))
+        .build();
+    try {
+      blockingStubFull.scanShieldedTRC20NotesByIvk(message);
+      Assert.fail("Expected INVALID_ARGUMENT");
+    } catch (StatusRuntimeException e) {
+      Assert.assertEquals(Status.Code.INVALID_ARGUMENT, e.getStatus().getCode());
+    }
+  }
+
+  @Test
+  public void testScanShieldedTRC20NotesByOvkRejectsInvalidLength() {
+    OvkDecryptTRC20Parameters message = OvkDecryptTRC20Parameters.newBuilder()
+        .setStartBlockIndex(1)
+        .setEndBlockIndex(10)
+        .setOvk(ByteString.copyFrom(new byte[31]))
+        .setShieldedTRC20ContractAddress(ByteString.copyFrom(new byte[21]))
+        .build();
+    try {
+      blockingStubFull.scanShieldedTRC20NotesByOvk(message);
+      Assert.fail("Expected INVALID_ARGUMENT");
+    } catch (StatusRuntimeException e) {
+      Assert.assertEquals(Status.Code.INVALID_ARGUMENT, e.getStatus().getCode());
+    }
   }
 
   //  @Test

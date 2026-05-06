@@ -70,11 +70,30 @@ public class ScanShieldedTRC20NotesByIvkServlet extends RateLimiterServlet {
 
       String ak = request.getParameter("ak");
       String nk = request.getParameter("nk");
+      String events = request.getParameter("events");
+      IvkDecryptTRC20Parameters.Builder builder = IvkDecryptTRC20Parameters.newBuilder();
+      if (events != null && !events.isEmpty()) {
+        JSONArray eventsArray = JSONArray.parseArray(events);
+        for (int i = 0; i < eventsArray.size(); i++) {
+          builder.addEvents(eventsArray.getString(i));
+        }
+      }
+
+      byte[] contractAddressBytes = ByteArray.fromHexString(contractAddress);
+      byte[] ivkBytes = ByteArray.fromHexString(ivk);
+      byte[] akBytes = ByteArray.fromHexString(ak);
+      byte[] nkBytes = ByteArray.fromHexString(nk);
+      if (ivkBytes.length != 32 || akBytes.length != 32 || nkBytes.length != 32) {
+        throw new IllegalArgumentException("ivk, ak, nk must each be 32 bytes");
+      }
+      if (contractAddressBytes.length != 21) {
+        throw new IllegalArgumentException("contractAddress must be 21 bytes");
+      }
 
       GrpcAPI.DecryptNotesTRC20 notes = wallet
           .scanShieldedTRC20NotesByIvk(startNum, endNum,
-              ByteArray.fromHexString(contractAddress), ByteArray.fromHexString(ivk),
-              ByteArray.fromHexString(ak), ByteArray.fromHexString(nk), null);
+              contractAddressBytes, ivkBytes, akBytes, nkBytes,
+              builder.getEventsList());
       response.getWriter().println(convertOutput(notes, visible));
     } catch (Exception e) {
       Util.processError(e, response);

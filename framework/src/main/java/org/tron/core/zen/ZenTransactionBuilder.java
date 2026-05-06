@@ -137,6 +137,9 @@ public class ZenTransactionBuilder {
   public TransactionCapsule build(boolean withAsk) throws ZksnarkException {
     TransactionCapsule transactionCapsule;
     long ctx = JLibrustzcash.librustzcashSaplingProvingCtxInit();
+    if (ctx == 0) {
+      throw new ZksnarkException("Failed to initialize proving context");
+    }
 
     try {
       // Create SpendDescriptions
@@ -176,8 +179,6 @@ public class ZenTransactionBuilder {
               bindingSig)
       );
       contractBuilder.setBindingSignature(ByteString.copyFrom(bindingSig));
-    } catch (ZksnarkException e) {
-      throw e;
     } finally {
       JLibrustzcash.librustzcashSaplingProvingCtxFree(ctx);
     }
