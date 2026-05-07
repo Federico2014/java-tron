@@ -1190,7 +1190,7 @@ public class Args extends CommonParameter {
     }
   }
 
-  private static final EnumSet<PQScheme> WITNESS_PQ_SEED_SCHEMES = EnumSet.of(
+  private static final EnumSet<PQScheme> WITNESS_PQ_SCHEMES = EnumSet.of(
       PQScheme.FN_DSA_512);
 
   private static void initLocalWitnesses(Config config, CLIParameter cmd) {
@@ -1229,28 +1229,45 @@ public class Args extends CommonParameter {
       }
     }
 
-    // path 4: PQ seed configuration
-    if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ)) {
-      List<String> pqSeeds = config.getStringList(ConfigKey.LOCAL_WITNESS_SEED_PQ);
-      if (!pqSeeds.isEmpty()) {
+    // path 4: PQ pre-derived keypair configuration
+    if (config.hasPath(ConfigKey.LOCAL_WITNESS_PQ_KEYS)) {
+      List<? extends ConfigObject> pqEntries =
+          config.getObjectList(ConfigKey.LOCAL_WITNESS_PQ_KEYS);
+      if (!pqEntries.isEmpty()) {
         localWitnesses = new LocalWitnesses();
-        // Scheme must be applied before seeds — seed-length validation depends on it.
-        if (config.hasPath(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME)) {
-          String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME);
+        // Scheme must be applied before keypairs — key-length validation depends on it.
+        if (config.hasPath(ConfigKey.LOCAL_WITNESS_PQ_SCHEME)) {
+          String schemeName = config.getString(ConfigKey.LOCAL_WITNESS_PQ_SCHEME);
           try {
             PQScheme scheme = PQScheme.valueOf(schemeName);
-            if (!WITNESS_PQ_SEED_SCHEMES.contains(scheme)) {
-              throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
-                  + ": " + schemeName + "; valid values: " + WITNESS_PQ_SEED_SCHEMES,
+            if (!WITNESS_PQ_SCHEMES.contains(scheme)) {
+              throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_PQ_SCHEME
+                  + ": " + schemeName + "; valid values: " + WITNESS_PQ_SCHEMES,
                   TronError.ErrCode.WITNESS_INIT);
             }
             localWitnesses.setPqScheme(scheme);
           } catch (IllegalArgumentException e) {
-            throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_SEED_PQ_SCHEME
+            throw new TronError("invalid " + ConfigKey.LOCAL_WITNESS_PQ_SCHEME
                 + ": " + schemeName, TronError.ErrCode.WITNESS_INIT);
           }
         }
-        localWitnesses.setPqSeeds(pqSeeds);
+        List<String> pqPrivateKeys = new ArrayList<>(pqEntries.size());
+        List<String> pqPublicKeys = new ArrayList<>(pqEntries.size());
+        for (int i = 0; i < pqEntries.size(); i++) {
+          Config entry = pqEntries.get(i).toConfig();
+          if (!entry.hasPath(ConfigKey.LOCAL_WITNESS_PQ_KEY_PRIV)
+              || !entry.hasPath(ConfigKey.LOCAL_WITNESS_PQ_KEY_PUB)) {
+            throw new TronError(String.format(
+                "%s[%d] must define both '%s' and '%s'",
+                ConfigKey.LOCAL_WITNESS_PQ_KEYS, i,
+                ConfigKey.LOCAL_WITNESS_PQ_KEY_PRIV,
+                ConfigKey.LOCAL_WITNESS_PQ_KEY_PUB),
+                TronError.ErrCode.WITNESS_INIT);
+          }
+          pqPrivateKeys.add(entry.getString(ConfigKey.LOCAL_WITNESS_PQ_KEY_PRIV));
+          pqPublicKeys.add(entry.getString(ConfigKey.LOCAL_WITNESS_PQ_KEY_PUB));
+        }
+        localWitnesses.setPqKeypairs(pqPrivateKeys, pqPublicKeys);
         byte[] address = WitnessInitializer.resolvePqAuthSigAddress(witnessAddr);
         if (address != null) {
           localWitnesses.setWitnessAccountAddress(address);

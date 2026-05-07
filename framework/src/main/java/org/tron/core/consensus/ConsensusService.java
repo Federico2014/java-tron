@@ -50,7 +50,8 @@ public class ConsensusService {
     param.setAgreeNodeCount(parameter.getAgreeNodeCount());
     List<Miner> miners = new ArrayList<>();
     List<String> privateKeys = Args.getLocalWitnesses().getPrivateKeys();
-    List<String> pqSeeds = Args.getLocalWitnesses().getPqSeeds();
+    List<String> pqPrivateKeys = Args.getLocalWitnesses().getPqPrivateKeys();
+    List<String> pqPublicKeys = Args.getLocalWitnesses().getPqPublicKeys();
     if (privateKeys.size() > 1) {
       for (String key : privateKeys) {
         byte[] privateKey = fromHexString(key);
@@ -81,12 +82,13 @@ public class ConsensusService {
       Miner miner = param.new Miner(privateKey, ByteString.copyFrom(privateKeyAddress),
           ByteString.copyFrom(witnessAddress));
       miners.add(miner);
-    } else if (pqSeeds.size() > 1) {
+    } else if (pqPrivateKeys.size() > 1) {
       PQScheme scheme = Args.getLocalWitnesses().getPqScheme();
       requireSupportedPqScheme(scheme);
-      for (String seed : pqSeeds) {
-        byte[] seedBytes = fromHexString(seed);
-        PQSignature keypair = PQSchemeRegistry.fromSeed(scheme, seedBytes);
+      for (int i = 0; i < pqPrivateKeys.size(); i++) {
+        byte[] privBytes = fromHexString(pqPrivateKeys.get(i));
+        byte[] pubBytes = fromHexString(pqPublicKeys.get(i));
+        PQSignature keypair = PQSchemeRegistry.fromKeypair(scheme, privBytes, pubBytes);
         byte[] sk = keypair.getPrivateKey();
         byte[] pk = keypair.getPublicKey();
         byte[] pqAddress = keypair.getAddress();
@@ -100,11 +102,11 @@ public class ConsensusService {
         miner.setPQPublicKey(pk);
         miner.setPqScheme(scheme);
         miners.add(miner);
-        logger.info("Add {} witness (from seed): {}, size: {}",
+        logger.info("Add {} witness (from configured keypair): {}, size: {}",
             scheme, Hex.toHexString(pqAddress), miners.size());
       }
-    } else if (pqSeeds.size() == 1) {
-      miners.add(buildPQOnlyMinerFromSeed(param, pqSeeds.get(0)));
+    } else if (pqPrivateKeys.size() == 1) {
+      miners.add(buildPQOnlyMinerFromKeypair(param, pqPrivateKeys.get(0), pqPublicKeys.get(0)));
     }
 
     param.setMiners(miners);
@@ -114,11 +116,13 @@ public class ConsensusService {
     logger.info("consensus service start success");
   }
 
-  private Miner buildPQOnlyMinerFromSeed(Param param, String pqSeed) {
+  private Miner buildPQOnlyMinerFromKeypair(Param param, String pqPrivateKey,
+      String pqPublicKey) {
     PQScheme scheme = Args.getLocalWitnesses().getPqScheme();
     requireSupportedPqScheme(scheme);
-    byte[] seedBytes = fromHexString(pqSeed);
-    PQSignature keypair = PQSchemeRegistry.fromSeed(scheme, seedBytes);
+    byte[] privBytes = fromHexString(pqPrivateKey);
+    byte[] pubBytes = fromHexString(pqPublicKey);
+    PQSignature keypair = PQSchemeRegistry.fromKeypair(scheme, privBytes, pubBytes);
     byte[] sk = keypair.getPrivateKey();
     byte[] pk = keypair.getPublicKey();
     byte[] pqAddress = keypair.getAddress();
@@ -136,7 +140,8 @@ public class ConsensusService {
     miner.setPQPrivateKey(sk);
     miner.setPQPublicKey(pk);
     miner.setPqScheme(scheme);
-    logger.info("Add {} witness (from seed): {}", scheme, Hex.toHexString(witnessAddress));
+    logger.info("Add {} witness (from configured keypair): {}",
+        scheme, Hex.toHexString(witnessAddress));
     return miner;
   }
 

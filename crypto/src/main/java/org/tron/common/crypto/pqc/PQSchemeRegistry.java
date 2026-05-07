@@ -34,6 +34,8 @@ public final class PQSchemeRegistry {
     boolean verify(byte[] publicKey, byte[] message, byte[] signature);
 
     PQSignature fromSeed(byte[] seed);
+
+    PQSignature fromKeypair(byte[] privateKey, byte[] publicKey);
   }
 
   /**
@@ -50,14 +52,16 @@ public final class PQSchemeRegistry {
   private static final FingerprintHash KECCAK_256 = Hash::sha3;
 
   private static final class SchemeInfo {
+    final int privateKeyLength;
     final int publicKeyLength;
     final int signatureLength;
     final int seedLength;
     final FingerprintHash hash;
     final SignatureOps ops;
 
-    SchemeInfo(int publicKeyLength, int signatureLength, int seedLength,
-        FingerprintHash hash, SignatureOps ops) {
+    SchemeInfo(int privateKeyLength, int publicKeyLength, int signatureLength,
+        int seedLength, FingerprintHash hash, SignatureOps ops) {
+      this.privateKeyLength = privateKeyLength;
       this.publicKeyLength = publicKeyLength;
       this.signatureLength = signatureLength;
       this.seedLength = seedLength;
@@ -71,7 +75,8 @@ public final class PQSchemeRegistry {
   static {
     EnumMap<PQScheme, SchemeInfo> m = new EnumMap<>(PQScheme.class);
     m.put(PQScheme.FN_DSA_512, new SchemeInfo(
-        FNDSA.PUBLIC_KEY_LENGTH, FNDSA.SIGNATURE_LENGTH, FNDSA.SEED_LENGTH,
+        FNDSA.PRIVATE_KEY_LENGTH, FNDSA.PUBLIC_KEY_LENGTH,
+        FNDSA.SIGNATURE_LENGTH, FNDSA.SEED_LENGTH,
         KECCAK_256,
         new SignatureOps() {
           @Override
@@ -87,6 +92,11 @@ public final class PQSchemeRegistry {
           @Override
           public PQSignature fromSeed(byte[] seed) {
             return new FNDSA(seed);
+          }
+
+          @Override
+          public PQSignature fromKeypair(byte[] privateKey, byte[] publicKey) {
+            return new FNDSA(privateKey, publicKey);
           }
         }));
     SCHEMES = Collections.unmodifiableMap(m);
@@ -112,6 +122,10 @@ public final class PQSchemeRegistry {
   public static boolean contains(PQScheme scheme) {
     PQScheme resolved = resolve(scheme);
     return resolved != null && SCHEMES.containsKey(resolved);
+  }
+
+  public static int getPrivateKeyLength(PQScheme scheme) {
+    return require(scheme).privateKeyLength;
   }
 
   public static int getPublicKeyLength(PQScheme scheme) {
@@ -152,6 +166,19 @@ public final class PQSchemeRegistry {
 
   public static PQSignature fromSeed(PQScheme scheme, byte[] seed) {
     return require(scheme).ops.fromSeed(seed);
+  }
+
+  /**
+   * Build a keypair-bound {@link PQSignature} from already-derived private and
+   * public key bytes. Used by the witness-config path when the operator has
+   * pre-computed the keypair off-line and wants to bypass on-node keygen.
+   * Validates {@code privateKey} and {@code publicKey} lengths against the
+   * scheme; cryptographic consistency between the two halves is the caller's
+   * responsibility.
+   */
+  public static PQSignature fromKeypair(
+      PQScheme scheme, byte[] privateKey, byte[] publicKey) {
+    return require(scheme).ops.fromKeypair(privateKey, publicKey);
   }
 
   /**

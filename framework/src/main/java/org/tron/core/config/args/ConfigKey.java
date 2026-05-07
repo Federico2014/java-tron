@@ -13,8 +13,11 @@ final class ConfigKey {
   public static final String LOCAL_WITNESS = "localwitness"; // private key
   public static final String LOCAL_WITNESS_ACCOUNT_ADDRESS = "localWitnessAccountAddress";
   public static final String LOCAL_WITNESS_KEYSTORE = "localwitnesskeystore";
-  public static final String LOCAL_WITNESS_SEED_PQ = "localwitness_seed_pq";
-  public static final String LOCAL_WITNESS_SEED_PQ_SCHEME = "localwitness_seed_pq_scheme";
+  public static final String LOCAL_WITNESS_PQ_KEYS = "localwitness_pq_keys";
+  public static final String LOCAL_WITNESS_PQ_SCHEME = "localwitness_pq_scheme";
+  // Field names inside each entry of localwitness_pq_keys.
+  public static final String LOCAL_WITNESS_PQ_KEY_PRIV = "priv";
+  public static final String LOCAL_WITNESS_PQ_KEY_PUB = "pub";
 
   // crypto
   public static final String CRYPTO_ENGINE = "crypto.engine";
