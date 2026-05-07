@@ -1043,9 +1043,9 @@ public class Args extends CommonParameter {
         config.hasPath(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) ? config
             .getInt(ConfigKey.COMMITTEE_ALLOW_TVM_OSAKA) : 0;
 
-    PARAMETER.allowFnDsa =
-        config.hasPath(ConfigKey.COMMITTEE_ALLOW_FN_DSA) ? config
-            .getInt(ConfigKey.COMMITTEE_ALLOW_FN_DSA) : 0;
+    PARAMETER.allowFnDsa512 =
+        config.hasPath(ConfigKey.COMMITTEE_ALLOW_FN_DSA_512) ? config
+            .getInt(ConfigKey.COMMITTEE_ALLOW_FN_DSA_512) : 0;
 
     logConfig();
   }
@@ -1251,7 +1251,7 @@ public class Args extends CommonParameter {
           }
         }
         localWitnesses.setPqSeeds(pqSeeds);
-        byte[] address = WitnessInitializer.resolvePqWitnessAddress(witnessAddr);
+        byte[] address = WitnessInitializer.resolvePqAuthSigAddress(witnessAddr);
         if (address != null) {
           localWitnesses.setWitnessAccountAddress(address);
         }

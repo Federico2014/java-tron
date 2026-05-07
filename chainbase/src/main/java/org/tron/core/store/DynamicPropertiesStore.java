@@ -241,7 +241,7 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
 
   private static final byte[] ALLOW_TVM_OSAKA = "ALLOW_TVM_OSAKA".getBytes();
 
-  private static final byte[] ALLOW_FN_DSA = "ALLOW_FN_DSA".getBytes();
+  private static final byte[] ALLOW_FN_DSA_512 = "ALLOW_FN_DSA_512".getBytes();
 
   @Autowired
   private DynamicPropertiesStore(@Value("properties") String dbName) {
@@ -2996,24 +2996,24 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
     this.put(ALLOW_TVM_OSAKA, new BytesCapsule(ByteArray.fromLong(value)));
   }
 
-  public long getAllowFnDsa() {
-    return Optional.ofNullable(getUnchecked(ALLOW_FN_DSA))
+  public long getAllowFnDsa512() {
+    return Optional.ofNullable(getUnchecked(ALLOW_FN_DSA_512))
         .map(BytesCapsule::getData)
         .map(ByteArray::toLong)
-        .orElse(CommonParameter.getInstance().getAllowFnDsa());
+        .orElse(CommonParameter.getInstance().getAllowFnDsa512());
   }
 
-  public void saveAllowFnDsa(long value) {
-    this.put(ALLOW_FN_DSA, new BytesCapsule(ByteArray.fromLong(value)));
+  public void saveAllowFnDsa512(long value) {
+    this.put(ALLOW_FN_DSA_512, new BytesCapsule(ByteArray.fromLong(value)));
   }
 
-  public boolean allowFnDsa() {
-    return getAllowFnDsa() == 1L;
+  public boolean allowFnDsa512() {
+    return getAllowFnDsa512() == 1L;
   }
 
   /** Returns true iff at least one post-quantum signature scheme is currently activated. */
   public boolean isAnyPqSchemeAllowed() {
-    return allowFnDsa();
+    return allowFnDsa512();
   }
 
   /**
@@ -3027,7 +3027,7 @@ public class DynamicPropertiesStore extends TronStoreWithRevoking<BytesCapsule> 
     switch (scheme) {
       case UNKNOWN_PQ_SCHEME: // proto3 default → Falcon-512 (see PQSchemeRegistry#resolve)
       case FN_DSA_512:
-        return allowFnDsa();
+        return allowFnDsa512();
       default:
         return false;
     }

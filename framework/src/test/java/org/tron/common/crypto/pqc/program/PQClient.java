@@ -13,25 +13,24 @@ import org.tron.api.GrpcAPI.Return;
 import org.tron.api.WalletGrpc;
 import org.tron.api.WalletGrpc.WalletBlockingStub;
 import org.tron.common.crypto.pqc.FNDSA;
-import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.utils.ByteArray;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.PQScheme;
-import org.tron.protos.Protocol.PQWitness;
+import org.tron.protos.Protocol.PQAuthSig;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 /**
- * Demo client that connects to {@link PQWitnessNode} and broadcasts an FN-DSA-512
+ * Demo client that connects to {@link PQAuthSigNode} and broadcasts an FN-DSA-512
  * signed transfer transaction.
  *
- * The keypair is derived from the same fixed seed used by PQWitnessNode, so no
+ * The keypair is derived from the same fixed seed used by PQAuthSigNode, so no
  * out-of-band key exchange is needed.
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQAuthSigNode
  *   Terminal 2 — broadcast a PQC transaction:
  *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
  *
@@ -57,7 +56,7 @@ public class PQClient {
         .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
-    // ── 1. Derive user keypair from same fixed seed as PQWitnessNode ─────
+    // ── 1. Derive user keypair from same fixed seed as PQAuthSigNode ─────
     byte[] userSeed = new byte[FNDSA.SEED_LENGTH];
     Arrays.fill(userSeed, (byte) 0x02);
     FNDSA userKp = new FNDSA(userSeed);
@@ -65,7 +64,7 @@ public class PQClient {
     byte[] userPub    = userKp.getPublicKey();
     byte[] userPriv   = userKp.getPrivateKey();
     byte[] signerAddr = FNDSA.computeAddress(userPub);
-    byte[] ownerAddr  = PQWitnessNode.USER_ADDR;
+    byte[] ownerAddr  = PQAuthSigNode.USER_ADDR;
 
     System.out.println("=== PQC Client ===");
     System.out.println("Connecting to " + HOST + ":" + PORT);
@@ -108,13 +107,12 @@ public class PQClient {
 
       Transaction tx = Transaction.newBuilder().setRawData(rawData).build();
 
-      // ── 5. Sign with FN-DSA-512 pq_witness ─────────────────────────────
+      // ── 5. Sign with FN-DSA-512 pq_auth_sig ─────────────────────────────
       byte[] txId   = sha256(rawData.toByteArray());
-      byte[] digest = PQAuthDigest.tx(txId, 0);
-      byte[] sig    = FNDSA.sign(userPriv, digest);
+      byte[] sig    = FNDSA.sign(userPriv, txId);
 
       Transaction signedTx = tx.toBuilder()
-          .addPqWitness(PQWitness.newBuilder()
+          .addPqAuthSig(PQAuthSig.newBuilder()
               .setScheme(PQScheme.FN_DSA_512)
               .setPublicKey(ByteString.copyFrom(userPub))
               .setSignature(ByteString.copyFrom(sig)))

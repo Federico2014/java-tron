@@ -16,7 +16,7 @@ import org.tron.core.config.args.Args;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.PQScheme;
-import org.tron.protos.Protocol.PQWitness;
+import org.tron.protos.Protocol.PQAuthSig;
 import org.tron.protos.Protocol.Transaction;
 
 public class UtilTest extends BaseTest {
@@ -170,7 +170,7 @@ public class UtilTest extends BaseTest {
   }
 
   @Test
-  public void roundtripPQWitnessJson() throws Exception {
+  public void roundtripPQAuthSigJson() throws Exception {
     byte[] sig = new byte[752];
     byte[] pubKey = new byte[897];
     for (int i = 0; i < sig.length; i++) {
@@ -179,30 +179,30 @@ public class UtilTest extends BaseTest {
     for (int i = 0; i < pubKey.length; i++) {
       pubKey[i] = (byte) ((i * 7) & 0xff);
     }
-    PQWitness pqWitness = PQWitness.newBuilder()
+    PQAuthSig pqAuthSig = PQAuthSig.newBuilder()
         .setScheme(PQScheme.FN_DSA_512)
         .setPublicKey(ByteString.copyFrom(pubKey))
         .setSignature(ByteString.copyFrom(sig))
         .build();
     Transaction original = Transaction.newBuilder()
         .setRawData(Transaction.raw.newBuilder().setTimestamp(1L).build())
-        .addPqWitness(pqWitness)
+        .addPqAuthSig(pqAuthSig)
         .build();
 
     String json = Util.printTransactionToJSON(original, false).toJSONString();
-    Assert.assertTrue("JSON output should contain pq_witness field",
-        json.contains("pq_witness"));
+    Assert.assertTrue("JSON output should contain pq_auth_sig field",
+        json.contains("pq_auth_sig"));
 
     Transaction.Builder rebuilt = Transaction.newBuilder();
     JsonFormat.merge(json, rebuilt, false);
     Transaction decoded = rebuilt.build();
 
-    Assert.assertEquals(1, decoded.getPqWitnessCount());
-    Assert.assertEquals(pqWitness.getScheme(),
-        decoded.getPqWitness(0).getScheme());
-    Assert.assertEquals(pqWitness.getPublicKey(),
-        decoded.getPqWitness(0).getPublicKey());
-    Assert.assertEquals(pqWitness.getSignature(),
-        decoded.getPqWitness(0).getSignature());
+    Assert.assertEquals(1, decoded.getPqAuthSigCount());
+    Assert.assertEquals(pqAuthSig.getScheme(),
+        decoded.getPqAuthSig(0).getScheme());
+    Assert.assertEquals(pqAuthSig.getPublicKey(),
+        decoded.getPqAuthSig(0).getPublicKey());
+    Assert.assertEquals(pqAuthSig.getSignature(),
+        decoded.getPqAuthSig(0).getSignature());
   }
 }

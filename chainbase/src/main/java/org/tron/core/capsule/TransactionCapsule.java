@@ -44,7 +44,6 @@ import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.Rsv;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
-import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.math.StrictMathWrapper;
@@ -69,7 +68,7 @@ import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.PQScheme;
-import org.tron.protos.Protocol.PQWitness;
+import org.tron.protos.Protocol.PQAuthSig;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
 import org.tron.protos.Protocol.Transaction;
@@ -498,7 +497,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     long weight = checkWeight(permission, transaction.getSignatureList(), hash, approveList);
     signedAddresses.addAll(approveList);
 
-    if (transaction.getPqWitnessCount() > 0) {
+    if (transaction.getPqAuthSigCount() > 0) {
       try {
         weight = StrictMathWrapper.addExact(weight,
             validatePQSignature(transaction, permission, signedAddresses,
@@ -657,17 +656,17 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       throws ValidateSignatureException {
     if (!isVerified) {
       int legacyCount = this.transaction.getSignatureCount();
-      int pqCount = this.transaction.getPqWitnessCount();
+      int pqCount = this.transaction.getPqAuthSigCount();
 
       if (pqCount > 0 && !dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
         throw new ValidateSignatureException(
-            "pq_witness not allowed: no post-quantum scheme is activated");
+            "pq_auth_sig not allowed: no post-quantum scheme is activated");
       }
       if (legacyCount == 0 && pqCount == 0) {
-        throw new ValidateSignatureException("miss sig or contract");
+        throw new ValidateSignatureException("miss sig");
       }
       if (this.transaction.getRawData().getContractCount() <= 0) {
-        throw new ValidateSignatureException("miss sig or contract");
+        throw new ValidateSignatureException("miss contract");
       }
       if (legacyCount + pqCount > dynamicPropertiesStore.getTotalSignNum()) {
         throw new ValidateSignatureException("too many signatures");
@@ -690,7 +689,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
   }
 
   /**
-   * Verify {@code transaction.pq_witness[]} entries against {@code permission}
+   * Verify {@code transaction.pq_auth_sig[]} entries against {@code permission}
    * and return the combined weight contributed by valid PQ witnesses.
    *
    * <p>V2 four-step verification per witness:
@@ -700,20 +699,19 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
    *       scheme's fingerprint hash.</li>
    *   <li>Match against {@code permission.keys[].address}; reject duplicates
    *       and addresses already counted by the legacy ECDSA path.</li>
-   *   <li>Verify the signature over
-   *       {@code SHA-256(domain || txid || permission_id_be4)}.</li>
+   *   <li>Verify the signature over {@code txid} directly; the
+   *       {@code permission_id} is already bound by {@code txid} since it is
+   *       part of {@code raw_data}.</li>
    * </ol>
    */
   static long validatePQSignature(Transaction transaction, Permission permission,
       java.util.Set<ByteString> signedAddresses,
       DynamicPropertiesStore dynamicPropertiesStore)
       throws PermissionException {
-    int permissionId = transaction.getRawData().getContract(0).getPermissionId();
-    byte[] txid = computeRawHash(transaction).getBytes();
-    byte[] digest = PQAuthDigest.tx(txid, permissionId);
+    byte[] digest = computeRawHash(transaction).getBytes();
 
     long weight = 0L;
-    for (PQWitness witness : transaction.getPqWitnessList()) {
+    for (PQAuthSig witness : transaction.getPqAuthSigList()) {
       PQScheme scheme = witness.getScheme();
       if (!PQSchemeRegistry.contains(scheme)) {
         throw new PermissionException("unsupported pq scheme: " + scheme);
@@ -742,7 +740,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       }
       if (matched == null) {
         throw new PermissionException(
-            "pq_witness public key derives to " + encode58Check(derivedAddr)
+            "pq_auth_sig public key derives to " + encode58Check(derivedAddr)
                 + " but it is not contained of permission.");
       }
       if (!PQSchemeRegistry.verify(scheme, pk, digest, sig)) {

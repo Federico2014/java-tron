@@ -774,16 +774,16 @@ public class ProposalUtilTest extends BaseTest {
   }
 
   @Test
-  public void validateAllowFnDsa() {
-    long code = ProposalType.ALLOW_FN_DSA.getCode();
+  public void validateAllowFnDsa512() {
+    long code = ProposalType.ALLOW_FN_DSA_512.getCode();
 
     ContractValidateException thrown = assertThrows(ContractValidateException.class,
         () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 0));
-    assertEquals("This value[ALLOW_FN_DSA] is only allowed to be 1", thrown.getMessage());
+    assertEquals("This value[ALLOW_FN_DSA_512] is only allowed to be 1", thrown.getMessage());
 
     thrown = assertThrows(ContractValidateException.class,
         () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 2));
-    assertEquals("This value[ALLOW_FN_DSA] is only allowed to be 1", thrown.getMessage());
+    assertEquals("This value[ALLOW_FN_DSA_512] is only allowed to be 1", thrown.getMessage());
 
     try {
       ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 1);
@@ -791,10 +791,10 @@ public class ProposalUtilTest extends BaseTest {
       Assert.fail("value=1 should be accepted: " + e.getMessage());
     }
 
-    dynamicPropertiesStore.saveAllowFnDsa(1L);
+    dynamicPropertiesStore.saveAllowFnDsa512(1L);
     thrown = assertThrows(ContractValidateException.class,
         () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 1));
-    assertEquals("[ALLOW_FN_DSA] has been valid, no need to propose again", thrown.getMessage());
-    dynamicPropertiesStore.saveAllowFnDsa(0L);
+    assertEquals("[ALLOW_FN_DSA_512] has been valid, no need to propose again", thrown.getMessage());
+    dynamicPropertiesStore.saveAllowFnDsa512(0L);
   }
 }

@@ -141,13 +141,13 @@ public class BandwidthProcessor extends ResourceProcessor {
           long maxCreateAccountTxSize = dynamicPropertiesStore.getMaxCreateAccountTxSize();
           int signatureCount = trx.getInstance().getSignatureCount();
           long sigOverhead = signatureCount * PER_SIGN_LENGTH;
-          if (trx.getInstance().getPqWitnessCount() > 0) {
-            long pqWitnessBytes = 0L;
-            for (org.tron.protos.Protocol.PQWitness aw
-                : trx.getInstance().getPqWitnessList()) {
-              pqWitnessBytes += aw.getSerializedSize();
+          if (trx.getInstance().getPqAuthSigCount() > 0) {
+            long pqAuthSigBytes = 0L;
+            for (org.tron.protos.Protocol.PQAuthSig aw
+                : trx.getInstance().getPqAuthSigList()) {
+              pqAuthSigBytes += aw.getSerializedSize();
             }
-            sigOverhead += pqWitnessBytes;
+            sigOverhead += pqAuthSigBytes;
           }
           long createAccountBytesSize = trx.getInstance().toBuilder().clearRet()
               .build().getSerializedSize() - sigOverhead;

@@ -122,7 +122,7 @@ public class WitnessInitializer {
   /**
    * Resolve witness address for PQ seed configuration.
    */
-  public static byte[] resolvePqWitnessAddress(String witnessAccountAddress) {
+  public static byte[] resolvePqAuthSigAddress(String witnessAccountAddress) {
     if (StringUtils.isEmpty(witnessAccountAddress)) {
       return null;
     }

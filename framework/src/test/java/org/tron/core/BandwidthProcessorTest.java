@@ -907,7 +907,7 @@ public class BandwidthProcessorTest extends BaseTest {
 
     byte[] fakeSig = new byte[752];
     byte[] fakePub = new byte[897];
-    Protocol.PQWitness pqWitness = Protocol.PQWitness.newBuilder()
+    Protocol.PQAuthSig pqAuthSig = Protocol.PQAuthSig.newBuilder()
         .setScheme(Protocol.PQScheme.FN_DSA_512)
         .setPublicKey(ByteString.copyFrom(fakePub))
         .setSignature(ByteString.copyFrom(fakeSig))
@@ -916,7 +916,7 @@ public class BandwidthProcessorTest extends BaseTest {
     TransactionCapsule baseTrx = new TransactionCapsule(contract,
         chainBaseManager.getAccountStore());
     Transaction withAuth = baseTrx.getInstance().toBuilder()
-        .addPqWitness(pqWitness)
+        .addPqAuthSig(pqAuthSig)
         .build();
     TransactionCapsule trx = new TransactionCapsule(withAuth);
     TransactionTrace trace = new TransactionTrace(trx, StoreFactory.getInstance(),
@@ -924,14 +924,14 @@ public class BandwidthProcessorTest extends BaseTest {
 
     long cap = chainBaseManager.getDynamicPropertiesStore().getMaxCreateAccountTxSize();
     long rawSize = trx.getInstance().toBuilder().clearRet().build().getSerializedSize();
-    Assert.assertTrue("test precondition: raw tx must exceed cap with pq_witness",
+    Assert.assertTrue("test precondition: raw tx must exceed cap with pq_auth_sig",
         rawSize > cap);
 
     BandwidthProcessor processor = new BandwidthProcessor(chainBaseManager);
     try {
       processor.consume(trx, trace);
     } catch (TooBigTransactionException e) {
-      Assert.fail("PQ pq_witness bytes should be deducted from create-account cap check");
+      Assert.fail("PQ pq_auth_sig bytes should be deducted from create-account cap check");
     } finally {
       chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(OWNER_ADDRESS));
       chainBaseManager.getAccountStore().delete(ByteArray.fromHexString(TO_ADDRESS));
@@ -969,7 +969,7 @@ public class BandwidthProcessorTest extends BaseTest {
 
     byte[] fakeSig = new byte[752];
     byte[] fakePub = new byte[897];
-    Protocol.PQWitness pqWitness = Protocol.PQWitness.newBuilder()
+    Protocol.PQAuthSig pqAuthSig = Protocol.PQAuthSig.newBuilder()
         .setScheme(Protocol.PQScheme.FN_DSA_512)
         .setPublicKey(ByteString.copyFrom(fakePub))
         .setSignature(ByteString.copyFrom(fakeSig))
@@ -978,7 +978,7 @@ public class BandwidthProcessorTest extends BaseTest {
     TransactionCapsule baseTrx = new TransactionCapsule(contract,
         chainBaseManager.getAccountStore());
     Transaction withAuth = baseTrx.getInstance().toBuilder()
-        .addPqWitness(pqWitness)
+        .addPqAuthSig(pqAuthSig)
         .build();
     TransactionCapsule trx = new TransactionCapsule(withAuth);
     TransactionTrace trace = new TransactionTrace(trx, StoreFactory.getInstance(),

@@ -291,7 +291,7 @@ public class PrecompiledContracts {
       return blake2F;
     }
 
-    if (VMConfig.allowFnDsa() && address.equals(verifyFnDsaAddr)) {
+    if (VMConfig.allowFnDsa512() && address.equals(verifyFnDsaAddr)) {
       return verifyFnDsa;
     }
 

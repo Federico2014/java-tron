@@ -54,7 +54,6 @@ import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
-import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
@@ -171,7 +170,7 @@ import org.tron.core.utils.TransactionRegister;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.PQScheme;
-import org.tron.protos.Protocol.PQWitness;
+import org.tron.protos.Protocol.PQAuthSig;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract;
@@ -1798,14 +1797,14 @@ public class Manager {
           "witness permission requires " + scheme
               + " but local PQ key material is not configured");
     }
-    byte[] digest = PQAuthDigest.block(blockCapsule.getRawHashBytes());
+    byte[] digest = blockCapsule.getRawHashBytes();
     byte[] signature = PQSchemeRegistry.sign(scheme, pqPrivateKey, digest);
-    PQWitness pqWitness = PQWitness.newBuilder()
+    PQAuthSig pqAuthSig = PQAuthSig.newBuilder()
         .setScheme(scheme)
         .setPublicKey(ByteString.copyFrom(pqPublicKey))
         .setSignature(ByteString.copyFrom(signature))
         .build();
-    blockCapsule.setPqWitness(pqWitness);
+    blockCapsule.setPqAuthSig(pqAuthSig);
   }
 
   private void filterOwnerAddress(TransactionCapsule transactionCapsule, Set<String> result) {

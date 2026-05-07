@@ -275,7 +275,7 @@ public class ShieldedTransferActuatorTest extends BaseTest {
       Assert.assertTrue(dbManager.pushTransaction(transactionCap));
     } catch (ValidateSignatureException e) {
       Assert.assertTrue(e instanceof ValidateSignatureException);
-      Assert.assertEquals("miss sig or contract", e.getMessage());
+      Assert.assertEquals("miss sig", e.getMessage());
     } catch (Exception e) {
       Assert.assertTrue(false);
     }

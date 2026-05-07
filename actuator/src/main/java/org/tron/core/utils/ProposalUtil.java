@@ -886,14 +886,14 @@ public class ProposalUtil {
         }
         break;
       }
-      case ALLOW_FN_DSA: {
-        if (dynamicPropertiesStore.getAllowFnDsa() == 1) {
+      case ALLOW_FN_DSA_512: {
+        if (dynamicPropertiesStore.getAllowFnDsa512() == 1) {
           throw new ContractValidateException(
-              "[ALLOW_FN_DSA] has been valid, no need to propose again");
+              "[ALLOW_FN_DSA_512] has been valid, no need to propose again");
         }
         if (value != 1) {
           throw new ContractValidateException(
-              "This value[ALLOW_FN_DSA] is only allowed to be 1");
+              "This value[ALLOW_FN_DSA_512] is only allowed to be 1");
         }
         break;
       }
@@ -983,7 +983,7 @@ public class ProposalUtil {
     PROPOSAL_EXPIRE_TIME(92), // (0, 31536003000)
     ALLOW_TVM_SELFDESTRUCT_RESTRICTION(94), // 0, 1
     ALLOW_TVM_OSAKA(96), // 0, 1
-    ALLOW_FN_DSA(100); // 0, 1
+    ALLOW_FN_DSA_512(100); // 0, 1
 
     private long code;
 

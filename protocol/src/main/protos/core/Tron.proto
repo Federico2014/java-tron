@@ -17,7 +17,7 @@ enum AccountType {
   Contract = 2;
 }
 
-// Post-quantum signature scheme identifier used by PQWitness.
+// Post-quantum signature scheme identifier used by PQAuthSig.
 // UNKNOWN_PQ_SCHEME = 0 is the proto3 default and is reserved per the
 // java-tron API evolution standard (issue #6515) so unset / unrecognized
 // values are detectable by JSON consumers; it MUST never be registered
@@ -261,7 +261,7 @@ message Key {
 // The signing public key is carried in-band; node verifies binding via
 //   derived_addr = 0x41 ‖ deriveHash(scheme, public_key)[0:20]
 // and matches against Permission.keys[].address.
-message PQWitness {
+message PQAuthSig {
   PQScheme scheme     = 1;
   bytes    public_key = 2;
   bytes    signature  = 3;
@@ -471,12 +471,12 @@ message Transaction {
   // only support size = 1,  repeated list here for muti-sig extension
   repeated bytes signature = 2;
   repeated Result ret = 5;
-  // Post-quantum authentication witnesses. Each entry binds a signing
+  // Post-quantum authentication signatures. Each entry binds a signing
   // public key to its derived address and the corresponding signature.
-  // ECDSA signatures (`signature` above) and PQWitness entries may co-exist
+  // ECDSA signatures (`signature` above) and PQAuthSig entries may co-exist
   // on multi-sig transactions, contributing weight independently to the
   // permission's threshold.
-  repeated PQWitness pq_witness = 6;
+  repeated PQAuthSig pq_auth_sig = 6;
 }
 
 message TransactionInfo {
@@ -544,11 +544,11 @@ message BlockHeader {
   raw raw_data = 1;
   bytes witness_signature = 2;
   // Post-quantum block signature. Exactly one of {witness_signature,
-  // pq_witness} SHALL be present per block: SRs with an ECDSA-only Witness
+  // pq_auth_sig} SHALL be present per block: SRs with an ECDSA-only Witness
   // Permission set witness_signature; SRs whose Witness Permission carries a
-  // PQ-derived Key set pq_witness instead. The verifier dispatches by which
+  // PQ-derived Key set pq_auth_sig instead. The verifier dispatches by which
   // field is populated.
-  PQWitness pq_witness = 3;
+  PQAuthSig pq_auth_sig = 3;
 }
 
 // block

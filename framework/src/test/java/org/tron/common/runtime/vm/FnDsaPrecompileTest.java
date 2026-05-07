@@ -29,17 +29,17 @@ public class FnDsaPrecompileTest {
 
   @Before
   public void enableProposal() {
-    VMConfig.initAllowFnDsa(1L);
+    VMConfig.initAllowFnDsa512(1L);
   }
 
   @After
   public void disableProposal() {
-    VMConfig.initAllowFnDsa(0L);
+    VMConfig.initAllowFnDsa512(0L);
   }
 
   @Test
   public void switchOff_returnsNull() {
-    VMConfig.initAllowFnDsa(0L);
+    VMConfig.initAllowFnDsa512(0L);
     Assert.assertNull(PrecompiledContracts.getContractForAddress(FNDSA_ADDR));
   }
 

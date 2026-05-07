@@ -396,8 +396,8 @@ public class ProposalService extends ProposalUtil {
           manager.getDynamicPropertiesStore().saveAllowTvmOsaka(entry.getValue());
           break;
         }
-        case ALLOW_FN_DSA: {
-          manager.getDynamicPropertiesStore().saveAllowFnDsa(entry.getValue());
+        case ALLOW_FN_DSA_512: {
+          manager.getDynamicPropertiesStore().saveAllowFnDsa512(entry.getValue());
           break;
         }
         default:

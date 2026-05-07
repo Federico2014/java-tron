@@ -9,7 +9,6 @@ import org.tron.common.BaseTest;
 import org.tron.common.TestConstants;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.pqc.FNDSA;
-import org.tron.common.crypto.pqc.PQAuthDigest;
 import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.config.args.Args;
@@ -18,7 +17,7 @@ import org.tron.protos.Protocol.Account;
 import org.tron.protos.Protocol.AccountType;
 import org.tron.protos.Protocol.Key;
 import org.tron.protos.Protocol.PQScheme;
-import org.tron.protos.Protocol.PQWitness;
+import org.tron.protos.Protocol.PQAuthSig;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
 
@@ -93,8 +92,8 @@ public class BlockCapsulePQTest extends BaseTest {
     return FNDSA.sign(pqKeypair.getPrivateKey(), message);
   }
 
-  private PQWitness buildPQWitness(byte[] signature) {
-    return PQWitness.newBuilder()
+  private PQAuthSig buildPQAuthSig(byte[] signature) {
+    return PQAuthSig.newBuilder()
         .setScheme(PQScheme.FN_DSA_512)
         .setPublicKey(ByteString.copyFrom(pqKeypair.getPublicKey()))
         .setSignature(ByteString.copyFrom(signature))
@@ -102,9 +101,9 @@ public class BlockCapsulePQTest extends BaseTest {
   }
 
   @Test
-  public void legacyValidateWithoutPQWitnessAcceptedBeforeActivation() throws Exception {
+  public void legacyValidateWithoutPQAuthSigAcceptedBeforeActivation() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(0L);
     AccountCapsule witness = buildWitnessAccount(witnessAddress);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
@@ -115,31 +114,31 @@ public class BlockCapsulePQTest extends BaseTest {
   }
 
   @Test(expected = ValidateSignatureException.class)
-  public void pqWitnessBeforeActivationRejected() throws Exception {
+  public void pqAuthSigBeforeActivationRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(0L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(0L);
     AccountCapsule witness = buildWitnessAccount(pqAddress);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PQAuthDigest.block(block.getRawHashBytes());
-    block.setPqWitness(buildPQWitness(signPQ(digest)));
+    byte[] digest = block.getRawHashBytes();
+    block.setPqAuthSig(buildPQAuthSig(signPQ(digest)));
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());
   }
 
   @Test(expected = ValidateSignatureException.class)
-  public void bothLegacyAndPQWitnessRejected() throws Exception {
+  public void bothLegacyAndPQAuthSigRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
     AccountCapsule witness = buildWitnessAccount(pqAddress);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildSignedBlock(parentHash);
-    byte[] digest = PQAuthDigest.block(block.getRawHashBytes());
-    block.setPqWitness(buildPQWitness(signPQ(digest)));
+    byte[] digest = block.getRawHashBytes();
+    block.setPqAuthSig(buildPQAuthSig(signPQ(digest)));
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());
   }
@@ -147,31 +146,31 @@ public class BlockCapsulePQTest extends BaseTest {
   @Test
   public void pqOnlyAccepted() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
     AccountCapsule witness = buildWitnessAccount(pqAddress);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PQAuthDigest.block(block.getRawHashBytes());
-    block.setPqWitness(buildPQWitness(signPQ(digest)));
+    byte[] digest = block.getRawHashBytes();
+    block.setPqAuthSig(buildPQAuthSig(signPQ(digest)));
     Assert.assertTrue(block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore()));
   }
 
   @Test
-  public void tamperedPQWitnessFails() throws Exception {
+  public void tamperedPQAuthSigFails() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
     AccountCapsule witness = buildWitnessAccount(pqAddress);
     dbManager.getAccountStore().put(witnessAddress, witness);
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PQAuthDigest.block(block.getRawHashBytes());
+    byte[] digest = block.getRawHashBytes();
     byte[] pqSig = signPQ(digest);
     pqSig[pqSig.length - 1] ^= 0x01;
-    block.setPqWitness(buildPQWitness(pqSig));
+    block.setPqAuthSig(buildPQAuthSig(pqSig));
     Assert.assertFalse(block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore()));
   }
@@ -179,7 +178,7 @@ public class BlockCapsulePQTest extends BaseTest {
   @Test(expected = ValidateSignatureException.class)
   public void signerNotInWitnessPermissionRejected() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowMultiSign(1L);
-    dbManager.getDynamicPropertiesStore().saveAllowFnDsa(1L);
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
     // Witness permission key bound to a different address (the legacy ECDSA
     // address), so the PQ signer's derived address won't match.
     AccountCapsule witness = buildWitnessAccount(witnessAddress);
@@ -187,8 +186,8 @@ public class BlockCapsulePQTest extends BaseTest {
 
     byte[] parentHash = new byte[32];
     BlockCapsule block = buildUnsignedBlock(parentHash);
-    byte[] digest = PQAuthDigest.block(block.getRawHashBytes());
-    block.setPqWitness(buildPQWitness(signPQ(digest)));
+    byte[] digest = block.getRawHashBytes();
+    block.setPqAuthSig(buildPQAuthSig(signPQ(digest)));
     block.validateSignature(
         dbManager.getDynamicPropertiesStore(), dbManager.getAccountStore());
   }
