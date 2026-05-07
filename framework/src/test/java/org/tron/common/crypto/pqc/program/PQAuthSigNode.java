@@ -2,10 +2,13 @@ package org.tron.common.crypto.pqc.program;
 
 import com.google.protobuf.ByteString;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import org.bouncycastle.util.encoders.Hex;
 import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
@@ -90,8 +93,13 @@ public class PQAuthSigNode {
     File dbDir = Files.createTempDirectory("pqc-node-").toFile();
     dbDir.deleteOnExit();
 
+    // Inject the witness keypair via a temp HOCON config that includes
+    // config-test.conf and overrides localwitness_pq_keys with the priv/pub
+    // hex derived from WITNESS_SEED (matches what PQClient derives).
+    Path conf = writeWitnessConfig(witnessKp);
+
     Args.setParam(new String[]{"--output-directory", dbDir.getAbsolutePath(), "-w"},
-        "config-test.conf");
+        conf.toString());
     Args.getInstance().setRpcEnable(true);
     Args.getInstance().setFullNodeHttpEnable(true);
     Args.getInstance().setFullNodeHttpPort(HTTP_PORT);
@@ -180,5 +188,18 @@ public class PQAuthSigNode {
     byte[] seed = new byte[FNDSA.SEED_LENGTH];
     Arrays.fill(seed, (byte) value);
     return seed;
+  }
+
+  private static Path writeWitnessConfig(FNDSA witnessKp) throws java.io.IOException {
+    Path conf = Files.createTempFile("pqc-witness-", ".conf");
+    conf.toFile().deleteOnExit();
+    String body = "include classpath(\"config-test.conf\")\n"
+        + "localwitness_pq_scheme = \"FN_DSA_512\"\n"
+        + "localwitness_pq_keys = [\n"
+        + "  { priv = \"" + Hex.toHexString(witnessKp.getPrivateKey()) + "\","
+        + " pub = \"" + Hex.toHexString(witnessKp.getPublicKey()) + "\" }\n"
+        + "]\n";
+    Files.write(conf, body.getBytes(StandardCharsets.UTF_8));
+    return conf;
   }
 }
