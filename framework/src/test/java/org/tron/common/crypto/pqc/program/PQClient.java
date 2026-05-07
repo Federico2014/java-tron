@@ -22,15 +22,15 @@ import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 /**
- * Demo client that connects to {@link PQAuthSigNode} and broadcasts an FN-DSA-512
+ * Demo client that connects to {@link PQWitnessNode} and broadcasts an FN-DSA-512
  * signed transfer transaction.
  *
- * The keypair is derived from the same fixed seed used by PQAuthSigNode, so no
+ * The keypair is derived from the same fixed seed used by PQWitnessNode, so no
  * out-of-band key exchange is needed.
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQAuthSigNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
  *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
  *
@@ -56,7 +56,7 @@ public class PQClient {
         .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
-    // ── 1. Derive user keypair from same fixed seed as PQAuthSigNode ─────
+    // ── 1. Derive user keypair from same fixed seed as PQWitnessNode ─────
     byte[] userSeed = new byte[FNDSA.SEED_LENGTH];
     Arrays.fill(userSeed, (byte) 0x02);
     FNDSA userKp = new FNDSA(userSeed);
@@ -64,7 +64,7 @@ public class PQClient {
     byte[] userPub    = userKp.getPublicKey();
     byte[] userPriv   = userKp.getPrivateKey();
     byte[] signerAddr = FNDSA.computeAddress(userPub);
-    byte[] ownerAddr  = PQAuthSigNode.USER_ADDR;
+    byte[] ownerAddr  = PQWitnessNode.USER_ADDR;
 
     System.out.println("=== PQC Client ===");
     System.out.println("Connecting to " + HOST + ":" + PORT);

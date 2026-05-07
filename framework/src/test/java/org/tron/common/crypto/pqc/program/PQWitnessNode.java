@@ -41,11 +41,11 @@ import org.tron.protos.Protocol.Permission.PermissionType;
  *
  * Usage:
  *   Terminal 1 — start this node:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQAuthSigNode
+ *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
  *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
  */
-public class PQAuthSigNode {
+public class PQWitnessNode {
 
   /** Fixed seed for the FN-DSA-512 witness keypair (shared with PQClient for derivation). */
   static final byte[] WITNESS_SEED = filledSeed(0x01);
@@ -138,7 +138,7 @@ public class PQAuthSigNode {
 
   /**
    * Apply the PQ-specific pre-state that must exist on every node participating
-   * in the demo network. Both PQAuthSigNode and PQFullNode call this so their
+   * in the demo network. Both PQWitnessNode and PQFullNode call this so their
    * genesis state matches before the first PQ block is produced / received.
    */
   static void installPQGenesisState(Manager db, ChainBaseManager chain,
