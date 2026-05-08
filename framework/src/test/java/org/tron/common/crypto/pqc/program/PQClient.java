@@ -16,7 +16,6 @@ import org.tron.common.crypto.pqc.FNDSA;
 import org.tron.common.utils.ByteArray;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.PQAuthSig;
-import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
@@ -111,9 +110,10 @@ public class PQClient {
       byte[] txId   = sha256(rawData.toByteArray());
       byte[] sig    = FNDSA.sign(userPriv, txId);
 
+      // FN_DSA_512 is the launch scheme → leave scheme at proto3 default and
+      // let PQSchemeRegistry.resolve() normalize it on the verifier side.
       Transaction signedTx = tx.toBuilder()
           .addPqAuthSig(PQAuthSig.newBuilder()
-              .setScheme(PQScheme.FN_DSA_512)
               .setPublicKey(ByteString.copyFrom(userPub))
               .setSignature(ByteString.copyFrom(sig)))
           .build();

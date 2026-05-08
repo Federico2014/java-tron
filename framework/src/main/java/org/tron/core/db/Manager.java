@@ -1799,12 +1799,16 @@ public class Manager {
     }
     byte[] digest = blockCapsule.getRawHashBytes();
     byte[] signature = PQSchemeRegistry.sign(scheme, pqPrivateKey, digest);
-    PQAuthSig pqAuthSig = PQAuthSig.newBuilder()
-        .setScheme(scheme)
+    PQAuthSig.Builder builder = PQAuthSig.newBuilder()
         .setPublicKey(ByteString.copyFrom(pqPublicKey))
-        .setSignature(ByteString.copyFrom(signature))
-        .build();
-    blockCapsule.setPqAuthSig(pqAuthSig);
+        .setSignature(ByteString.copyFrom(signature));
+    // FN_DSA_512 is the launch scheme: leave scheme at the proto3 default
+    // (UNKNOWN_PQ_SCHEME) and rely on PQSchemeRegistry.resolve() on the read
+    // path so the tag costs zero wire bytes per block.
+    if (scheme != PQScheme.FN_DSA_512) {
+      builder.setScheme(scheme);
+    }
+    blockCapsule.setPqAuthSig(builder.build());
   }
 
   private void filterOwnerAddress(TransactionCapsule transactionCapsule, Set<String> result) {
