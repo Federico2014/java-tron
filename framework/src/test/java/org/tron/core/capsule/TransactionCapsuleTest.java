@@ -353,6 +353,171 @@ public class TransactionCapsuleTest extends BaseTest {
   }
 
   @Test
+  public void pqAuthSigWrongPublicKeyLengthRejected() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
+
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), txid);
+
+    // Truncate public key by one byte to force the length-mismatch branch.
+    byte[] shortPub = new byte[FNDSA.PUBLIC_KEY_LENGTH - 1];
+    System.arraycopy(kp.getPublicKey(), 0, shortPub, 0, shortPub.length);
+
+    Transaction signed = tx.toBuilder()
+        .addPqAuthSig(PQAuthSig.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(shortPub))
+            .setSignature(ByteString.copyFrom(sig))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("wrong public key length must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("public key or signature length mismatch"));
+    }
+  }
+
+  @Test
+  public void pqAuthSigWrongSignatureLengthRejected() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
+
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+
+    // Empty signature is not a valid FN-DSA-512 length, hits the same branch.
+    Transaction signed = tx.toBuilder()
+        .addPqAuthSig(PQAuthSig.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
+            .setSignature(ByteString.EMPTY)
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("wrong signature length must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("public key or signature length mismatch"));
+    }
+  }
+
+  @Test
+  public void pqAuthSigUnsupportedSchemeRejected() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+    FNDSA kp = new FNDSA();
+    putAccountWithPQPermission(PQ_OWNER_HEX, kp.getPublicKey(), PQScheme.FN_DSA_512);
+
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+    byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), txid);
+
+    // setSchemeValue(99) sets an unknown numeric tag; reading back yields
+    // PQScheme.UNRECOGNIZED, which PQSchemeRegistry.contains() rejects.
+    Transaction signed = tx.toBuilder()
+        .addPqAuthSig(PQAuthSig.newBuilder()
+            .setSchemeValue(99)
+            .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
+            .setSignature(ByteString.copyFrom(sig))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(signed);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("unsupported scheme must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("unsupported pq scheme"));
+    }
+  }
+
+  @Test
+  public void validatePubSignatureRejectsMissingSig() {
+    Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+    TransactionCapsule cap = new TransactionCapsule(tx);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("transaction with no signatures must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("miss sig"));
+    }
+  }
+
+  @Test
+  public void validatePubSignatureRejectsMissingContract() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+    FNDSA kp = new FNDSA();
+    byte[] sig = FNDSA.sign(kp.getPrivateKey(), new byte[32]);
+
+    // No contracts in raw_data, but a pq_auth_sig is attached so we get past
+    // the "miss sig" guard and into the "miss contract" branch.
+    Transaction tx = Transaction.newBuilder()
+        .setRawData(raw.newBuilder().build())
+        .addPqAuthSig(PQAuthSig.newBuilder()
+            .setScheme(PQScheme.FN_DSA_512)
+            .setPublicKey(ByteString.copyFrom(kp.getPublicKey()))
+            .setSignature(ByteString.copyFrom(sig))
+            .build())
+        .build();
+    TransactionCapsule cap = new TransactionCapsule(tx);
+    try {
+      cap.validatePubSignature(dbManager.getAccountStore(),
+          dbManager.getDynamicPropertiesStore());
+      Assert.fail("transaction with no contracts must be rejected");
+    } catch (ValidateSignatureException e) {
+      Assert.assertTrue(e.getMessage().contains("miss contract"));
+    }
+  }
+
+  @Test
+  public void validatePubSignatureRejectsTooManySignatures() throws Exception {
+    dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+    int original = dbManager.getDynamicPropertiesStore().getTotalSignNum();
+    try {
+      dbManager.getDynamicPropertiesStore().saveTotalSignNum(1);
+      FNDSA a = new FNDSA();
+      FNDSA b = new FNDSA();
+      putAccountWithPQPermission(PQ_OWNER_HEX, a.getPublicKey(), PQScheme.FN_DSA_512);
+
+      Transaction tx = buildTransferTx(PQ_OWNER_HEX, 0);
+      byte[] txid = Sha256Hash.of(true, tx.getRawData().toByteArray()).getBytes();
+      byte[] sigA = FNDSA.sign(a.getPrivateKey(), txid);
+      byte[] sigB = FNDSA.sign(b.getPrivateKey(), txid);
+
+      Transaction signed = tx.toBuilder()
+          .addPqAuthSig(PQAuthSig.newBuilder()
+              .setScheme(PQScheme.FN_DSA_512)
+              .setPublicKey(ByteString.copyFrom(a.getPublicKey()))
+              .setSignature(ByteString.copyFrom(sigA))
+              .build())
+          .addPqAuthSig(PQAuthSig.newBuilder()
+              .setScheme(PQScheme.FN_DSA_512)
+              .setPublicKey(ByteString.copyFrom(b.getPublicKey()))
+              .setSignature(ByteString.copyFrom(sigB))
+              .build())
+          .build();
+      TransactionCapsule cap = new TransactionCapsule(signed);
+      try {
+        cap.validatePubSignature(dbManager.getAccountStore(),
+            dbManager.getDynamicPropertiesStore());
+        Assert.fail("more sigs than totalSignNum must be rejected");
+      } catch (ValidateSignatureException e) {
+        Assert.assertTrue(e.getMessage().contains("too many signatures"));
+      }
+    } finally {
+      dbManager.getDynamicPropertiesStore().saveTotalSignNum(original);
+    }
+  }
+
+  @Test
   public void fnDsaPQAuthSigRejectedWhenNotActivated() throws Exception {
     dbManager.getDynamicPropertiesStore().saveAllowFnDsa512(0L);
     FNDSA kp = new FNDSA();
