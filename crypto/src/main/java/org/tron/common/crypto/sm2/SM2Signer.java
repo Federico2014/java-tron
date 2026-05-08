@@ -1,110 +1,51 @@
 package org.tron.common.crypto.sm2;
 
 import java.math.BigInteger;
-import java.security.SecureRandom;
-import javax.annotation.Nullable;
 import org.bouncycastle.crypto.CipherParameters;
-import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SM3Digest;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECKeyParameters;
 import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.bouncycastle.crypto.params.ParametersWithID;
-import org.bouncycastle.crypto.params.ParametersWithRandom;
 import org.bouncycastle.crypto.signers.DSAKCalculator;
-import org.bouncycastle.crypto.signers.RandomDSAKCalculator;
+import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
 import org.bouncycastle.math.ec.ECConstants;
-import org.bouncycastle.math.ec.ECFieldElement;
 import org.bouncycastle.math.ec.ECMultiplier;
 import org.bouncycastle.math.ec.ECPoint;
 import org.bouncycastle.math.ec.FixedPointCombMultiplier;
-import org.bouncycastle.util.BigIntegers;
+import org.tron.common.utils.ByteArray;
 
+/**
+ * Low-level SM2 signer used by {@link org.tron.common.crypto.sm2.SM2}.
+ *
+ * <p>Exposes two operations: {@link #generateHashSignature} (sign a pre-computed 32-byte hash)
+ * and {@link #verifyHashSignature} (verify against a pre-computed hash). The standard SM2
+ * {@code Z_A} pre-hash step is intentionally absent; see {@link org.tron.common.crypto.sm2.SM2}
+ * for the rationale.
+ */
 public class SM2Signer
     implements ECConstants {
 
-  private final DSAKCalculator kCalculator = new RandomDSAKCalculator();
+  private final DSAKCalculator kCalculator = new HMacDSAKCalculator(new SM3Digest());
 
-  private byte[] userID;
-
-  private int curveLength;
   private ECDomainParameters ecParams;
-  private ECPoint pubPoint;
   private ECKeyParameters ecKey;
 
-  private SecureRandom random;
-
-  public void init(boolean forSigning, CipherParameters param) {
-    CipherParameters baseParam;
-
-    if (param instanceof ParametersWithID) {
-      baseParam = ((ParametersWithID) param).getParameters();
-      userID = ((ParametersWithID) param).getID();
-    } else {
-      baseParam = param;
-      userID = new byte[0];
+  public void init(CipherParameters param) {
+    if (param == null) {
+      throw new IllegalArgumentException("CipherParameters cannot be null");
     }
-
-    if (forSigning) {
-      if (baseParam instanceof ParametersWithRandom) {
-        ParametersWithRandom rParam = (ParametersWithRandom) baseParam;
-
-        ecKey = (ECKeyParameters) rParam.getParameters();
-        ecParams = ecKey.getParameters();
-        kCalculator.init(ecParams.getN(), rParam.getRandom());
-      } else {
-        ecKey = (ECKeyParameters) baseParam;
-        ecParams = ecKey.getParameters();
-        kCalculator.init(ecParams.getN(), new SecureRandom());
-      }
-      pubPoint = ecParams.getG().multiply(((ECPrivateKeyParameters) ecKey).getD()).normalize();
-    } else {
-      ecKey = (ECKeyParameters) baseParam;
-      ecParams = ecKey.getParameters();
-      pubPoint = ((ECPublicKeyParameters) ecKey).getQ();
-    }
-
-    curveLength = (ecParams.getCurve().getFieldSize() + 7) / 8;
-  }
-
-
-  /**
-   * generate the signature for the message
-   *
-   * @param message plaintext
-   */
-  public BigInteger[] generateSignature(byte[] message) {
-    byte[] eHash = generateSM3Hash(message);
-    return generateHashSignature(eHash);
-  }
-
-  /**
-   * generate the signature for the message
-   */
-
-  public byte[] generateSM3Hash(byte[] message) {
-    //byte[] msg = message.getBytes();
-
-    SM3Digest digest = new SM3Digest();
-    byte[] z = getZ(digest);
-
-    digest.update(z, 0, z.length);
-    digest.update(message, 0, message.length);
-
-    byte[] eHash = new byte[digest.getDigestSize()];
-
-    digest.doFinal(eHash, 0);
-    return eHash;
+    ecKey = (ECKeyParameters) param;
+    ecParams = ecKey.getParameters();
   }
 
   /**
    * generate the signature from the 32 byte hash
    */
   public BigInteger[] generateHashSignature(byte[] hash) {
-    if (hash.length != 32) {
+    if (ByteArray.isEmpty(hash) || hash.length != 32) {
       throw new IllegalArgumentException("Expected 32 byte input to " +
-          "ECDSA signature, not " + hash.length);
+          "SM2 signature, not " + (hash == null ? "null" : hash.length));
     }
     BigInteger n = ecParams.getN();
     BigInteger e = calculateE(hash);
@@ -113,6 +54,9 @@ public class SM2Signer
     BigInteger r, s;
 
     ECMultiplier basePointMultiplier = createBasePointMultiplier();
+
+    // Initialize the deterministic K calculator with the private key and message hash
+    kCalculator.init(n, d, hash);
 
     // 5.2.1 Draft RFC:  SM2 Public Key Algorithms
     do // generate s
@@ -143,51 +87,16 @@ public class SM2Signer
   }
 
   /**
-   * verify the message signature
-   */
-  public boolean verifySignature(byte[] message, BigInteger r, BigInteger s,
-      @Nullable String userID) {
-    BigInteger n = ecParams.getN();
-
-    // 5.3.1 Draft RFC:  SM2 Public Key Algorithms
-    // B1
-    if (r.compareTo(ONE) < 0 || r.compareTo(n) >= 0) {
-      return false;
-    }
-
-    // B2
-    if (s.compareTo(ONE) < 0 || s.compareTo(n) >= 0) {
-      return false;
-    }
-
-    ECPoint q = ((ECPublicKeyParameters) ecKey).getQ();
-
-    if (userID != null) {
-      this.userID = userID.getBytes();
-    }
-    byte[] eHash = generateSM3Hash(message);
-
-    // B4
-    BigInteger e = calculateE(eHash);
-
-    // B5
-    BigInteger t = r.add(s).mod(n);
-    if (t.equals(ZERO)) {
-      return false;
-    } else {
-      // B6
-      ECPoint x1y1 = ecParams.getG().multiply(s);
-      x1y1 = x1y1.add(q.multiply(t)).normalize();
-
-      // B7
-      return r.equals(e.add(x1y1.getAffineXCoord().toBigInteger()).mod(n));
-    }
-  }
-
-  /**
    * verify the hash signature
    */
   public boolean verifyHashSignature(byte[] hash, BigInteger r, BigInteger s) {
+    if (ByteArray.isEmpty(hash) || hash.length != 32) {
+      throw new IllegalArgumentException("Expected 32 byte input to "
+          + "SM2 signature, not " + (hash == null ? "null" : hash.length));
+    }
+    if (r == null || s == null) {
+      throw new IllegalArgumentException("R or S cannot be null");
+    }
     BigInteger n = ecParams.getN();
 
     // 5.3.1 Draft RFC:  SM2 Public Key Algorithms
@@ -220,43 +129,15 @@ public class SM2Signer
     }
   }
 
-  private byte[] getZ(Digest digest) {
-
-    //addUserID(digest, userID);
-
-    addFieldElement(digest, ecParams.getCurve().getA());
-    addFieldElement(digest, ecParams.getCurve().getB());
-    addFieldElement(digest, ecParams.getG().getAffineXCoord());
-    addFieldElement(digest, ecParams.getG().getAffineYCoord());
-    addFieldElement(digest, pubPoint.getAffineXCoord());
-    addFieldElement(digest, pubPoint.getAffineYCoord());
-
-    byte[] rv = new byte[digest.getDigestSize()];
-
-    digest.doFinal(rv, 0);
-
-    return rv;
-  }
-
-  private void addUserID(Digest digest, byte[] userID) {
-    int len = userID.length * 8;
-    digest.update((byte) (len >> 8 & 0xFF));
-    digest.update((byte) (len & 0xFF));
-    digest.update(userID, 0, userID.length);
-  }
-
-  private void addFieldElement(Digest digest, ECFieldElement v) {
-    byte[] p = BigIntegers.asUnsignedByteArray(curveLength, v.toBigInteger());
-    digest.update(p, 0, p.length);
-  }
-
   protected ECMultiplier createBasePointMultiplier() {
     return new FixedPointCombMultiplier();
   }
 
   protected BigInteger calculateE(byte[] message) {
+    if (message == null) {
+      throw new IllegalArgumentException("Message cannot be null");
+    }
     return new BigInteger(1, message);
   }
 
 }
-
