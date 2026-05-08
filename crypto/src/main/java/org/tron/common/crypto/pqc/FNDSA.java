@@ -40,6 +40,14 @@ public final class FNDSA implements PQSignature {
    * The 1-byte serialization header is stripped from {@code getH()}.
    */
   public static final int PUBLIC_KEY_LENGTH = 896;
+  /**
+   * Extended private key encoding {@code f ‖ g ‖ F ‖ h}: the standard BC private key
+   * (1280 B) with the 896-byte public key {@code h} appended. Lets the holder recover
+   * the address without re-running keygen, since BC currently has no public API for
+   * deriving {@code h} from {@code (f, g)} alone (see bcgit/bc-java#2297).
+   */
+  public static final int PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH =
+      PRIVATE_KEY_LENGTH + PUBLIC_KEY_LENGTH;
   /** Protocol-level upper bound on Falcon-512 signature length (variable). */
   public static final int SIGNATURE_LENGTH = 752;
   /** Falcon keygen seeds an internal SHAKE256 from 48 bytes of randomness. */
@@ -66,13 +74,37 @@ public final class FNDSA implements PQSignature {
   }
 
   public FNDSA(byte[] privateKey, byte[] publicKey) {
-    validatePrivateKeyBytes(privateKey);
+    if (privateKey == null || privateKey.length != PRIVATE_KEY_LENGTH) {
+      throw new IllegalArgumentException(
+          "FN-DSA private key length must be " + PRIVATE_KEY_LENGTH);
+    }
     if (publicKey == null || publicKey.length != PUBLIC_KEY_LENGTH) {
       throw new IllegalArgumentException(
           "FN-DSA public key length must be " + PUBLIC_KEY_LENGTH);
     }
     this.privateKey = privateKey.clone();
     this.publicKey = publicKey.clone();
+  }
+
+  /**
+   * Builds an instance from the extended private key encoding {@code f ‖ g ‖ F ‖ h}
+   * ({@link #PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH} bytes), as produced by
+   * {@link #getPrivateKeyWithPublicKey()}. Provided as a static factory rather
+   * than an additional {@code FNDSA(byte[])} constructor because Java cannot
+   * overload {@link #FNDSA(byte[]) the seed constructor} on length alone.
+   */
+  public static FNDSA fromPrivateKeyWithPublicKey(byte[] extendedPrivateKey) {
+    if (extendedPrivateKey == null
+        || extendedPrivateKey.length != PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH) {
+      throw new IllegalArgumentException(
+          "FN-DSA extended private key length must be "
+              + PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH);
+    }
+    byte[] sk = new byte[PRIVATE_KEY_LENGTH];
+    byte[] pk = new byte[PUBLIC_KEY_LENGTH];
+    System.arraycopy(extendedPrivateKey, 0, sk, 0, PRIVATE_KEY_LENGTH);
+    System.arraycopy(extendedPrivateKey, PRIVATE_KEY_LENGTH, pk, 0, PUBLIC_KEY_LENGTH);
+    return new FNDSA(sk, pk);
   }
 
   @Override
@@ -99,6 +131,20 @@ public final class FNDSA implements PQSignature {
   @Override
   public byte[] getPrivateKey() {
     return privateKey.clone();
+  }
+
+  /**
+   * Returns the private key with the 896-byte public key {@code h} appended:
+   * {@code f ‖ g ‖ F ‖ h} (total {@link #PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH} bytes).
+   * Use this format on disk / in config when the consumer needs to recover the
+   * address from the private key alone — neither BC's encoded private key nor
+   * the 48-byte keygen seed (without re-running keygen) suffice today.
+   */
+  public byte[] getPrivateKeyWithPublicKey() {
+    byte[] out = new byte[PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH];
+    System.arraycopy(privateKey, 0, out, 0, PRIVATE_KEY_LENGTH);
+    System.arraycopy(publicKey, 0, out, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH);
+    return out;
   }
 
   @Override
@@ -143,6 +189,12 @@ public final class FNDSA implements PQSignature {
     }
   }
 
+  /**
+   * Signs {@code message} using either the bare private key
+   * ({@link #PRIVATE_KEY_LENGTH} bytes, {@code f ‖ g ‖ F}) or the extended form
+   * ({@link #PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH} bytes, {@code f ‖ g ‖ F ‖ h}).
+   * The trailing {@code h} segment is ignored — only {@code (f, g, F)} feed BC's signer.
+   */
   public static byte[] sign(byte[] privateKey, byte[] message) {
     validatePrivateKeyBytes(privateKey);
     if (message == null) {
@@ -164,10 +216,25 @@ public final class FNDSA implements PQSignature {
     }
   }
 
+  /**
+   * Recovers the public key when the input is in the extended form
+   * {@code f ‖ g ‖ F ‖ h} ({@link #PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH} bytes).
+   * Throws {@link UnsupportedOperationException} for the bare {@code f ‖ g ‖ F}
+   * form: BouncyCastle currently has no public API to compute {@code h = g · f⁻¹}
+   * mod q, so callers must persist {@code h} alongside the private key (use
+   * {@link #getPrivateKeyWithPublicKey()}) or re-run keygen from a stored seed.
+   * See bcgit/bc-java#2297.
+   */
   public static byte[] derivePublicKey(byte[] privateKey) {
+    if (privateKey != null && privateKey.length == PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH) {
+      byte[] pk = new byte[PUBLIC_KEY_LENGTH];
+      System.arraycopy(privateKey, PRIVATE_KEY_LENGTH, pk, 0, PUBLIC_KEY_LENGTH);
+      return pk;
+    }
     throw new UnsupportedOperationException(
-        "FN-DSA public key cannot be derived from the encoded private key alone; "
-            + "supply both halves to the (privateKey, publicKey) constructor");
+        "FN-DSA public key cannot be derived from the bare encoded private key; "
+            + "supply the extended form (f ‖ g ‖ F ‖ h) or both halves to the "
+            + "(privateKey, publicKey) constructor");
   }
 
   public static byte[] computeAddress(byte[] publicKey) {
@@ -181,9 +248,12 @@ public final class FNDSA implements PQSignature {
   }
 
   private static void validatePrivateKeyBytes(byte[] privateKey) {
-    if (privateKey == null || privateKey.length != PRIVATE_KEY_LENGTH) {
+    if (privateKey == null
+        || (privateKey.length != PRIVATE_KEY_LENGTH
+            && privateKey.length != PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH)) {
       throw new IllegalArgumentException(
-          "FN-DSA private key length must be " + PRIVATE_KEY_LENGTH);
+          "FN-DSA private key length must be " + PRIVATE_KEY_LENGTH
+              + " or " + PRIVATE_KEY_WITH_PUBLIC_KEY_LENGTH);
     }
   }
 }

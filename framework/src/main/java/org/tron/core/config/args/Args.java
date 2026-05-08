@@ -57,6 +57,7 @@ import org.tron.common.args.GenesisBlock;
 import org.tron.common.args.Witness;
 import org.tron.common.config.DbBackupConfig;
 import org.tron.common.cron.CronExpression;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.logsfilter.FilterQuery;
 import org.tron.common.logsfilter.TriggerConfig;
@@ -1231,8 +1232,7 @@ public class Args extends CommonParameter {
 
     // path 4: PQ pre-derived keypair configuration
     if (config.hasPath(ConfigKey.LOCAL_WITNESS_PQ_KEYS)) {
-      List<? extends ConfigObject> pqEntries =
-          config.getObjectList(ConfigKey.LOCAL_WITNESS_PQ_KEYS);
+      List<String> pqEntries = config.getStringList(ConfigKey.LOCAL_WITNESS_PQ_KEYS);
       if (!pqEntries.isEmpty()) {
         localWitnesses = new LocalWitnesses();
         // Scheme must be applied before keypairs — key-length validation depends on it.
@@ -1251,21 +1251,28 @@ public class Args extends CommonParameter {
                 + ": " + schemeName, TronError.ErrCode.WITNESS_INIT);
           }
         }
+        // Each entry is the extended private key f‖g‖F‖h (priv ‖ pub) hex,
+        // sized (privLen + pubLen) bytes for the active scheme. We split here
+        // so downstream consumers (ConsensusService, LocalWitnesses) keep the
+        // same priv/pub split they already use — derivePublicKey(priv) replaces
+        // the previous explicit `pub` config field.
+        PQScheme scheme = localWitnesses.getPqScheme();
+        int privHexLen = PQSchemeRegistry.getPrivateKeyLength(scheme) * 2;
+        int extHexLen = privHexLen + PQSchemeRegistry.getPublicKeyLength(scheme) * 2;
         List<String> pqPrivateKeys = new ArrayList<>(pqEntries.size());
         List<String> pqPublicKeys = new ArrayList<>(pqEntries.size());
         for (int i = 0; i < pqEntries.size(); i++) {
-          Config entry = pqEntries.get(i).toConfig();
-          if (!entry.hasPath(ConfigKey.LOCAL_WITNESS_PQ_KEY_PRIV)
-              || !entry.hasPath(ConfigKey.LOCAL_WITNESS_PQ_KEY_PUB)) {
+          String hex = pqEntries.get(i);
+          String stripped = hex != null && hex.startsWith("0x") ? hex.substring(2) : hex;
+          if (stripped == null || stripped.length() != extHexLen) {
             throw new TronError(String.format(
-                "%s[%d] must define both '%s' and '%s'",
-                ConfigKey.LOCAL_WITNESS_PQ_KEYS, i,
-                ConfigKey.LOCAL_WITNESS_PQ_KEY_PRIV,
-                ConfigKey.LOCAL_WITNESS_PQ_KEY_PUB),
+                "%s[%d] must be %d hex chars (extended priv‖pub for %s), actual: %d",
+                ConfigKey.LOCAL_WITNESS_PQ_KEYS, i, extHexLen, scheme,
+                stripped == null ? 0 : stripped.length()),
                 TronError.ErrCode.WITNESS_INIT);
           }
-          pqPrivateKeys.add(entry.getString(ConfigKey.LOCAL_WITNESS_PQ_KEY_PRIV));
-          pqPublicKeys.add(entry.getString(ConfigKey.LOCAL_WITNESS_PQ_KEY_PUB));
+          pqPrivateKeys.add(stripped.substring(0, privHexLen));
+          pqPublicKeys.add(stripped.substring(privHexLen));
         }
         localWitnesses.setPqKeypairs(pqPrivateKeys, pqPublicKeys);
         byte[] address = WitnessInitializer.resolvePqAuthSigAddress(witnessAddr);
