@@ -2425,12 +2425,12 @@ public class PrecompiledContracts {
           } catch (Throwable t) {
             return Pair.of(true, DATA_FALSE);
           }
-          byte[] dedupKey = merge(derivedAddr, sig);
+          // Falcon-512 signing is randomized: the same key can produce many distinct
+          // valid signatures for the same hash. Dedup must therefore key on the
+          // derived address alone, otherwise an attacker could replay one key into
+          // the threshold N times via N different signatures.
           if (ByteArray.matrixContains(executedSignList, derivedAddr)) {
-            if (ByteArray.matrixContains(executedSignList, dedupKey)) {
-              continue;
-            }
-            MUtil.checkCPUTime();
+            continue;
           }
           long weight = TransactionCapsule.getWeight(permission, derivedAddr);
           if (weight == 0) {
@@ -2440,7 +2440,6 @@ public class PrecompiledContracts {
             return Pair.of(true, DATA_FALSE);
           }
           totalWeight += weight;
-          executedSignList.add(dedupKey);
           executedSignList.add(derivedAddr);
         }
 

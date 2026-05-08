@@ -52,6 +52,12 @@ public class ConsensusService {
     List<String> privateKeys = Args.getLocalWitnesses().getPrivateKeys();
     List<String> pqPrivateKeys = Args.getLocalWitnesses().getPqPrivateKeys();
     List<String> pqPublicKeys = Args.getLocalWitnesses().getPqPublicKeys();
+    if (pqPublicKeys.size() != pqPrivateKeys.size()) {
+      throw new TronError(
+          "localwitness_pq_keys size mismatch: " + pqPrivateKeys.size()
+              + " private vs " + pqPublicKeys.size() + " public",
+          TronError.ErrCode.WITNESS_INIT);
+    }
     if (privateKeys.size() > 1) {
       for (String key : privateKeys) {
         byte[] privateKey = fromHexString(key);
