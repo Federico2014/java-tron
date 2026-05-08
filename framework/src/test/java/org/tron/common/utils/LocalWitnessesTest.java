@@ -104,4 +104,49 @@ public class LocalWitnessesTest {
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
     assertTrue(err.getMessage().contains("unsupported PQ signature scheme"));
   }
+
+  @Test
+  public void nullSchemeRejected() {
+    LocalWitnesses lw = new LocalWitnesses();
+    TronError err = assertThrows(TronError.class, () -> lw.setPqScheme(null));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage().contains("unsupported PQ signature scheme"));
+  }
+
+  @Test
+  public void supportedSchemeAccepted() {
+    LocalWitnesses lw = new LocalWitnesses();
+    lw.setPqScheme(PQScheme.FN_DSA_512);
+    assertEquals(PQScheme.FN_DSA_512, lw.getPqScheme());
+  }
+
+  @Test
+  public void emptyKeypairsAreNoop() {
+    LocalWitnesses lw = new LocalWitnesses();
+    lw.setPqKeypairs(Collections.emptyList(), Collections.emptyList());
+    lw.setPqKeypairs(null, null);
+    assertEquals(0, lw.getPqPrivateKeys().size());
+    assertEquals(0, lw.getPqPublicKeys().size());
+  }
+
+  @Test
+  public void zeroXPrefixedHexAccepted() {
+    // validatePqKey strips a leading "0x" before measuring the length, so
+    // hex strings with the prefix must be accepted.
+    LocalWitnesses lw = new LocalWitnesses();
+    lw.setPqKeypairs(
+        Collections.singletonList("0x" + priv),
+        Collections.singletonList("0x" + pub));
+    assertEquals(1, lw.getPqPrivateKeys().size());
+  }
+
+  @Test
+  public void blankKeyRejected() {
+    LocalWitnesses lw = new LocalWitnesses();
+    TronError err = assertThrows(TronError.class,
+        () -> lw.setPqKeypairs(Collections.singletonList(""),
+            Collections.singletonList(pub)));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage().contains("PQ private key"));
+  }
 }
