@@ -15,8 +15,8 @@ import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.protos.Protocol;
-import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.PQAuthSig;
+import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.Transaction;
 
 public class UtilTest extends BaseTest {

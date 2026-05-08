@@ -794,7 +794,8 @@ public class ProposalUtilTest extends BaseTest {
     dynamicPropertiesStore.saveAllowFnDsa512(1L);
     thrown = assertThrows(ContractValidateException.class,
         () -> ProposalUtil.validator(dynamicPropertiesStore, forkUtils, code, 1));
-    assertEquals("[ALLOW_FN_DSA_512] has been valid, no need to propose again", thrown.getMessage());
+    assertEquals("[ALLOW_FN_DSA_512] has been valid, no need to propose again",
+        thrown.getMessage());
     dynamicPropertiesStore.saveAllowFnDsa512(0L);
   }
 }
