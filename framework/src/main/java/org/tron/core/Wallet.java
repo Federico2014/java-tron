@@ -4035,16 +4035,23 @@ public class Wallet {
           }
         }
       } else if (logType == 4) {
-        //Data = toAddress(32) + value(32) + ciphertext(80) + padding(16)
+        //Data = toAddress(32) + value(32) + ciphertext(80) + nonce(12) + reserved(4)
+        // Pre-fix burns wrote 16 bytes of zero padding in place of nonce+reserved; those
+        // bytes are forwarded as-is and decrypt under the same AEAD path.
+        if (logData.length < 64 + NoteEncryption.Encryption.BURN_CIPHER_RECORD_SIZE) {
+          return Optional.empty();
+        }
         byte[] logToAddress = ByteArray.subArray(logData, 12, 32);
         byte[] logAmountArray = ByteArray.subArray(logData, 32, 64);
         byte[] cipher = ByteArray.subArray(logData, 64, 144);
+        byte[] nonce = ByteArray.subArray(logData, 144,
+            144 + NoteEncryption.Encryption.BURN_NONCE_LEN);
         BigInteger logAmount = ByteUtil.bytesToBigInteger(logAmountArray);
         byte[] plaintext;
         byte[] amountArray = new byte[32];
         byte[] decryptedAddress = new byte[20];
         Optional<byte[]> decryptedText = NoteEncryption.Encryption
-            .decryptBurnMessageByOvk(ovk, cipher);
+            .decryptBurnMessageByOvk(ovk, cipher, nonce);
         if (decryptedText.isPresent()) {
           plaintext = decryptedText.get();
           System.arraycopy(plaintext, 0, amountArray, 0, 32);
@@ -4278,8 +4285,18 @@ public class Wallet {
         parameterType);
     if (parametersBuilder.getShieldedTRC20ParametersType() == ShieldedTRC20ParametersType.BURN) {
       byte[] burnCiper = ByteArray.fromHexString(shieldedTRC20Parameters.getTriggerContractInput());
-      if (!ArrayUtils.isEmpty(burnCiper) && burnCiper.length == 80) {
+      if (!ArrayUtils.isEmpty(burnCiper)
+          && burnCiper.length == NoteEncryption.Encryption.BURN_CIPHER_RECORD_SIZE) {
         parametersBuilder.setBurnCiphertext(burnCiper);
+      } else if (!ArrayUtils.isEmpty(burnCiper)
+          && burnCiper.length == NoteEncryption.Encryption.BURN_CIPHER_LEN) {
+        // Legacy 80-byte cipher from clients built before the random-nonce upgrade.
+        // Pad to the 96-byte record with a zero nonce/reserved tail; on-chain layout
+        // is identical to the pre-upgrade burn calldata, so this remains backward
+        // compatible for callers that have not yet rebuilt against the new encoder.
+        byte[] record = new byte[NoteEncryption.Encryption.BURN_CIPHER_RECORD_SIZE];
+        System.arraycopy(burnCiper, 0, record, 0, NoteEncryption.Encryption.BURN_CIPHER_LEN);
+        parametersBuilder.setBurnCiphertext(record);
       } else {
         throw new ZksnarkException(
             "invalid shielded TRC-20 contract parameters for burn trigger input");

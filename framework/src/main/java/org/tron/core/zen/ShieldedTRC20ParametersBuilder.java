@@ -61,7 +61,7 @@ public class ShieldedTRC20ParametersBuilder {
   @Setter
   private BigInteger transparentToAmount;
   @Setter
-  private byte[] burnCiphertext = new byte[80];
+  private byte[] burnCiphertext = new byte[96];
 
   public ShieldedTRC20ParametersBuilder() {
 
@@ -492,7 +492,9 @@ public class ShieldedTRC20ParametersBuilder {
     }
 
     byte[] mergedBytes;
-    byte[] zeros = new byte[16];
+    // burnCiphertext is a 96-byte record: cipher(80) || nonce(12) || reserved(4),
+    // occupying the same calldata slot as the previous cipher(80) || zeros(16) layout
+    // so total length is unchanged.
     mergedBytes = ByteUtil.merge(
         spendDesc.getNullifier().toByteArray(),
         spendDesc.getAnchor().toByteArray(),
@@ -503,8 +505,7 @@ public class ShieldedTRC20ParametersBuilder {
         ByteUtil.bigIntegerToBytes(value, 32),
         burnParams.getBindingSignature().toByteArray(),
         payTo,
-        burnCiphertext,
-        zeros
+        burnCiphertext
     );
 
     byte[] outputOffsetBytes; // 32
@@ -524,7 +525,7 @@ public class ShieldedTRC20ParametersBuilder {
       coffsetBytes = ByteUtil.longTo32Bytes(mergedBytes.length + 32 * 3 + 32L * 9);
       countBytes = ByteUtil.longTo32Bytes(1L);
       ReceiveDescription recvDesc = burnParams.getReceiveDescription(0);
-      zeros = new byte[12];
+      byte[] zeros = new byte[12];
       mergedBytes = ByteUtil
           .merge(mergedBytes,
               outputOffsetBytes,

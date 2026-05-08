@@ -1,14 +1,22 @@
 package org.tron.core.zksnark;
 
 import com.google.protobuf.ByteString;
+import java.lang.reflect.Method;
+import java.math.BigInteger;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import javax.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.tron.api.GrpcAPI;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
+import org.tron.common.utils.ByteUtil;
+import org.tron.common.zksnark.JLibsodium;
+import org.tron.common.zksnark.JLibsodiumParam.Chacha20Poly1305IetfEncryptParams;
 import org.tron.core.Wallet;
 import org.tron.core.capsule.AssetIssueCapsule;
 import org.tron.core.config.args.Args;
@@ -17,7 +25,9 @@ import org.tron.core.zen.note.Note;
 import org.tron.core.zen.note.NoteEncryption.Encryption;
 import org.tron.core.zen.note.NoteEncryption.Encryption.OutCiphertext;
 import org.tron.core.zen.note.OutgoingPlaintext;
+import org.tron.protos.Protocol.TransactionInfo;
 import org.tron.protos.contract.AssetIssueContractOuterClass.AssetIssueContract;
+import org.tron.protos.contract.ShieldContract;
 
 @Slf4j
 public class NoteEncDecryTest extends BaseTest {
@@ -192,5 +202,233 @@ public class NoteEncDecryTest extends BaseTest {
     Assert.assertArrayEquals(d, result2.getD().getData());
     Assert.assertArrayEquals(rcm, result2.getRcm());
     Assert.assertEquals(4000, result2.getValue());
+  }
+
+  /**
+   * Round-trip: encryptBurnMessageByOvk emits a 96-byte record (cipher(80) || nonce(12)
+   * || reserved(4)); decryptBurnMessageByOvk recovers the original (amount, address) plaintext
+   * when given the embedded nonce.
+   */
+  @Test
+  public void testBurnMessageOvkRoundTrip() throws ZksnarkException {
+    byte[] ovk = new byte[]{
+        -91, -41, -115, 8, -94, 69, 15, -49, -44, 69, -65, 38, 15, -115, 53, -47,
+        48, 54, 106, -123, 126, -12, 3, -104, 18, 20, 57, -39, -114, -72, 74, -118};
+    BigInteger amount = BigInteger.valueOf(1_234_567L);
+    byte[] toAddress = new byte[21];
+    toAddress[0] = Wallet.getAddressPreFixByte();
+    for (int i = 1; i < 21; i++) {
+      toAddress[i] = (byte) i;
+    }
+
+    Optional<byte[]> recordOpt = Encryption.encryptBurnMessageByOvk(ovk, amount, toAddress);
+    Assert.assertTrue(recordOpt.isPresent());
+    byte[] record = recordOpt.get();
+    Assert.assertEquals(Encryption.BURN_CIPHER_RECORD_SIZE, record.length);
+
+    byte[] cipher = new byte[Encryption.BURN_CIPHER_LEN];
+    System.arraycopy(record, 0, cipher, 0, Encryption.BURN_CIPHER_LEN);
+    byte[] nonce = new byte[Encryption.BURN_NONCE_LEN];
+    System.arraycopy(record, Encryption.BURN_NONCE_OFFSET, nonce, 0, Encryption.BURN_NONCE_LEN);
+
+    // reserved bytes after the nonce are zero
+    for (int i = Encryption.BURN_NONCE_OFFSET + Encryption.BURN_NONCE_LEN;
+         i < Encryption.BURN_CIPHER_RECORD_SIZE; i++) {
+      Assert.assertEquals(0, record[i]);
+    }
+
+    Optional<byte[]> plainOpt = Encryption.decryptBurnMessageByOvk(ovk, cipher, nonce);
+    Assert.assertTrue(plainOpt.isPresent());
+    byte[] plain = plainOpt.get();
+    byte[] amountBytes = new byte[32];
+    System.arraycopy(plain, 0, amountBytes, 0, 32);
+    Assert.assertEquals(amount, new BigInteger(1, amountBytes));
+    byte[] addrOut = new byte[21];
+    System.arraycopy(plain, 32, addrOut, 0, 21);
+    Assert.assertArrayEquals(toAddress, addrOut);
+  }
+
+  /**
+   * The fresh-per-burn nonce must not repeat across successive encryptions for the same
+   * (ovk, amount, address). Tests that encryptBurnMessageByOvk uses CSPRNG-derived nonces.
+   */
+  @Test
+  public void testBurnMessageOvkNonceUniqueness() throws ZksnarkException {
+    byte[] ovk = new byte[32];
+    for (int i = 0; i < 32; i++) {
+      ovk[i] = (byte) (i + 1);
+    }
+    byte[] toAddress = new byte[21];
+    toAddress[0] = Wallet.getAddressPreFixByte();
+    BigInteger amount = BigInteger.TEN;
+
+    int n = 64;
+    Set<String> seenNonces = new HashSet<>();
+    Set<String> seenCiphers = new HashSet<>();
+    for (int i = 0; i < n; i++) {
+      Optional<byte[]> recordOpt = Encryption.encryptBurnMessageByOvk(ovk, amount, toAddress);
+      Assert.assertTrue(recordOpt.isPresent());
+      byte[] record = recordOpt.get();
+      String nonceHex = ByteArray.toHexString(
+          java.util.Arrays.copyOfRange(record, Encryption.BURN_NONCE_OFFSET,
+              Encryption.BURN_NONCE_OFFSET + Encryption.BURN_NONCE_LEN));
+      String cipherHex = ByteArray.toHexString(
+          java.util.Arrays.copyOfRange(record, 0, Encryption.BURN_CIPHER_LEN));
+      Assert.assertTrue("nonce repeated within " + n + " encryptions: " + nonceHex,
+          seenNonces.add(nonceHex));
+      Assert.assertTrue("ciphertext repeated within " + n + " encryptions",
+          seenCiphers.add(cipherHex));
+    }
+  }
+
+  /**
+   * Backward compatibility: a v1 burn record (cipher emitted under the legacy zero-nonce
+   * encoder) decrypts cleanly via the new API when the caller passes the 12B zero nonce
+   * read from the pre-upgrade log padding.
+   */
+  @Test
+  public void testBurnMessageOvkLegacyZeroNonce() throws ZksnarkException {
+    byte[] ovk = new byte[]{
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+        17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+    byte[] toAddress = new byte[21];
+    toAddress[0] = Wallet.getAddressPreFixByte();
+    toAddress[20] = 0x42;
+    BigInteger amount = BigInteger.valueOf(99L);
+
+    // Build a v1 cipher exactly as the pre-upgrade encoder did: 80B output under a 12B
+    // zero nonce. Bypass the new encryptBurnMessageByOvk (which emits a random nonce).
+    byte[] plaintext = new byte[64];
+    byte[] amountArr = ByteUtil.bigIntegerToBytes(amount, 32);
+    System.arraycopy(amountArr, 0, plaintext, 0, 32);
+    System.arraycopy(toAddress, 0, plaintext, 32, 21);
+    byte[] zeroNonce = new byte[12];
+    byte[] v1Cipher = new byte[Encryption.BURN_CIPHER_LEN];
+    int rc = JLibsodium.cryptoAeadChacha20Poly1305IetfEncrypt(new Chacha20Poly1305IetfEncryptParams(
+        v1Cipher, null, plaintext, 64, null, 0, null, zeroNonce, ovk));
+    Assert.assertEquals(0, rc);
+
+    // 12B zero nonce (the bytes a pre-upgrade log carries at the nonce offset) → decrypts.
+    Optional<byte[]> p1 = Encryption.decryptBurnMessageByOvk(ovk, v1Cipher, new byte[12]);
+    Assert.assertTrue(p1.isPresent());
+    Assert.assertArrayEquals(plaintext, p1.get());
+
+    // Wrong nonce on a v1 cipher → AEAD tag mismatch
+    byte[] wrongNonce = new byte[12];
+    wrongNonce[0] = 1;
+    Assert.assertFalse(Encryption.decryptBurnMessageByOvk(ovk, v1Cipher, wrongNonce).isPresent());
+  }
+
+  /**
+   * The 96-byte triggerContractInput path of getTriggerInputForShieldedTRC20Contract is
+   * exercised when callers (re)build burn calldata against the new encoder.
+   */
+  @Test
+  public void testGetTriggerInputBurn96ByteCipher() throws Exception {
+    byte[] burnCipher = new byte[Encryption.BURN_CIPHER_RECORD_SIZE];
+    BigInteger value = BigInteger.ONE;
+    GrpcAPI.ShieldedTRC20Parameters trc20Params = buildBurnTrc20Params(burnCipher);
+    GrpcAPI.ShieldedTRC20TriggerContractParameters req = buildBurnTriggerRequest(
+        trc20Params, value);
+    GrpcAPI.BytesMessage out = wallet.getTriggerInputForShieldedTRC20Contract(req);
+    Assert.assertNotNull(out);
+  }
+
+  /**
+   * The 80-byte triggerContractInput path stays valid: legacy clients that have not been
+   * rebuilt against the new encoder still produce burn calldata, and the wallet pads the
+   * cipher with a zero nonce/reserved tail to the 96-byte record layout.
+   */
+  @Test
+  public void testGetTriggerInputBurn80ByteCipher() throws Exception {
+    byte[] legacyCipher = new byte[Encryption.BURN_CIPHER_LEN];
+    BigInteger value = BigInteger.ONE;
+    GrpcAPI.ShieldedTRC20Parameters trc20Params = buildBurnTrc20Params(legacyCipher);
+    GrpcAPI.ShieldedTRC20TriggerContractParameters req = buildBurnTriggerRequest(
+        trc20Params, value);
+    GrpcAPI.BytesMessage out = wallet.getTriggerInputForShieldedTRC20Contract(req);
+    Assert.assertNotNull(out);
+  }
+
+  /**
+   * A burn log shorter than the 64B prefix + 96B record is rejected without attempting to
+   * decrypt a partial nonce field.
+   */
+  @Test
+  public void testGetNoteTxFromLogListByOvkBurnTooShort() throws Exception {
+    Wallet w = new Wallet();
+    byte[] ovk = new byte[32];
+    byte[] logData = new byte[64 + Encryption.BURN_CIPHER_RECORD_SIZE - 1];
+    TransactionInfo.Log log = TransactionInfo.Log.newBuilder()
+        .setData(ByteString.copyFrom(logData)).build();
+    GrpcAPI.DecryptNotesTRC20.NoteTx.Builder builder = GrpcAPI.DecryptNotesTRC20.NoteTx
+        .newBuilder();
+
+    Method m = Wallet.class.getDeclaredMethod("getNoteTxFromLogListByOvk",
+        GrpcAPI.DecryptNotesTRC20.NoteTx.Builder.class,
+        TransactionInfo.Log.class, byte[].class, int.class);
+    m.setAccessible(true);
+    Object result = m.invoke(w, builder, log, ovk, 4);
+    Assert.assertFalse(((Optional<?>) result).isPresent());
+  }
+
+  /**
+   * End-to-end burn log decrypt: a record produced by the new random-nonce encoder is
+   * decoded back to the original (amount, address) tuple when the log carries the matching
+   * 12-byte nonce field.
+   */
+  @Test
+  public void testGetNoteTxFromLogListByOvkBurnRoundTrip() throws Exception {
+    Wallet w = new Wallet();
+    byte[] ovk = new byte[32];
+    for (int i = 0; i < 32; i++) {
+      ovk[i] = (byte) (i + 1);
+    }
+    BigInteger amount = BigInteger.valueOf(1000L);
+    byte[] toAddress = new byte[21];
+    toAddress[0] = Wallet.getAddressPreFixByte();
+    toAddress[20] = 0x42;
+
+    Optional<byte[]> recordOpt = Encryption.encryptBurnMessageByOvk(ovk, amount, toAddress);
+    Assert.assertTrue(recordOpt.isPresent());
+    byte[] record = recordOpt.get();
+
+    byte[] logData = new byte[64 + Encryption.BURN_CIPHER_RECORD_SIZE];
+    System.arraycopy(toAddress, 1, logData, 12, 20);
+    byte[] valBytes = ByteUtil.bigIntegerToBytes(amount, 32);
+    System.arraycopy(valBytes, 0, logData, 32, 32);
+    System.arraycopy(record, 0, logData, 64, Encryption.BURN_CIPHER_RECORD_SIZE);
+
+    TransactionInfo.Log log = TransactionInfo.Log.newBuilder()
+        .setData(ByteString.copyFrom(logData)).build();
+    GrpcAPI.DecryptNotesTRC20.NoteTx.Builder builder = GrpcAPI.DecryptNotesTRC20.NoteTx
+        .newBuilder();
+
+    Method m = Wallet.class.getDeclaredMethod("getNoteTxFromLogListByOvk",
+        GrpcAPI.DecryptNotesTRC20.NoteTx.Builder.class,
+        TransactionInfo.Log.class, byte[].class, int.class);
+    m.setAccessible(true);
+    Object result = m.invoke(w, builder, log, ovk, 4);
+    Assert.assertTrue(((Optional<?>) result).isPresent());
+  }
+
+  private GrpcAPI.ShieldedTRC20Parameters buildBurnTrc20Params(byte[] cipher) {
+    return GrpcAPI.ShieldedTRC20Parameters.newBuilder()
+        .setParameterType("burn")
+        .setTriggerContractInput(ByteArray.toHexString(cipher))
+        .addSpendDescription(ShieldContract.SpendDescription.getDefaultInstance())
+        .build();
+  }
+
+  private GrpcAPI.ShieldedTRC20TriggerContractParameters buildBurnTriggerRequest(
+      GrpcAPI.ShieldedTRC20Parameters trc20Params, BigInteger value) {
+    byte[] toAddress = new byte[21];
+    toAddress[0] = Wallet.getAddressPreFixByte();
+    return GrpcAPI.ShieldedTRC20TriggerContractParameters.newBuilder()
+        .setShieldedTRC20Parameters(trc20Params)
+        .addSpendAuthoritySignature(GrpcAPI.BytesMessage.getDefaultInstance())
+        .setAmount(value.toString())
+        .setTransparentToAddress(ByteString.copyFrom(toAddress))
+        .build();
   }
 }

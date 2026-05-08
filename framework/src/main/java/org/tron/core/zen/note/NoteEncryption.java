@@ -8,6 +8,7 @@ import static org.tron.core.utils.ZenChainParams.ZC_OUTPLAINTEXT_SIZE;
 import static org.tron.core.zen.note.NoteEncryption.Encryption.NOTEENCRYPTION_CIPHER_KEYSIZE;
 
 import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.util.Optional;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -246,15 +247,30 @@ public class NoteEncryption {
     }
 
     /**
-     * encrypt the message by ovk used for scanning
+     * Burn ciphertext record layout: cipher(80) || nonce(12) || reserved(4) = 96 bytes.
+     * The 12-byte nonce is fresh-per-burn CSPRNG output to satisfy RFC 8439 §4 (key, nonce)
+     * uniqueness; the trailing 4 bytes are reserved zero, padding the record to fit the
+     * existing 96-byte slot in burn calldata / TokenBurn event data.
+     */
+    public static final int BURN_CIPHER_RECORD_SIZE = 96;
+    public static final int BURN_CIPHER_LEN = 80;
+    public static final int BURN_NONCE_OFFSET = 80;
+    public static final int BURN_NONCE_LEN = CRYPTO_AEAD_CHACHA20POLY1305_IETF_NPUBBYTES;
+
+    private static final SecureRandom BURN_NONCE_RNG = new SecureRandom();
+
+    /**
+     * encrypt the message by ovk used for scanning. Returns a 96-byte record:
+     * cipher(80) || nonce(12) || reserved zero(4).
      */
     public static Optional<byte[]> encryptBurnMessageByOvk(byte[] ovk, BigInteger toAmount,
         byte[] transparentToAddress)
         throws ZksnarkException {
       byte[] plaintext = new byte[64];
       byte[] amountArray = ByteUtil.bigIntegerToBytes(toAmount, 32);
-      byte[] cipherNonce = new byte[12];
-      byte[] cipher = new byte[80];
+      byte[] cipherNonce = new byte[BURN_NONCE_LEN];
+      BURN_NONCE_RNG.nextBytes(cipherNonce);
+      byte[] cipher = new byte[BURN_CIPHER_LEN];
       System.arraycopy(amountArray, 0, plaintext, 0, 32);
       System.arraycopy(transparentToAddress, 0, plaintext, 32,
           21);
@@ -265,23 +281,28 @@ public class NoteEncryption {
         return Optional.empty();
       }
 
-      return Optional.of(cipher);
+      byte[] record = new byte[BURN_CIPHER_RECORD_SIZE];
+      System.arraycopy(cipher, 0, record, 0, BURN_CIPHER_LEN);
+      System.arraycopy(cipherNonce, 0, record, BURN_NONCE_OFFSET, BURN_NONCE_LEN);
+      return Optional.of(record);
     }
 
     /**
-     * decrypt the message by ovk used for scanning
+     * decrypt the message by ovk used for scanning. {@code nonce} is the per-burn nonce
+     * recovered from the log and is required to be {@link #BURN_NONCE_LEN} bytes. Pre-upgrade
+     * burn logs carry an all-zero byte field at the nonce offset, which is forwarded as-is
+     * and decrypts via the same code path.
      */
-    public static Optional<byte[]> decryptBurnMessageByOvk(byte[] ovk, byte[] ciphertext)
-        throws ZksnarkException {
+    public static Optional<byte[]> decryptBurnMessageByOvk(byte[] ovk, byte[] ciphertext,
+        byte[] nonce) throws ZksnarkException {
       byte[] outPlaintext = new byte[64];
-      byte[] cipherNonce = new byte[12];
       if (JLibsodium.cryptoAeadChacha20poly1305IetfDecrypt(new Chacha20poly1305IetfDecryptParams(
           outPlaintext, null,
           null,
-          ciphertext, 80,
+          ciphertext, BURN_CIPHER_LEN,
           null,
           0,
-          cipherNonce, ovk)) != 0) {
+          nonce, ovk)) != 0) {
         return Optional.empty();
       }
       return Optional.of(outPlaintext);
