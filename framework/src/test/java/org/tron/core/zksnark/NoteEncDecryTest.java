@@ -317,6 +317,10 @@ public class NoteEncDecryTest extends BaseTest {
     byte[] wrongNonce = new byte[12];
     wrongNonce[0] = 1;
     Assert.assertFalse(Encryption.decryptBurnMessageByOvk(ovk, v1Cipher, wrongNonce).isPresent());
+
+    // Malformed (wrong-length / null) nonce → fail-fast precondition guard
+    Assert.assertFalse(Encryption.decryptBurnMessageByOvk(ovk, v1Cipher, new byte[11]).isPresent());
+    Assert.assertFalse(Encryption.decryptBurnMessageByOvk(ovk, v1Cipher, null).isPresent());
   }
 
   /**

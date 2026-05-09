@@ -295,6 +295,9 @@ public class NoteEncryption {
      */
     public static Optional<byte[]> decryptBurnMessageByOvk(byte[] ovk, byte[] ciphertext,
         byte[] nonce) throws ZksnarkException {
+      if (nonce == null || nonce.length != BURN_NONCE_LEN) {
+        return Optional.empty();
+      }
       byte[] outPlaintext = new byte[64];
       if (JLibsodium.cryptoAeadChacha20poly1305IetfDecrypt(new Chacha20poly1305IetfDecryptParams(
           outPlaintext, null,
