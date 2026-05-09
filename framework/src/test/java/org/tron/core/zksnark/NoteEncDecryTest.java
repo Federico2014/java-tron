@@ -339,19 +339,24 @@ public class NoteEncDecryTest extends BaseTest {
   }
 
   /**
-   * The 80-byte triggerContractInput path stays valid: legacy clients that have not been
-   * rebuilt against the new encoder still produce burn calldata, and the wallet pads the
-   * cipher with a zero nonce/reserved tail to the 96-byte record layout.
+   * Outbound burn calldata construction must reject the legacy 80-byte cipher: a stale
+   * client passing a pre-upgrade ciphertext would otherwise emit a fresh zero-nonce burn,
+   * extending the (ovk, zero-nonce) reuse surface forward in time. Forcing a hard error
+   * here makes the upgrade non-optional for callers using this API.
    */
   @Test
-  public void testGetTriggerInputBurn80ByteCipher() throws Exception {
+  public void testGetTriggerInputBurn80ByteCipherRejected() throws Exception {
     byte[] legacyCipher = new byte[Encryption.BURN_CIPHER_LEN];
     BigInteger value = BigInteger.ONE;
     GrpcAPI.ShieldedTRC20Parameters trc20Params = buildBurnTrc20Params(legacyCipher);
     GrpcAPI.ShieldedTRC20TriggerContractParameters req = buildBurnTriggerRequest(
         trc20Params, value);
-    GrpcAPI.BytesMessage out = wallet.getTriggerInputForShieldedTRC20Contract(req);
-    Assert.assertNotNull(out);
+    try {
+      wallet.getTriggerInputForShieldedTRC20Contract(req);
+      Assert.fail("expected ZksnarkException for 80-byte burn cipher");
+    } catch (ZksnarkException e) {
+      Assert.assertTrue(e.getMessage().contains("legacy 80-byte burn cipher"));
+    }
   }
 
   /**

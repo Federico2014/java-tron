@@ -4290,13 +4290,9 @@ public class Wallet {
         parametersBuilder.setBurnCiphertext(burnCiper);
       } else if (!ArrayUtils.isEmpty(burnCiper)
           && burnCiper.length == NoteEncryption.Encryption.BURN_CIPHER_LEN) {
-        // Legacy 80-byte cipher from clients built before the random-nonce upgrade.
-        // Pad to the 96-byte record with a zero nonce/reserved tail; on-chain layout
-        // is identical to the pre-upgrade burn calldata, so this remains backward
-        // compatible for callers that have not yet rebuilt against the new encoder.
-        byte[] record = new byte[NoteEncryption.Encryption.BURN_CIPHER_RECORD_SIZE];
-        System.arraycopy(burnCiper, 0, record, 0, NoteEncryption.Encryption.BURN_CIPHER_LEN);
-        parametersBuilder.setBurnCiphertext(record);
+        throw new ZksnarkException(
+            "legacy 80-byte burn cipher is no longer accepted; rebuild the request against "
+                + "encryptBurnMessageByOvk to emit a 96-byte record (cipher || nonce || reserved)");
       } else {
         throw new ZksnarkException(
             "invalid shielded TRC-20 contract parameters for burn trigger input");

@@ -259,6 +259,15 @@ public class NoteEncryption {
 
     private static final SecureRandom BURN_NONCE_RNG = new SecureRandom();
 
+    private static boolean isAllZero(byte[] bytes) {
+      for (byte b : bytes) {
+        if (b != 0) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     /**
      * encrypt the message by ovk used for scanning. Returns a 96-byte record:
      * cipher(80) || nonce(12) || reserved zero(4).
@@ -269,7 +278,11 @@ public class NoteEncryption {
       byte[] plaintext = new byte[64];
       byte[] amountArray = ByteUtil.bigIntegerToBytes(toAmount, 32);
       byte[] cipherNonce = new byte[BURN_NONCE_LEN];
-      BURN_NONCE_RNG.nextBytes(cipherNonce);
+      // Reroll the 2^-96 all-zero draw so the nonce field never collides with the
+      // pre-upgrade zero-padding that legacy v1 records carry at the same offset.
+      do {
+        BURN_NONCE_RNG.nextBytes(cipherNonce);
+      } while (isAllZero(cipherNonce));
       byte[] cipher = new byte[BURN_CIPHER_LEN];
       System.arraycopy(amountArray, 0, plaintext, 0, 32);
       System.arraycopy(transparentToAddress, 0, plaintext, 32,
