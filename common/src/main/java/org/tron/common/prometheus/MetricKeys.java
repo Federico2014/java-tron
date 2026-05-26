@@ -77,6 +77,16 @@ public class MetricKeys {
      */
     public static final String TX_FETCH_LATENCY = "tron:tx_fetch_latency_seconds";
 
+    /**
+     * Handshake round-trip latency in seconds: from TCP connection
+     * establishment to {@code HelloMessage} fully processed.
+     * <p>Sampled only on the SR{@literal <->}FF handshake path — either
+     * the received {@code HelloMessage} carries a witness signature, or
+     * the remote peer is in {@code node.fastForward.nodes}. Regular
+     * FullNode handshakes are not sampled.
+     */
+    public static final String HANDSHAKE_LATENCY = "tron:handshake_latency_seconds";
+
     private Histogram() {
       throw new IllegalStateException("Histogram");
     }

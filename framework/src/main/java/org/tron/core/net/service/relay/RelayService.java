@@ -121,6 +121,22 @@ public class RelayService {
     ExecutorServiceManager.shutdownAndAwaitTermination(executorService, esName);
   }
 
+  /**
+   * Whether the channel's remote peer is in {@code node.fastForward.nodes}.
+   */
+  public boolean isFastForwardPeer(Channel channel) {
+    if (fastForwardNodes.isEmpty() || channel == null
+        || channel.getInetAddress() == null) {
+      return false;
+    }
+    for (InetSocketAddress ff : fastForwardNodes) {
+      if (channel.getInetAddress().equals(ff.getAddress())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public void fillHelloMessage(HelloMessage message, Channel channel) {
     if (!isActiveWitness()) {
       return;
