@@ -231,7 +231,7 @@ public class TransactionsMsgHandlerTest extends BaseTest {
           Protocol.Inventory.InventoryType.TRX);
       advInvRequest.put(item, 0L);
     }
-    Mockito.when(peer.getAdvInvRequest()).thenReturn(advInvRequest);
+    Mockito.doReturn(advInvRequest).when(peer).getAdvInvRequest();
   }
 
   @Test
@@ -343,6 +343,8 @@ public class TransactionsMsgHandlerTest extends BaseTest {
     handler.init();
     try {
       PeerConnection peer = Mockito.mock(PeerConnection.class);
+      // Short-circuit async handleTransaction so it doesn't race with later stubbing.
+      Mockito.doReturn(true).when(peer).isBadPeer();
 
       BalanceContract.TransferContract transferContract = BalanceContract.TransferContract
           .newBuilder()
@@ -351,24 +353,6 @@ public class TransactionsMsgHandlerTest extends BaseTest {
           .setToAddress(ByteString.copyFrom(ByteArray.fromHexString("232323a9cf")))
           .build();
 
-      // signature shorter than 65 bytes → BAD_TRX
-      Protocol.Transaction shortSigTrx = Protocol.Transaction.newBuilder()
-          .setRawData(Protocol.Transaction.raw.newBuilder()
-              .addContract(Protocol.Transaction.Contract.newBuilder()
-                  .setType(Protocol.Transaction.Contract.ContractType.TransferContract)
-                  .setParameter(Any.pack(transferContract)).build())
-              .build())
-          .addSignature(ByteString.copyFrom(new byte[64]))
-          .build();
-
-      List<Protocol.Transaction> shortList = new ArrayList<>();
-      shortList.add(shortSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(shortList));
-      P2pException shortEx = Assert.assertThrows(P2pException.class,
-          () -> handler.processMessage(peer, new TransactionsMessage(shortList)));
-      Assert.assertEquals(TypeEnum.BAD_TRX, shortEx.getType());
-
-      // signature longer than 68 bytes → BAD_TRX
       Protocol.Transaction longSigTrx = Protocol.Transaction.newBuilder()
           .setRawData(Protocol.Transaction.raw.newBuilder()
               .setRefBlockNum(1)
@@ -378,15 +362,15 @@ public class TransactionsMsgHandlerTest extends BaseTest {
               .build())
           .addSignature(ByteString.copyFrom(new byte[69]))
           .build();
-
-      List<Protocol.Transaction> longList = new ArrayList<>();
-      longList.add(longSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(longList));
-      P2pException longEx = Assert.assertThrows(P2pException.class,
-          () -> handler.processMessage(peer, new TransactionsMessage(longList)));
-      Assert.assertEquals(TypeEnum.BAD_TRX, longEx.getType());
-
-      // exactly 65 bytes → passes the length check (no P2pException from check)
+      Protocol.Transaction veryLongSigTrx = Protocol.Transaction.newBuilder()
+          .setRawData(Protocol.Transaction.raw.newBuilder()
+              .setRefBlockNum(4)
+              .addContract(Protocol.Transaction.Contract.newBuilder()
+                  .setType(Protocol.Transaction.Contract.ContractType.TransferContract)
+                  .setParameter(Any.pack(transferContract)).build())
+              .build())
+          .addSignature(ByteString.copyFrom(new byte[200]))
+          .build();
       Protocol.Transaction validSigTrx = Protocol.Transaction.newBuilder()
           .setRawData(Protocol.Transaction.raw.newBuilder()
               .setRefBlockNum(2)
@@ -396,13 +380,6 @@ public class TransactionsMsgHandlerTest extends BaseTest {
               .build())
           .addSignature(ByteString.copyFrom(new byte[65]))
           .build();
-
-      List<Protocol.Transaction> validList = new ArrayList<>();
-      validList.add(validSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(validList));
-      handler.processMessage(peer, new TransactionsMessage(validList));
-
-      // 68 bytes (upper bound) also passes the length check
       Protocol.Transaction paddedSigTrx = Protocol.Transaction.newBuilder()
           .setRawData(Protocol.Transaction.raw.newBuilder()
               .setRefBlockNum(3)
@@ -413,10 +390,41 @@ public class TransactionsMsgHandlerTest extends BaseTest {
           .addSignature(ByteString.copyFrom(new byte[68]))
           .build();
 
-      List<Protocol.Transaction> paddedList = new ArrayList<>();
-      paddedList.add(paddedSigTrx);
-      stubAdvInvRequest(peer, new TransactionsMessage(paddedList));
-      handler.processMessage(peer, new TransactionsMessage(paddedList));
+      // Stub once with a map containing every test case's item; re-populate before each call so
+      // the in-place removal done by processMessage doesn't affect later cases.
+      Map<Item, Long> advInvRequest = new ConcurrentHashMap<>();
+      Mockito.doReturn(advInvRequest).when(peer).getAdvInvRequest();
+      java.util.function.Consumer<Protocol.Transaction> primeInv = trx -> {
+        Item item = new Item(new TransactionMessage(trx).getMessageId(),
+            Protocol.Inventory.InventoryType.TRX);
+        advInvRequest.put(item, 0L);
+      };
+
+      // signature longer than 68 bytes is truncated to 68 and accepted
+      primeInv.accept(longSigTrx);
+      TransactionsMessage longMsg = new TransactionsMessage(
+          new ArrayList<>(java.util.Collections.singletonList(longSigTrx)));
+      handler.processMessage(peer, longMsg);
+      Assert.assertEquals(68,
+          longMsg.getTransactions().getTransactions(0).getSignature(0).size());
+
+      // signature far longer than 68 bytes is also truncated to 68
+      primeInv.accept(veryLongSigTrx);
+      TransactionsMessage veryLongMsg = new TransactionsMessage(
+          new ArrayList<>(java.util.Collections.singletonList(veryLongSigTrx)));
+      handler.processMessage(peer, veryLongMsg);
+      Assert.assertEquals(68,
+          veryLongMsg.getTransactions().getTransactions(0).getSignature(0).size());
+
+      // exactly 65 bytes → passes the length check
+      primeInv.accept(validSigTrx);
+      handler.processMessage(peer, new TransactionsMessage(
+          new ArrayList<>(java.util.Collections.singletonList(validSigTrx))));
+
+      // 68 bytes (upper bound) also passes the length check
+      primeInv.accept(paddedSigTrx);
+      handler.processMessage(peer, new TransactionsMessage(
+          new ArrayList<>(java.util.Collections.singletonList(paddedSigTrx))));
     } finally {
       handler.close();
     }

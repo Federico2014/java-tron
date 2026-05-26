@@ -1,6 +1,5 @@
 package org.tron.core.net.messagehandler;
 
-import com.google.protobuf.ByteString;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -14,7 +13,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.tron.common.crypto.SignUtils;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.ChainBaseManager;
@@ -127,6 +125,7 @@ public class TransactionsMsgHandler implements TronMsgHandler {
   }
 
   private void check(PeerConnection peer, TransactionsMessage msg) throws P2pException {
+    msg.sanitizeSignature();
     List<Transaction> list = msg.getTransactions().getTransactionsList();
     Set<Sha256Hash> seen = new HashSet<>(list.size() * 2);
     for (Transaction trx : list) {
@@ -143,12 +142,6 @@ public class TransactionsMsgHandler implements TronMsgHandler {
       if (trx.getRawData().getContractCount() < 1) {
         throw new P2pException(TypeEnum.BAD_TRX,
             "tx " + item.getHash() + " contract size should be greater than 0");
-      }
-      for (ByteString sig : trx.getSignatureList()) {
-        if (!SignUtils.isValidLength(sig.size())) {
-          throw new P2pException(TypeEnum.BAD_TRX,
-              "tx " + item.getHash() + " signature size is " + sig.size());
-        }
       }
     }
   }

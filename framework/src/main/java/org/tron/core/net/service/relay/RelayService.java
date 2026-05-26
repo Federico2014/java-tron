@@ -23,6 +23,7 @@ import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.ChainBaseManager;
+import org.tron.core.Constant;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.db.Manager;
@@ -150,9 +151,10 @@ public class RelayService {
       return false;
     }
 
-    if (!SignUtils.isValidLength(msg.getSignature().size())) {
+    int sigSize = msg.getSignature().size();
+    if (sigSize < Constant.PER_SIGN_LENGTH || sigSize > Constant.MAX_PER_SIGN_LENGTH) {
       logger.warn("HelloMessage from {}, signature size is {}.",
-          channel.getInetAddress(), msg.getSignature().size());
+          channel.getInetAddress(), sigSize);
       return false;
     }
 

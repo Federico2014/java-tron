@@ -1,5 +1,6 @@
 package org.tron.core.net.message.adv;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.net.message.MessageTypes;
@@ -31,6 +32,29 @@ public class TransactionsMessage extends TronMessage {
 
   public Protocol.Transactions getTransactions() {
     return transactions;
+  }
+
+  public boolean sanitizeSignature() {
+    List<Transaction> list = transactions.getTransactionsList();
+    boolean changed = false;
+    List<Transaction> sanitized = new ArrayList<>(list.size());
+    for (Transaction trx : list) {
+      TransactionCapsule cap = new TransactionCapsule(trx);
+      if (cap.sanitizeSignatures()) {
+        changed = true;
+        sanitized.add(cap.getInstance());
+      } else {
+        sanitized.add(trx);
+      }
+    }
+    if (!changed) {
+      return false;
+    }
+    Protocol.Transactions.Builder builder = Protocol.Transactions.newBuilder();
+    sanitized.forEach(builder::addTransactions);
+    this.transactions = builder.build();
+    this.data = this.transactions.toByteArray();
+    return true;
   }
 
   @Override

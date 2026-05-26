@@ -168,48 +168,21 @@ public class WalletMockTest {
   public void testBroadcastTxInvalidSigLength() throws Exception {
     Wallet wallet = new Wallet();
     TronNetDelegate tronNetDelegateMock = mock(TronNetDelegate.class);
+    when(tronNetDelegateMock.isBlockUnsolidified()).thenReturn(true);
     Field field = wallet.getClass().getDeclaredField("tronNetDelegate");
     field.setAccessible(true);
     field.set(wallet, tronNetDelegateMock);
 
-    // signature shorter than 65 bytes → SIGERROR
-    Protocol.Transaction shortSig = Protocol.Transaction.newBuilder()
-        .addSignature(ByteString.copyFrom(new byte[64]))
-        .build();
-    GrpcAPI.Return ret = wallet.broadcastTransaction(shortSig);
-    assertEquals(GrpcAPI.Return.response_code.SIGERROR, ret.getCode());
-
-    // signature longer than 68 bytes → SIGERROR
-    Protocol.Transaction longSig = Protocol.Transaction.newBuilder()
-        .addSignature(ByteString.copyFrom(new byte[69]))
-        .build();
-    ret = wallet.broadcastTransaction(longSig);
-    assertEquals(GrpcAPI.Return.response_code.SIGERROR, ret.getCode());
-
-    // empty signature → SIGERROR
-    Protocol.Transaction emptySig = Protocol.Transaction.newBuilder()
-        .addSignature(ByteString.EMPTY)
-        .build();
-    ret = wallet.broadcastTransaction(emptySig);
-    assertEquals(GrpcAPI.Return.response_code.SIGERROR, ret.getCode());
-
-    // tronNetDelegate must not be consulted because the request is rejected up front
-    Mockito.verify(tronNetDelegateMock, Mockito.never()).isBlockUnsolidified();
-
-    // 65-byte signature passes the length check and proceeds to downstream logic
-    when(tronNetDelegateMock.isBlockUnsolidified()).thenReturn(true);
-    Protocol.Transaction validSig = Protocol.Transaction.newBuilder()
-        .addSignature(ByteString.copyFrom(new byte[65]))
-        .build();
-    ret = wallet.broadcastTransaction(validSig);
-    assertEquals(GrpcAPI.Return.response_code.BLOCK_UNSOLIDIFIED, ret.getCode());
-
-    // 68-byte signature (upper bound) also passes the length check
-    Protocol.Transaction paddedSig = Protocol.Transaction.newBuilder()
-        .addSignature(ByteString.copyFrom(new byte[68]))
-        .build();
-    ret = wallet.broadcastTransaction(paddedSig);
-    assertEquals(GrpcAPI.Return.response_code.BLOCK_UNSOLIDIFIED, ret.getCode());
+    // Signature length is no longer validated up front — any length proceeds past sanitize and
+    // reaches downstream logic (here: BLOCK_UNSOLIDIFIED stubbed for short-circuit).
+    for (int size : new int[] {0, 64, 65, 68, 69, 200}) {
+      Protocol.Transaction trx = Protocol.Transaction.newBuilder()
+          .addSignature(ByteString.copyFrom(new byte[size]))
+          .build();
+      GrpcAPI.Return ret = wallet.broadcastTransaction(trx);
+      assertEquals("sig size=" + size,
+          GrpcAPI.Return.response_code.BLOCK_UNSOLIDIFIED, ret.getCode());
+    }
   }
 
   @Test
