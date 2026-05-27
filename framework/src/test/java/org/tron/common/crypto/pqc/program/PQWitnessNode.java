@@ -8,10 +8,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.Map;
 import org.bouncycastle.util.encoders.Hex;
 import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
+import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.crypto.pqc.PQSignature;
 import org.tron.common.utils.ByteArray;
@@ -49,14 +52,25 @@ import org.tron.protos.Protocol.Permission.PermissionType;
  */
 public class PQWitnessNode {
 
-  /** Active PQ scheme, selectable via {@code -Dpqc.scheme}. */
+  /**
+   * Active PQ scheme used for block production (witness signs blocks with this
+   * scheme). Selectable via {@code -Dpqc.scheme}. The on-chain user account
+   * carries owner-permission keys for ALL registered PQ schemes, so PQTxSender
+   * can broadcast transactions signed by either scheme regardless of which one
+   * the witness uses to sign blocks.
+   */
   static final PQScheme PQ_SCHEME = PQScheme.valueOf(
       System.getProperty("pqc.scheme", PQScheme.ML_DSA_44.name()));
 
-  /** Fixed seed for the PQ witness keypair (shared with PQClient for derivation). */
-  static final byte[] WITNESS_SEED = filledSeed(0x01);
-  /** Fixed seed for the PQ user keypair (shared with PQClient for derivation). */
-  static final byte[] USER_SEED = filledSeed(0x02);
+  /** Per-scheme fixed seed for the PQ witness keypair (shared with PQClient). */
+  static final Map<PQScheme, byte[]> WITNESS_SEEDS = filledSeeds((byte) 0x01);
+  /** Per-scheme fixed seed for the PQ user keypair (shared with PQClient). */
+  static final Map<PQScheme, byte[]> USER_SEEDS = filledSeeds((byte) 0x02);
+
+  /** Active-scheme witness seed (kept for callers that don't iterate schemes). */
+  static final byte[] WITNESS_SEED = WITNESS_SEEDS.get(PQ_SCHEME);
+  /** Active-scheme user seed (kept for callers that don't iterate schemes). */
+  static final byte[] USER_SEED = USER_SEEDS.get(PQ_SCHEME);
 
   /** gRPC port the node listens on. */
   static final int GRPC_PORT = 50051;
@@ -67,9 +81,12 @@ public class PQWitnessNode {
   /** P2P listen port (shared with PQFullNode so it can dial in as a seed peer). */
   static final int P2P_PORT = 18888;
 
+  private static final String DEFAULT_ECDSA_PRIVATE_KEY =
+      "1234567890123456789012345678901234567890123456789012345678901234";
+
   /** Fixed on-chain address for the demo user account. */
-  static final byte[] USER_ADDR =
-      ByteArray.fromHexString("41abd4b9367799eaa3197fecb144eb71de1e049abc");
+  static final byte[] USER_ADDR =  ECKey.fromPrivate(
+      ByteArray.fromHexString(DEFAULT_ECDSA_PRIVATE_KEY)).getAddress();
 
   public static void main(String[] args) throws Exception {
     // Force INFO level: logback-test.xml (on the test classpath) sets root=DEBUG
@@ -79,8 +96,15 @@ public class PQWitnessNode {
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
     // ── 1. Derive deterministic keypairs ──────────────────────────────────
+    // Active-scheme keypair drives block production; per-scheme user keypairs
+    // populate the multi-key owner permission so transactions signed under any
+    // registered PQ scheme verify against the same on-chain account.
     PQSignature witnessKp = PQSchemeRegistry.fromSeed(PQ_SCHEME, WITNESS_SEED);
-    PQSignature userKp    = PQSchemeRegistry.fromSeed(PQ_SCHEME, USER_SEED);
+    Map<PQScheme, PQSignature> userKps = new EnumMap<>(PQScheme.class);
+    for (PQScheme scheme : PQSchemeRegistry.registeredSchemes()) {
+      userKps.put(scheme, PQSchemeRegistry.fromSeed(scheme, USER_SEEDS.get(scheme)));
+    }
+    PQSignature userKp = userKps.get(PQ_SCHEME);
 
     byte[] witnessPub  = witnessKp.getPublicKey();
     byte[] witnessAddr = witnessKp.getAddress();
@@ -88,10 +112,14 @@ public class PQWitnessNode {
     byte[] signerAddr  = userKp.getAddress();
 
     System.out.println("=== PQC Witness Node ===");
-    System.out.println("Scheme:                       " + PQ_SCHEME);
+    System.out.println("Block-producing scheme:       " + PQ_SCHEME);
     System.out.println("Witness address:              " + ByteArray.toHexString(witnessAddr));
     System.out.println("User address:                 " + ByteArray.toHexString(USER_ADDR));
-    System.out.println("User signer address:          " + ByteArray.toHexString(signerAddr));
+    System.out.println("User signer (ECDSA): " + ByteArray.toHexString(USER_ADDR));
+    for (Map.Entry<PQScheme, PQSignature> entry : userKps.entrySet()) {
+      System.out.println("User signer (" + entry.getKey() + "): "
+          + ByteArray.toHexString(entry.getValue().getAddress()));
+    }
     System.out.println("gRPC port:                    " + GRPC_PORT);
     System.out.println("HTTP port:                    " + HTTP_PORT);
     System.out.println("P2P port:                     " + P2P_PORT);
@@ -123,7 +151,11 @@ public class PQWitnessNode {
     ChainBaseManager chain = context.getBean(ChainBaseManager.class);
 
     // ── 4. Install PQ genesis pre-state (shared with PQFullNode) ─────────
-    installPQGenesisState(db, chain, witnessPub, userPub);
+    Map<PQScheme, byte[]> userPubs = new EnumMap<>(PQScheme.class);
+    for (Map.Entry<PQScheme, PQSignature> entry : userKps.entrySet()) {
+      userPubs.put(entry.getKey(), entry.getValue().getPublicKey());
+    }
+    installPQGenesisState(db, chain, witnessPub, userPubs);
 
     // ── 5. Start consensus (DposTask auto-produces blocks) ───────────────
     context.getBean(ConsensusService.class).start();
@@ -147,24 +179,32 @@ public class PQWitnessNode {
    * Apply the PQ-specific pre-state that must exist on every node participating
    * in the demo network. Both PQWitnessNode and PQFullNode call this so their
    * genesis state matches before the first PQ block is produced / received.
+   *
+   * <p>{@code userPubs} carries one public key per registered PQ scheme; the
+   * owner permission is built as a multi-key permission with threshold 1, so
+   * a single signature under any included scheme satisfies it. This lets
+   * PQTxSender send transactions signed by either FN-DSA-512 or ML-DSA-44
+   * against the same on-chain account.
    */
   static void installPQGenesisState(Manager db, ChainBaseManager chain,
-      byte[] witnessPub, byte[] userPub) {
+      byte[] witnessPub, Map<PQScheme, byte[]> userPubs) {
     byte[] witnessAddr = PQSchemeRegistry.computeAddress(PQ_SCHEME, witnessPub);
     ByteString witnessAddrBs = ByteString.copyFrom(witnessAddr);
-    byte[] signerAddr = PQSchemeRegistry.computeAddress(PQ_SCHEME, userPub);
-    ByteString signerAddrBs = ByteString.copyFrom(signerAddr);
 
-    // Activate the active scheme on the local chain params.
-    if (PQ_SCHEME == PQScheme.ML_DSA_44) {
-      db.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
-    } else {
-      db.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+    // Activate every registered PQ scheme so transactions signed under any of
+    // them are accepted by the verifier.
+    for (PQScheme scheme : PQSchemeRegistry.registeredSchemes()) {
+      if (scheme == PQScheme.ML_DSA_44) {
+        db.getDynamicPropertiesStore().saveAllowMlDsa44(1L);
+      } else if (scheme == PQScheme.FN_DSA_512) {
+        db.getDynamicPropertiesStore().saveAllowFnDsa512(1L);
+      }
     }
     db.getDynamicPropertiesStore().saveAllowMultiSign(1L);
 
-    // Witness account with FN-DSA-512 witness permission. Address-as-fingerprint
-    // binds the public key in-band; no separate pq_key field is stored.
+    // Witness account with PQ witness permission for the block-producing scheme.
+    // Address-as-fingerprint binds the public key in-band; no separate pq_key
+    // field is stored.
     Permission witnessPerm = Permission.newBuilder()
         .setType(PermissionType.Witness)
         .setId(1).setPermissionName("witness").setThreshold(1)
@@ -182,23 +222,31 @@ public class PQWitnessNode {
     chain.getWitnessScheduleStore().saveActiveWitnesses(new ArrayList<>());
     chain.addWitness(witnessAddrBs);
 
-    // User account with FN-DSA-512 owner permission.
-    Permission userOwnerPerm = Permission.newBuilder()
-        .setType(PermissionType.Owner).setPermissionName("owner").setThreshold(1)
-        .addKeys(Key.newBuilder()
-            .setAddress(signerAddrBs).setWeight(1))
-        .build();
+    // User account with one owner-permission key per registered PQ scheme.
+    // Threshold 1 ⇒ a single signature under any included scheme passes.
+    Permission.Builder userOwnerPerm = Permission.newBuilder()
+        .setType(PermissionType.Owner).setPermissionName("owner").setThreshold(1);
+    for (Map.Entry<PQScheme, byte[]> entry : userPubs.entrySet()) {
+      byte[] signerAddr = PQSchemeRegistry.computeAddress(entry.getKey(), entry.getValue());
+      userOwnerPerm.addKeys(Key.newBuilder()
+          .setAddress(ByteString.copyFrom(signerAddr)).setWeight(1));
+    }
+    userOwnerPerm.addKeys(Key.newBuilder().setAddress(ByteString.copyFrom(USER_ADDR)).setWeight(1));
     AccountCapsule userCapsule = new AccountCapsule(
         ByteString.copyFrom(USER_ADDR), ByteString.copyFromUtf8("pquser"), AccountType.Normal);
-    userCapsule.setBalance(100_000_000L); // 100 TRX
-    userCapsule.updatePermissions(userOwnerPerm, null, Collections.emptyList());
+    userCapsule.setBalance(100_000_000_000_000L); // 100000000 TRX
+    userCapsule.updatePermissions(userOwnerPerm.build(), null, Collections.emptyList());
     db.getAccountStore().put(USER_ADDR, userCapsule);
   }
 
-  private static byte[] filledSeed(int value) {
-    byte[] seed = new byte[PQSchemeRegistry.getSeedLength(PQ_SCHEME)];
-    Arrays.fill(seed, (byte) value);
-    return seed;
+  private static Map<PQScheme, byte[]> filledSeeds(byte value) {
+    Map<PQScheme, byte[]> seeds = new EnumMap<>(PQScheme.class);
+    for (PQScheme scheme : PQSchemeRegistry.registeredSchemes()) {
+      byte[] seed = new byte[PQSchemeRegistry.getSeedLength(scheme)];
+      Arrays.fill(seed, value);
+      seeds.put(scheme, seed);
+    }
+    return Collections.unmodifiableMap(seeds);
   }
 
   private static Path writeWitnessConfig(PQSignature witnessKp) throws java.io.IOException {

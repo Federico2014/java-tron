@@ -6,7 +6,12 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.tron.api.GrpcAPI.EmptyMessage;
 import org.tron.api.GrpcAPI.Return;
@@ -33,35 +38,40 @@ import org.tron.protos.contract.BalanceContract.TransferContract;
 import org.tron.protos.contract.SmartContractOuterClass.TriggerSmartContract;
 
 /**
- * Demo client that connects to {@link PQWitnessNode} and continuously broadcasts transfer and
- * TRC20 transactions signed by a configurable PQ scheme ({@code -Dpqc.scheme}, default
- * FN_DSA_512; must match the witness node) and ECDSA.
+ * Demo client that connects to {@link PQWitnessNode} and continuously broadcasts transfer
+ * and TRC20 transactions signed by every registered PQ scheme (FN-DSA-512 and ML-DSA-44)
+ * in parallel, plus a parallel ECDSA stream. The witness node activates both PQ schemes
+ * and gives the demo user account an owner permission with one signer key per scheme, so
+ * either signature satisfies the threshold-1 owner permission.
  * <p>
- * The FN-DSA-512 keypair is derived from the same fixed seed used by PQWitnessNode, so no
+ * PQ keypairs are derived from the same fixed seeds used by PQWitnessNode, so no
  * out-of-band key exchange is needed. ECDSA transactions use -Decdsa.private.key.
  * <p>
  * Run from the repository root:
  *   ./gradlew :framework:buildFullNodeJar :framework:compileTestJava
  *   CP="framework/build/classes/java/test:framework/build/resources/test"
  *   CP="$CP:framework/build/libs/FullNode.jar"
- *   java -Dpqc.host=127.0.0.1 -Dpqc.port=50051 -Dpqc.transfer.tps=10 -Dpqc.trc20.tps=10 \
- *     -Decdsa.private.key=HEX_PRIVATE_KEY -Decdsa.transfer.tps=10 -Decdsa.trc20.tps=10 \
+ *   java -Dpqc.host=127.0.0.1 -Dpqc.port=50051 \
+ *     -Dpqc.fn-dsa-512.transfer.tps=5 -Dpqc.fn-dsa-512.trc20.tps=0 \
+ *     -Dpqc.ml-dsa-44.transfer.tps=5  -Dpqc.ml-dsa-44.trc20.tps=0 \
+ *     -Decdsa.private.key=HEX_PRIVATE_KEY \
+ *     -Decdsa.transfer.tps=5 -Decdsa.trc20.tps=0 \
  *     -cp "$CP" \
  *     org.tron.common.crypto.pqc.program.PQTxSender
  *
  * Optional JVM args:
  *   -Dpqc.host=localhost
  *   -Dpqc.port=50051
- *   -Dpqc.transfer.tps=10
- *   -Dpqc.trc20.tps=10
+ *   -Dpqc.fn-dsa-512.transfer.tps=5  (per-scheme transfer rate; 0 disables that stream)
+ *   -Dpqc.fn-dsa-512.trc20.tps=0
+ *   -Dpqc.ml-dsa-44.transfer.tps=5
+ *   -Dpqc.ml-dsa-44.trc20.tps=0
  *   -Decdsa.private.key=1234567890123456789012345678901234567890123456789012345678901234
- *   -Decdsa.transfer.tps=10
- *   -Decdsa.trc20.tps=10
+ *   -Decdsa.transfer.tps=5
+ *   -Decdsa.trc20.tps=0
  */
 public class PQTxSender {
 
-  private static final PQScheme PQ_SCHEME = PQScheme.valueOf(
-      System.getProperty("pqc.scheme", PQScheme.FN_DSA_512.name()));
   private static final String HOST =
       System.getProperty("pqc.host", "localhost");
   private static final int PORT =
@@ -96,21 +106,29 @@ public class PQTxSender {
       "1234567890123456789012345678901234567890123456789012345678901234";
 
   /**
-   * Default send rate for FN-DSA-512 transfer transactions.
+   * Per-scheme default send rates. Split so each PQ algorithm can be tuned
+   * independently from the others (Falcon-512 signing is ~2× slower than
+   * ML-DSA-44, so operators often run Falcon at a lower default rate).
    */
-  private static final double DEFAULT_TRANSFER_TPS = 10.0d;
-  /**
-   * Default send rate for FN-DSA-512 TRC20 transactions.
-   */
-  private static final double DEFAULT_TRC20_TPS = 10.0d;
-  /**
-   * Default send rate for ECDSA transfer transactions.
-   */
-  private static final double DEFAULT_ECDSA_TRANSFER_TPS = 10.0d;
-  /**
-   * Default send rate for ECDSA TRC20 transactions.
-   */
-  private static final double DEFAULT_ECDSA_TRC20_TPS = 10.0d;
+  private static final Map<PQScheme, Double> DEFAULT_PQ_TRANSFER_TPS;
+  private static final Map<PQScheme, Double> DEFAULT_PQ_TRC20_TPS;
+
+  static {
+    Map<PQScheme, Double> transfer = new EnumMap<>(PQScheme.class);
+    transfer.put(PQScheme.FN_DSA_512, 5.0d);
+    transfer.put(PQScheme.ML_DSA_44, 5.0d);
+    DEFAULT_PQ_TRANSFER_TPS = transfer;
+
+    Map<PQScheme, Double> trc20 = new EnumMap<>(PQScheme.class);
+    trc20.put(PQScheme.FN_DSA_512, 0d);
+    trc20.put(PQScheme.ML_DSA_44, 0d);
+    DEFAULT_PQ_TRC20_TPS = trc20;
+  }
+
+  /** Default send rate for ECDSA transfer transactions. */
+  private static final double DEFAULT_ECDSA_TRANSFER_TPS = 5.0d;
+  /** Default send rate for ECDSA TRC20 transactions. */
+  private static final double DEFAULT_ECDSA_TRC20_TPS = 0d;
 
   public static void main(String[] args) throws Exception {
     // Force INFO level: logback-test.xml (on the test classpath) sets root=DEBUG
@@ -119,30 +137,43 @@ public class PQTxSender {
         .getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME))
         .setLevel(ch.qos.logback.classic.Level.INFO);
 
-    // ── 1. Derive user keypair from same fixed seed as PQWitnessNode ─────
-    byte[] userSeed = new byte[PQSchemeRegistry.getSeedLength(PQ_SCHEME)];
-    Arrays.fill(userSeed, (byte) 0x02);
-    PQSignature userKp = PQSchemeRegistry.fromSeed(PQ_SCHEME, userSeed);
+    // byte[] ownerAddr = Commons.decodeFromBase58Check("TJUfbazhixG4YtqJxUDmv5XisZvvy1wP91");
+    byte[] ownerAddr = PQWitnessNode.USER_ADDR;
 
-    byte[] userPub = userKp.getPublicKey();
-    byte[] signerAddr = userKp.getAddress();
-    byte[] ownerAddr = Commons.decodeFromBase58Check("TJUfbazhixG4YtqJxUDmv5XisZvvy1wP91");
+    // ── 1. Derive a user keypair per registered PQ scheme (same seed as
+    //      PQWitnessNode), and parse per-scheme TPS knobs. ─────────────────
+    Map<PQScheme, PQSignature> pqKeypairs = new EnumMap<>(PQScheme.class);
+    Map<PQScheme, Double> pqTransferTps = new EnumMap<>(PQScheme.class);
+    Map<PQScheme, Double> pqTrc20Tps = new EnumMap<>(PQScheme.class);
+    for (PQScheme scheme : PQSchemeRegistry.registeredSchemes()) {
+      byte[] userSeed = new byte[PQSchemeRegistry.getSeedLength(scheme)];
+      Arrays.fill(userSeed, (byte) 0x02);
+      pqKeypairs.put(scheme, PQSchemeRegistry.fromSeed(scheme, userSeed));
+      pqTransferTps.put(scheme,
+          readTps("pqc." + tpsKey(scheme) + ".transfer.tps",
+              DEFAULT_PQ_TRANSFER_TPS.get(scheme)));
+      pqTrc20Tps.put(scheme,
+          readTps("pqc." + tpsKey(scheme) + ".trc20.tps",
+              DEFAULT_PQ_TRC20_TPS.get(scheme)));
+    }
+
     ECKey ecdsaKey = ECKey.fromPrivate(
         ByteArray.fromHexString(System.getProperty("ecdsa.private.key",
             DEFAULT_ECDSA_PRIVATE_KEY)));
     byte[] ecdsaOwnerAddr = ecdsaKey.getAddress();
-    double transferTps = readTps("pqc.transfer.tps", DEFAULT_TRANSFER_TPS);
-    double trc20Tps = readTps("pqc.trc20.tps", DEFAULT_TRC20_TPS);
     double ecdsaTransferTps = readTps("ecdsa.transfer.tps", DEFAULT_ECDSA_TRANSFER_TPS);
     double ecdsaTrc20Tps = readTps("ecdsa.trc20.tps", DEFAULT_ECDSA_TRC20_TPS);
 
     System.out.println("=== PQC/ECDSA Tx Sender ===");
     System.out.println("Connecting to " + HOST + ":" + PORT);
-    System.out.println("PQC scheme:           " + PQ_SCHEME);
     System.out.println("PQC owner address:    " + ByteArray.toHexString(ownerAddr));
-    System.out.println("PQC signer address:   " + ByteArray.toHexString(signerAddr));
-    System.out.println("PQC transfer TPS:     " + transferTps);
-    System.out.println("PQC TRC20 TPS:        " + trc20Tps);
+    for (Map.Entry<PQScheme, PQSignature> entry : pqKeypairs.entrySet()) {
+      PQScheme scheme = entry.getKey();
+      System.out.println("PQC signer (" + scheme + "): "
+          + ByteArray.toHexString(entry.getValue().getAddress())
+          + "  transfer TPS=" + pqTransferTps.get(scheme)
+          + "  trc20 TPS=" + pqTrc20Tps.get(scheme));
+    }
     System.out.println("ECDSA owner address:  " + ByteArray.toHexString(ecdsaOwnerAddr));
     System.out.println("ECDSA transfer TPS:   " + ecdsaTransferTps);
     System.out.println("ECDSA TRC20 TPS:      " + ecdsaTrc20Tps);
@@ -155,31 +186,41 @@ public class PQTxSender {
     WalletBlockingStub stub = WalletGrpc.newBlockingStub(channel);
 
     try {
-      Thread transferThread = new Thread(
-          () -> runTransferLoop(stub, ownerAddr, userKp, transferTps),
-          "pqc-transfer-sender-grpc");
-      Thread trc20Thread = new Thread(
-          () -> runTrc20Loop(stub, ownerAddr, userKp, trc20Tps),
-          "pqc-trc20-sender-grpc");
-      Thread ecdsaTransferThread = new Thread(
+      List<Thread> threads = new ArrayList<>();
+      for (Map.Entry<PQScheme, PQSignature> entry : pqKeypairs.entrySet()) {
+        PQScheme scheme = entry.getKey();
+        PQSignature kp = entry.getValue();
+        double transferTps = pqTransferTps.get(scheme);
+        double trc20Tps = pqTrc20Tps.get(scheme);
+        threads.add(new Thread(
+            () -> runTransferLoop(stub, ownerAddr, kp, scheme, transferTps),
+            "pqc-" + tpsKey(scheme) + "-transfer-sender-grpc"));
+        threads.add(new Thread(
+            () -> runTrc20Loop(stub, ownerAddr, kp, scheme, trc20Tps),
+            "pqc-" + tpsKey(scheme) + "-trc20-sender-grpc"));
+      }
+      threads.add(new Thread(
           () -> runEcdsaTransferLoop(stub, ecdsaOwnerAddr, ecdsaKey, ecdsaTransferTps),
-          "ecdsa-transfer-sender-grpc");
-      Thread ecdsaTrc20Thread = new Thread(
+          "ecdsa-transfer-sender-grpc"));
+      threads.add(new Thread(
           () -> runEcdsaTrc20Loop(stub, ecdsaOwnerAddr, ecdsaKey, ecdsaTrc20Tps),
-          "ecdsa-trc20-sender-grpc");
+          "ecdsa-trc20-sender-grpc"));
 
-      transferThread.start();
-      trc20Thread.start();
-      ecdsaTransferThread.start();
-      ecdsaTrc20Thread.start();
-      transferThread.join();
-      trc20Thread.join();
-      ecdsaTransferThread.join();
-      ecdsaTrc20Thread.join();
+      for (Thread t : threads) {
+        t.start();
+      }
+      for (Thread t : threads) {
+        t.join();
+      }
     } finally {
       channel.shutdown();
       channel.awaitTermination(5, TimeUnit.SECONDS);
     }
+  }
+
+  /** Lowercase, hyphenated form of the scheme name for tag/property keys. */
+  private static String tpsKey(PQScheme scheme) {
+    return scheme.name().toLowerCase().replace('_', '-');
   }
 
   private static byte[] sha256(byte[] data) throws Exception {
@@ -196,31 +237,31 @@ public class PQTxSender {
   }
 
   private static void runTransferLoop(WalletBlockingStub stub, byte[] ownerAddr,
-      PQSignature userKp, double tps) {
+      PQSignature userKp, PQScheme scheme, double tps) {
     if (tps <= 0) {
-      System.out.println("pqc transfer sender disabled");
+      System.out.println("pqc transfer sender disabled for " + scheme);
       return;
     }
     long intervalMs = tpsToIntervalMs(tps);
     long counter = 1L;
     while (!Thread.currentThread().isInterrupted()) {
       long loopStart = System.currentTimeMillis();
-      sendTransferTransaction(stub, ownerAddr, userKp, counter++);
+      sendTransferTransaction(stub, ownerAddr, userKp, scheme, counter++);
       sleepRemaining(intervalMs, loopStart);
     }
   }
 
   private static void runTrc20Loop(WalletBlockingStub stub, byte[] ownerAddr,
-      PQSignature userKp, double tps) {
+      PQSignature userKp, PQScheme scheme, double tps) {
     if (tps <= 0) {
-      System.out.println("pqc trc20 sender disabled");
+      System.out.println("pqc trc20 sender disabled for " + scheme);
       return;
     }
     long intervalMs = tpsToIntervalMs(tps);
     long counter = 1L;
     while (!Thread.currentThread().isInterrupted()) {
       long loopStart = System.currentTimeMillis();
-      sendTrc20Transaction(stub, ownerAddr, userKp, counter++);
+      sendTrc20Transaction(stub, ownerAddr, userKp, scheme, counter++);
       sleepRemaining(intervalMs, loopStart);
     }
   }
@@ -256,7 +297,8 @@ public class PQTxSender {
   }
 
   private static void sendTransferTransaction(WalletBlockingStub stub, byte[] ownerAddr,
-      PQSignature userKp, long seq) {
+      PQSignature userKp, PQScheme scheme, long seq) {
+    String tag = "pqc-" + tpsKey(scheme) + "-transfer-" + seq;
     try {
       WalletBlockingStub timedStub = stub.withDeadlineAfter(10, TimeUnit.SECONDS);
 
@@ -272,23 +314,24 @@ public class PQTxSender {
       byte[] sig = userKp.sign(txId);
       Transaction signedTx = tx.toBuilder()
           .addPqAuthSig(PQAuthSig.newBuilder()
-              .setScheme(PQ_SCHEME)
+              .setScheme(scheme)
               .setPublicKey(ByteString.copyFrom(userKp.getPublicKey()))
               .setSignature(ByteString.copyFrom(sig)))
           .build();
 
       Return result = timedStub.broadcastTransaction(signedTx);
-      System.out.println("[pqc-transfer-" + seq + "] ref=#" + refNum
+      System.out.println("[" + tag + "] ref=#" + refNum
           + " tx=" + ByteArray.toHexString(txId)
           + " result=" + result.getCode());
     } catch (Exception e) {
-      System.err.println("[pqc-transfer-" + seq + "] send failed: " + e.getMessage());
+      System.err.println("[" + tag + "] send failed: " + e.getMessage());
       e.printStackTrace(System.err);
     }
   }
 
   private static void sendTrc20Transaction(WalletBlockingStub stub, byte[] ownerAddr,
-      PQSignature userKp, long seq) {
+      PQSignature userKp, PQScheme scheme, long seq) {
+    String tag = "pqc-" + tpsKey(scheme) + "-trc20-" + seq;
     try {
       WalletBlockingStub timedStub = stub.withDeadlineAfter(10, TimeUnit.SECONDS);
 
@@ -308,17 +351,17 @@ public class PQTxSender {
       byte[] sig = userKp.sign(txId);
       Transaction signedTx = tx.toBuilder()
           .addPqAuthSig(PQAuthSig.newBuilder()
-              .setScheme(PQ_SCHEME)
+              .setScheme(scheme)
               .setPublicKey(ByteString.copyFrom(userKp.getPublicKey()))
               .setSignature(ByteString.copyFrom(sig)))
           .build();
 
       Return result = timedStub.broadcastTransaction(signedTx);
-      System.out.println("[pqc-trc20-" + seq + "] ref=#" + refNum
+      System.out.println("[" + tag + "] ref=#" + refNum
           + " tx=" + ByteArray.toHexString(txId)
           + " result=" + result.getCode());
     } catch (Exception e) {
-      System.err.println("[pqc-trc20-" + seq + "] send failed: " + e.getMessage());
+      System.err.println("[" + tag + "] send failed: " + e.getMessage());
       e.printStackTrace(System.err);
     }
   }
@@ -390,12 +433,12 @@ public class PQTxSender {
             .setParameter(Any.pack(TransferContract.newBuilder()
                 .setOwnerAddress(ByteString.copyFrom(ownerAddr))
                 .setToAddress(ByteString.copyFrom(TO_ADDR))
-                .setAmount(1000L)
+                .setAmount(1L)
                 .build()))
             .setPermissionId(0))
         .setRefBlockHash(ByteString.copyFrom(Arrays.copyOfRange(blockHash, 8, 16)))
         .setRefBlockBytes(ByteString.copyFrom(longToBytes(refNum), 6, 2))
-        .setExpiration(System.currentTimeMillis() + 60_000L)
+        .setExpiration(randomExpiration())
         .build();
     return Transaction.newBuilder().setRawData(rawData).build();
   }
@@ -415,8 +458,23 @@ public class PQTxSender {
     Transaction.raw.Builder rawBuilder = tx.getRawData().toBuilder();
     rawBuilder.setRefBlockHash(ByteString.copyFrom(Arrays.copyOfRange(blockHash, 8, 16)));
     rawBuilder.setRefBlockBytes(ByteString.copyFrom(longToBytes(refNum), 6, 2));
-    rawBuilder.setExpiration(System.currentTimeMillis() + 60_000L);
+    rawBuilder.setExpiration(randomExpiration());
     return tx.toBuilder().setRawData(rawBuilder).build();
+  }
+
+  /**
+   * Random expiration in [now + 60_000ms, now + 80_000_000ms]. tx_id =
+   * sha256(rawData) and the signature is not part of the digest, so two threads
+   * that share an owner address and emit byte-identical rawData would collide and
+   * trip DUP_TRANSACTION_ERROR. Spreading expiration across an ~80M ms window
+   * gives ~8e7 entropy per send — at 30 TPS, the per-3s-refBlock-window collision
+   * chance is ~5.6e-6, more than enough for a long-running demo. The upper bound
+   * stays well below the 24h server-side cap (Manager.validateCommon →
+   * MAXIMUM_TIME_UNTIL_EXPIRATION = 86_400_000ms).
+   */
+  private static long randomExpiration() {
+    long now = System.currentTimeMillis();
+    return now + ThreadLocalRandom.current().nextLong(60_000L, 80_000_001L);
   }
 
   private static double readTps(String key, double defaultValue) {

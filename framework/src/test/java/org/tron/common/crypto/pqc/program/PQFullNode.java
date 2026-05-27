@@ -5,6 +5,8 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.Map;
 import org.tron.common.application.Application;
 import org.tron.common.application.ApplicationFactory;
 import org.tron.common.application.TronApplicationContext;
@@ -15,6 +17,7 @@ import org.tron.core.ChainBaseManager;
 import org.tron.core.config.DefaultConfig;
 import org.tron.core.config.args.Args;
 import org.tron.core.db.Manager;
+import org.tron.protos.Protocol.PQScheme;
 
 /**
  * Demo fullnode that dials {@link PQWitnessNode} via P2P and syncs PQ-signed blocks.
@@ -61,14 +64,17 @@ public class PQFullNode {
     // ── 1. Derive the same deterministic keys used by PQWitnessNode ──────
     PQSignature witnessKp = PQSchemeRegistry.fromSeed(
         PQWitnessNode.PQ_SCHEME, PQWitnessNode.WITNESS_SEED);
-    PQSignature userKp    = PQSchemeRegistry.fromSeed(
-        PQWitnessNode.PQ_SCHEME, PQWitnessNode.USER_SEED);
+    Map<PQScheme, byte[]> userPubs = new EnumMap<>(PQScheme.class);
+    for (PQScheme scheme : PQSchemeRegistry.registeredSchemes()) {
+      userPubs.put(scheme,
+          PQSchemeRegistry.fromSeed(scheme, PQWitnessNode.USER_SEEDS.get(scheme))
+              .getPublicKey());
+    }
 
     byte[] witnessPub = witnessKp.getPublicKey();
-    byte[] userPub    = userKp.getPublicKey();
 
     System.out.println("=== PQC Full Node ===");
-    System.out.println("Scheme:         " + PQWitnessNode.PQ_SCHEME);
+    System.out.println("Block-producing scheme: " + PQWitnessNode.PQ_SCHEME);
     System.out.println("Peer (witness): " + WITNESS_HOST + ":" + WITNESS_P2P_PORT);
     System.out.println("gRPC port:      " + GRPC_PORT);
     System.out.println("HTTP port:      " + HTTP_PORT);
@@ -105,8 +111,8 @@ public class PQFullNode {
 
     // ── 4. Install matching PQ genesis pre-state ──────────────────────────
     // Without this the incoming pq_auth_sig would fail to validate because
-    // this node wouldn't know the witness's FN-DSA-512 public key.
-    PQWitnessNode.installPQGenesisState(db, chain, witnessPub, userPub);
+    // this node wouldn't know the witness's PQ public key.
+    PQWitnessNode.installPQGenesisState(db, chain, witnessPub, userPubs);
 
     // ── 5. Start P2P + gRPC (no ConsensusService.start — we don't produce) ─
     app.startup();
