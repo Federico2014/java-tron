@@ -15,6 +15,7 @@
 
 package org.tron.core.capsule;
 
+import static org.tron.core.Constant.MAX_PER_SIGN_LENGTH;
 import static org.tron.core.exception.BadBlockException.TypeEnum.CALC_MERKLE_ROOT_FAILED;
 
 import com.google.common.primitives.Longs;
@@ -346,6 +347,18 @@ public class BlockCapsule implements ProtoCapsule<Block> {
           .build());
     }
     this.block = builder.build();
+    return true;
+  }
+
+  public boolean sanitizeSignatures() {
+    ByteString sig = this.block.getBlockHeader().getWitnessSignature();
+    if (sig.size() <= MAX_PER_SIGN_LENGTH) {
+      return false;
+    }
+    BlockHeader header = this.block.getBlockHeader().toBuilder()
+        .setWitnessSignature(sig.substring(0, MAX_PER_SIGN_LENGTH))
+        .build();
+    this.block = this.block.toBuilder().setBlockHeader(header).build();
     return true;
   }
 

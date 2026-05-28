@@ -29,7 +29,9 @@ public class BlockMessage extends TronMessage {
   }
 
   public void sanitize() {
-    if (this.block.sanitize()) {
+    boolean unknownStripped = this.block.sanitize();
+    boolean signatureTruncated = this.block.sanitizeSignatures();
+    if (unknownStripped || signatureTruncated) {
       this.data = this.block.getData();
     }
   }

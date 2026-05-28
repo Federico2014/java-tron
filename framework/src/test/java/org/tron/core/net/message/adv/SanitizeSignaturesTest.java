@@ -8,17 +8,49 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
 import java.util.Arrays;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.Mockito;
+import org.tron.common.overlay.message.Message;
+import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.TransactionCapsule;
+import org.tron.core.store.DynamicPropertiesStore;
+import org.tron.protos.Protocol.Block;
+import org.tron.protos.Protocol.BlockHeader;
 import org.tron.protos.Protocol.Transaction;
 
 /**
- * Verifies that {@link TransactionCapsule#sanitizeSignatures()} and
- * {@link TransactionsMessage#sanitizeSignature()} truncate any signature longer than 68
+ * Verifies that {@link TransactionCapsule#sanitizeSignatures()},
+ * {@link TransactionsMessage#sanitizeSignature()} and
+ * {@link BlockCapsule#sanitizeSignatures()} truncate any signature longer than 68
  * bytes to exactly 68 bytes while leaving in-range signatures (and the
- * transaction id) untouched.
+ * transaction / block id) untouched.
  */
 public class SanitizeSignaturesTest {
+
+  @BeforeClass
+  public static void setUp() {
+    // BlockMessage(byte[]) calls Message.isFilter() which dereferences the
+    // static DynamicPropertiesStore. The mock's primitive-long getter returns
+    // 0L by default, so isFilter() returns false.
+    Message.setDynamicPropertiesStore(Mockito.mock(DynamicPropertiesStore.class));
+  }
+
+  private static BlockHeader.raw sampleRawHeader() {
+    return BlockHeader.raw.newBuilder()
+        .setNumber(100)
+        .setTimestamp(123456789L)
+        .build();
+  }
+
+  private static Block sampleBlock(ByteString witnessSignature) {
+    return Block.newBuilder()
+        .setBlockHeader(BlockHeader.newBuilder()
+            .setRawData(sampleRawHeader())
+            .setWitnessSignature(witnessSignature)
+            .build())
+        .build();
+  }
 
   private static Transaction sampleTransaction() {
     return Transaction.newBuilder()
@@ -141,5 +173,99 @@ public class SanitizeSignaturesTest {
 
     assertFalse(msg.sanitizeSignature());
     assertSame(before, msg.getData());
+  }
+
+  // ---- BlockCapsule.sanitizeSignatures ----
+
+  @Test
+  public void blockCapsuleTruncatesOversizedWitnessSignatureTo68Bytes() {
+    byte[] sigBytes = new byte[200];
+    Arrays.fill(sigBytes, (byte) 0x7f);
+    Block padded = sampleBlock(ByteString.copyFrom(sigBytes));
+    BlockCapsule capsule = new BlockCapsule(padded);
+
+    assertTrue("sanitizeSignatures() should report it mutated the capsule",
+        capsule.sanitizeSignatures());
+    assertEquals(68,
+        capsule.getInstance().getBlockHeader().getWitnessSignature().size());
+    assertArrayEquals("First 68 bytes must be preserved",
+        Arrays.copyOf(sigBytes, 68),
+        capsule.getInstance().getBlockHeader().getWitnessSignature().toByteArray());
+  }
+
+  @Test
+  public void blockCapsuleLeavesSixtyFiveByteWitnessSignatureUnchanged() {
+    Block clean = sampleBlock(ByteString.copyFrom(new byte[65]));
+    BlockCapsule capsule = new BlockCapsule(clean);
+    Block before = capsule.getInstance();
+
+    assertFalse(capsule.sanitizeSignatures());
+    assertSame(before, capsule.getInstance());
+  }
+
+  @Test
+  public void blockCapsuleLeavesSixtyEightByteWitnessSignatureUnchanged() {
+    Block clean = sampleBlock(ByteString.copyFrom(new byte[68]));
+    BlockCapsule capsule = new BlockCapsule(clean);
+    Block before = capsule.getInstance();
+
+    assertFalse(capsule.sanitizeSignatures());
+    assertSame(before, capsule.getInstance());
+  }
+
+  @Test
+  public void blockCapsuleLeavesUndersizedWitnessSignatureUnchanged() {
+    Block clean = sampleBlock(ByteString.copyFrom(new byte[64]));
+    BlockCapsule capsule = new BlockCapsule(clean);
+    Block before = capsule.getInstance();
+
+    assertFalse(capsule.sanitizeSignatures());
+    assertSame(before, capsule.getInstance());
+    assertEquals(64,
+        capsule.getInstance().getBlockHeader().getWitnessSignature().size());
+  }
+
+  @Test
+  public void blockCapsulePreservesBlockId() {
+    Block clean = sampleBlock(ByteString.copyFrom(new byte[65]));
+    Block padded = sampleBlock(ByteString.copyFrom(new byte[200]));
+    BlockCapsule cleanCapsule = new BlockCapsule(clean);
+    BlockCapsule paddedCapsule = new BlockCapsule(padded);
+
+    paddedCapsule.sanitizeSignatures();
+
+    assertEquals("Truncating witness signature must not change the block id",
+        cleanCapsule.getBlockId(), paddedCapsule.getBlockId());
+  }
+
+  // ---- BlockMessage.sanitize for oversized witness signature ----
+
+  @Test
+  public void blockMessageSanitizeRewritesOversizedWitnessSignatureAndWireBytes()
+      throws Exception {
+    Block padded = sampleBlock(ByteString.copyFrom(new byte[200]));
+    byte[] paddedBytes = padded.toByteArray();
+    BlockMessage msg = new BlockMessage(paddedBytes);
+
+    msg.sanitize();
+
+    assertEquals(68,
+        msg.getBlockCapsule().getInstance().getBlockHeader().getWitnessSignature().size());
+    assertTrue("Wire data should shrink after truncating",
+        msg.getData().length < paddedBytes.length);
+    assertArrayEquals("msg.data should equal capsule.getData() after sanitize",
+        msg.getBlockCapsule().getData(), msg.getData());
+  }
+
+  @Test
+  public void blockMessageSanitizeIsNoOpWhenWitnessSignatureInRange() throws Exception {
+    byte[] cleanBytes = sampleBlock(ByteString.copyFrom(new byte[65])).toByteArray();
+    BlockMessage msg = new BlockMessage(cleanBytes);
+    byte[] before = msg.getData();
+
+    msg.sanitize();
+
+    assertSame("msg.data should not be rewritten on the no-op path",
+        before, msg.getData());
   }
 }
