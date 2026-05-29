@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -220,7 +221,7 @@ public class PQTxSender {
 
   /** Lowercase, hyphenated form of the scheme name for tag/property keys. */
   private static String tpsKey(PQScheme scheme) {
-    return scheme.name().toLowerCase().replace('_', '-');
+    return scheme.name().toLowerCase(Locale.ROOT).replace('_', '-');
   }
 
   private static byte[] sha256(byte[] data) throws Exception {
