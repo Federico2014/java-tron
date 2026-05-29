@@ -461,7 +461,7 @@ public class ValidateMultiPQSigTest extends BaseTest {
     byte[] toSign = computeHash(owner.getAddress(), 2, data);
 
     byte[] padded = padFalconSig(falcon.sign(toSign));
-    Assert.assertEquals(FNDSA512.SIGNATURE_LENGTH, padded.length);
+    Assert.assertEquals(FNDSA512.SIGNATURE_MAX_LENGTH - 1, padded.length);
 
     List<Integer> schemes = Collections.singletonList(TAG_FN_DSA_512);
     List<String> pqSigs = Collections.singletonList(Hex.toHexString(padded));
@@ -485,7 +485,7 @@ public class ValidateMultiPQSigTest extends BaseTest {
 
     // Trim the slot one byte short of 666 — must be rejected (slot length exact).
     byte[] shortSlot = Arrays.copyOf(padFalconSig(falcon.sign(toSign)),
-        FNDSA512.SIGNATURE_LENGTH - 1);
+        FNDSA512.SIGNATURE_MAX_LENGTH - 2);
 
     List<Integer> schemes = Collections.singletonList(TAG_FN_DSA_512);
     List<String> pqSigs = Collections.singletonList(Hex.toHexString(shortSlot));
@@ -498,7 +498,8 @@ public class ValidateMultiPQSigTest extends BaseTest {
 
   @Test
   public void falconSigAllZero_returnsZero() {
-    // All-zero 666-byte slot — recoverFalconSigLen returns 0, below SIGNATURE_MIN_LENGTH.
+    // All-zero 666-byte slot: recoverFalconSigLen returns 0, below the headerless
+    // minimum.
     FNDSA512 falcon = new FNDSA512();
     ECKey owner = new ECKey();
     byte[] addr = PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, falcon.getPublicKey());
@@ -507,7 +508,7 @@ public class ValidateMultiPQSigTest extends BaseTest {
 
     byte[] data = Sha256Hash.hash(CommonParameter.getInstance().isECKeyCryptoEngine(), longData);
 
-    byte[] zeros = new byte[FNDSA512.SIGNATURE_LENGTH];
+    byte[] zeros = new byte[FNDSA512.SIGNATURE_MAX_LENGTH - 1];
     List<Integer> schemes = Collections.singletonList(TAG_FN_DSA_512);
     List<String> pqSigs = Collections.singletonList(Hex.toHexString(zeros));
     List<String> pqPks = Collections.singletonList(Hex.toHexString(falcon.getPublicKey()));
@@ -749,16 +750,18 @@ public class ValidateMultiPQSigTest extends BaseTest {
   // -------- helpers --------
 
   /**
-   * Zero-pad a logical Falcon signature out to the precompile's 666-byte slot.
-   * Canonical Falcon encodings always end in a non-zero {@code compressed_s2}
-   * terminator, so {@code recoverFalconSigLen} can recover the logical length
-   * inside the precompile.
+   * Pin a Falcon signature into the precompile's 666-byte slot using the EIP-8052
+   * headerless convention: strip BC's leading 0x39 header so the slot holds
+   * {@code salt ‖ s2}, then zero-pad. The body ends in a non-zero
+   * {@code compressed_s2} terminator, so the precompile recovers its length.
    */
   private static byte[] padFalconSig(byte[] sig) {
-    if (sig.length > FNDSA512.SIGNATURE_LENGTH) {
+    if (sig.length > FNDSA512.SIGNATURE_MAX_LENGTH) {
       throw new IllegalStateException("Falcon sig longer than slot: " + sig.length);
     }
-    return Arrays.copyOf(sig, FNDSA512.SIGNATURE_LENGTH);
+    byte[] slot = new byte[FNDSA512.SIGNATURE_MAX_LENGTH - 1];
+    System.arraycopy(sig, 1, slot, 0, sig.length - 1);
+    return slot;
   }
 
   private void setupPermission(ECKey owner,

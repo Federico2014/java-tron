@@ -189,7 +189,7 @@ public class FNDSA512KatTest {
         assertTrue(v.label + ": signature must be non-empty",
             sig.length > 0);
         assertTrue(v.label + ": signature must respect 752-byte upper bound",
-            sig.length <= FNDSA512.SIGNATURE_LENGTH);
+            sig.length <= FNDSA512.SIGNATURE_MAX_LENGTH);
         assertTrue(v.label + ": signature must verify under its own pk",
             FNDSA512.verify(k.getPublicKey(), msg, sig));
         assertTrue(v.label + ": registry verify must accept own signature",

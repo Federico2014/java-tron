@@ -228,8 +228,9 @@ public class PrecompiledContracts {
       "0000000000000000000000000000000000000000000000000000000000000100");
 
   // EIP-8052 0x16: FN-DSA / Falcon-512 verify (FIPS-206 draft). Input layout:
-  // [msg 32B | sig 666B (zero-padded slot, logical sig ends at last non-zero byte) | pk 896B].
-  // Total 1594 B. Logical sig length is recovered by trimming trailing zeros.
+  // [msg 32B | sig 666B (headerless salt‖s2 slot, zero-padded; body ends at last
+  // non-zero byte) | pk 896B]. Total 1594 B. The slot holds the EIP-8052 headerless
+  // signature (no 0x39 byte); the precompile re-inserts the header before verifying.
   private static final DataWord verifyFnDsa512Addr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000000016");
 
@@ -600,6 +601,27 @@ public class PrecompiledContracts {
       }
     }
     return 0;
+  }
+
+  /**
+   * Reconstructs the BC-native Falcon-512 signature from an EIP-8052 headerless
+   * slot. The slot {@code data[from..to)} holds {@code salt ‖ s2_compressed}
+   * (no leading {@code 0x39}) zero-padded to {@code SIGNATURE_MAX_LENGTH - 1};
+   * the logical body ends at the last non-zero byte. Returns
+   * {@code 0x39 ‖ body} so BC's {@code FalconSigner} (which requires the header)
+   * can verify it, or {@code null} if the recovered body length is out of range.
+   * Shared by 0x16, 0x18, and 0x1a.
+   */
+  static byte[] falconSlotToHeaderedSig(byte[] data, int from, int to) {
+    int bodyLen = recoverFalconSigLen(data, from, to);
+    if (bodyLen < FNDSA512.SIGNATURE_MIN_LENGTH - 1
+        || bodyLen > FNDSA512.SIGNATURE_MAX_LENGTH - 1) {
+      return null;
+    }
+    byte[] sig = new byte[bodyLen + 1];
+    sig[0] = FNDSA512.SIGNATURE_HEADER;
+    System.arraycopy(data, from, sig, 1, bodyLen);
+    return sig;
   }
 
   /**
@@ -2575,14 +2597,16 @@ public class PrecompiledContracts {
    * <pre>
    *   [msg 32B | sig 666B (zero-padded) | pk 896B]  total = 1594B
    * </pre>
-   * Falcon-512 signatures are logically variable in
-   * [{@code FNDSA512.SIGNATURE_MIN_LENGTH}, {@code FNDSA512.SIGNATURE_LENGTH}] =
-   * [41, 666]; the precompile slot fixes a 666-byte window. Encoders write the
-   * canonical signature into the prefix of the slot and zero-pad the tail to
-   * length 666. The canonical Falcon encoding always ends in a non-zero byte
-   * (the {@code compressed_s2} unary terminator bit), so the logical length is
-   * recovered by scanning the slot backwards for the first non-zero byte. Total
-   * input length must equal exactly 1594 (no trailing bytes; matches 0x100
+   * The 666-byte sig slot holds the <strong>EIP-8052 headerless</strong> encoding
+   * {@code salt(40B) ‖ s2_compressed}: unlike BouncyCastle's native form there is
+   * <em>no</em> leading {@code 0x39} header byte. The headerless body is logically
+   * variable (≤ 665B after the salt); encoders write it into the prefix of the slot
+   * and zero-pad the tail to length 666. The {@code compressed_s2} encoding always
+   * ends in a non-zero byte (its unary terminator bit), so the logical body length
+   * is recovered by scanning the slot backwards for the first non-zero byte. Before
+   * verifying, the precompile re-inserts the {@code 0x39} header that BC's
+   * {@code FalconSigner} requires (it rejects any first byte ≠ {@code 0x30 + logn}).
+   * Total input length must equal exactly 1594 (no trailing bytes; matches 0x100
    * P256Verify / EIP-7951 strictness).
    *
    * <p>Returns a 32-byte word: 1 on valid signature, 0 otherwise. Malformed
@@ -2592,8 +2616,7 @@ public class PrecompiledContracts {
   public static class VerifyFnDsa512 extends PrecompiledContract {
 
     private static final int MSG_LEN = 32;
-    private static final int SIG_SLOT_LEN = FNDSA512.SIGNATURE_LENGTH;
-    private static final int SIG_MIN_LEN = FNDSA512.SIGNATURE_MIN_LENGTH;
+    private static final int SIG_SLOT_LEN = FNDSA512.SIGNATURE_MAX_LENGTH - 1;
     private static final int PK_LEN = FNDSA512.PUBLIC_KEY_LENGTH;
     private static final int INPUT_LEN = MSG_LEN + SIG_SLOT_LEN + PK_LEN;
 
@@ -2611,11 +2634,12 @@ public class PrecompiledContracts {
         byte[] msg = copyOfRange(data, 0, MSG_LEN);
         int sigStart = MSG_LEN;
         int sigEnd = MSG_LEN + SIG_SLOT_LEN;
-        int sigLen = recoverFalconSigLen(data, sigStart, sigEnd);
-        if (sigLen < SIG_MIN_LEN || sigLen > SIG_SLOT_LEN) {
+        // The slot carries the EIP-8052 headerless body (salt ‖ s2); reconstruct
+        // the BC-headered form (re-inserts 0x39) BC's FalconSigner requires.
+        byte[] sig = falconSlotToHeaderedSig(data, sigStart, sigEnd);
+        if (sig == null) {
           return Pair.of(true, DataWord.ZERO().getData());
         }
-        byte[] sig = copyOfRange(data, sigStart, sigStart + sigLen);
         byte[] pk = copyOfRange(data, sigEnd, INPUT_LEN);
         boolean ok = FNDSA512.verify(pk, msg, sig);
         return Pair.of(true, ok ? DataWord.ONE().getData() : DataWord.ZERO().getData());
@@ -2636,16 +2660,17 @@ public class PrecompiledContracts {
    * <pre>
    *   batchValidateFnDsa512(
    *       bytes32   hash,                  // word[0]
-   *       bytes[]   signatures,            // word[1] = offset; each 666 B (zero-padded slot,
-   *                                        //          logical sig ends at last non-zero byte)
+   *       bytes[]   signatures,            // word[1] = offset; each 666 B EIP-8052 headerless
+   *                                        //          slot (salt‖s2, no 0x39), zero-padded;
+   *                                        //          body ends at last non-zero byte
    *       bytes[]   publicKeys,            // word[2] = offset; each 896 B
    *       bytes32[] expectedAddresses      // word[3] = offset; 21-byte addr in low 21 bytes
    *   ) returns (bytes32)
    * </pre>
    *
    * <p>Falcon sigs are pinned to the 666-byte slot from {@code VerifyFnDsa512} (0x16)
-   * for cross-precompile consistency; {@link #recoverFalconSigLen} trims the slot to
-   * the canonical {@code [41, 666]} length before BC verification.
+   * for cross-precompile consistency; {@link #falconSlotToHeaderedSig} recovers the
+   * headerless body and re-inserts the {@code 0x39} header before BC verification.
    *
    * <p>Reuses the {@code BatchValidateSign.workers} pool when not in a constant
    * call and enforces {@code getCPUTimeLeftInNanoSecond()} timeout. {@code MAX_SIZE = 16}.
@@ -2656,8 +2681,7 @@ public class PrecompiledContracts {
     private static final int ENERGY_PER_SIGN = 2000;
     private static final int MAX_SIZE = 16;
     private static final int PK_LEN = FNDSA512.PUBLIC_KEY_LENGTH;
-    private static final int SIG_SLOT_LEN = FNDSA512.SIGNATURE_LENGTH;
-    private static final int SIG_MIN_LEN = FNDSA512.SIGNATURE_MIN_LENGTH;
+    private static final int SIG_SLOT_LEN = FNDSA512.SIGNATURE_MAX_LENGTH - 1;
     // hash, sigArrayOffset, pkArrayOffset, addrArrayOffset.
     private static final int ABI_HEAD_WORDS = 4;
 
@@ -2766,11 +2790,11 @@ public class PrecompiledContracts {
           || sig == null || sig.length != SIG_SLOT_LEN) {
         return false;
       }
-      int logical = recoverFalconSigLen(sig, 0, sig.length);
-      if (logical < SIG_MIN_LEN) {
+      // The slot is the EIP-8052 headerless body; rebuild the BC-headered sig.
+      byte[] canonicalSig = falconSlotToHeaderedSig(sig, 0, sig.length);
+      if (canonicalSig == null) {
         return false;
       }
-      byte[] canonicalSig = Arrays.copyOf(sig, logical);
       try {
         byte[] derived = PQSchemeRegistry.computeAddress(PQScheme.FN_DSA_512, pk);
         if (!DataWord.equalAddressByteArray(derived, expectedAddr)) {
@@ -2908,11 +2932,12 @@ public class PrecompiledContracts {
    *   ) returns (bytes32)         // 1 on (totalWeight >= threshold), 0 otherwise
    * </pre>
    *
-   * <p>Falcon sigs follow the EIP-8052 666-byte fixed slot convention (matches
-   * 0x16/0x18): the slot is zero-padded and the logical sig ends at the last
-   * non-zero byte (Falcon's canonical encoding always ends with a non-zero
-   * {@code compressed_s2} terminator). Dilithium sigs are exactly 2420 B and
-   * Dilithium pks 1312 B.
+   * <p>Falcon sigs follow the EIP-8052 666-byte headerless slot convention
+   * (matches 0x16/0x18): the slot holds {@code salt ‖ s2_compressed} with no
+   * leading {@code 0x39}, zero-padded, the body ending at the last non-zero byte
+   * (Falcon's {@code compressed_s2} always ends with a non-zero terminator);
+   * {@link #falconSlotToHeaderedSig} re-inserts the header before verification.
+   * Dilithium sigs are exactly 2420 B and Dilithium pks 1312 B.
    *
    * <p>{@code MAX_SIZE = 5} across ECDSA + PQ entries combined. Energy is
    * {@code ecdsaCnt × 1500 + sum_i pqEnergy(scheme_i)} with FN-DSA-512 = 2000
@@ -3061,7 +3086,9 @@ public class PrecompiledContracts {
           byte[] sig = pqSigs[i];
           byte[] pk = pqPks[i];
           int expectedPkLen = PQSchemeRegistry.getPublicKeyLength(scheme);
-          int expectedSigSlot = PQSchemeRegistry.getSignatureLength(scheme);
+          int expectedSigSlot = scheme == PQScheme.FN_DSA_512
+              ? FNDSA512.SIGNATURE_MAX_LENGTH - 1
+              : PQSchemeRegistry.getSignatureLength(scheme);
           if (pk == null || pk.length != expectedPkLen
               || sig == null || sig.length != expectedSigSlot) {
             // Slot lengths are exact here (Falcon = 666, Dilithium = 2420) —
@@ -3069,11 +3096,12 @@ public class PrecompiledContracts {
             return Pair.of(true, DATA_FALSE);
           }
           if (scheme == PQScheme.FN_DSA_512) {
-            int logical = recoverFalconSigLen(sig, 0, sig.length);
-            if (logical < FNDSA512.SIGNATURE_MIN_LENGTH) {
+            // The Falcon slot is the EIP-8052 headerless body; rebuild the
+            // BC-headered sig (re-inserts 0x39) before verification.
+            sig = falconSlotToHeaderedSig(sig, 0, sig.length);
+            if (sig == null) {
               return Pair.of(true, DATA_FALSE);
             }
-            sig = Arrays.copyOf(sig, logical);
           }
           byte[] derivedAddr;
           try {

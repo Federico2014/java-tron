@@ -182,7 +182,7 @@ public class TransactionCapsuleTest extends BaseTest {
         .addPqAuthSig(PQAuthSig.newBuilder()
             .setScheme(PQScheme.FN_DSA_512)
             .setPublicKey(ByteString.copyFrom(new byte[FNDSA512.PUBLIC_KEY_LENGTH]))
-            .setSignature(ByteString.copyFrom(new byte[FNDSA512.SIGNATURE_LENGTH]))
+            .setSignature(ByteString.copyFrom(new byte[FNDSA512.SIGNATURE_MAX_LENGTH]))
             .build())
         .build();
     TransactionCapsule cap = new TransactionCapsule(tx);

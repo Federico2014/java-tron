@@ -303,7 +303,7 @@ public class BatchValidateFnDsa512Test {
     contract.setConstantCall(true);
     FNDSA512 k = new FNDSA512();
     byte[] sig = k.sign(HASH);
-    byte[] shortSlot = Arrays.copyOf(sig, FNDSA512.SIGNATURE_LENGTH - 1);
+    byte[] shortSlot = Arrays.copyOf(sig, FNDSA512.SIGNATURE_MAX_LENGTH - 2);
     List<String> sigs = Collections1(Hex.toHexString(shortSlot));
     List<String> pks = Collections1(Hex.toHexString(k.getPublicKey()));
     List<String> addrs = Collections1(addrAsBytes32Hex(k.getPublicKey()));
@@ -316,7 +316,7 @@ public class BatchValidateFnDsa512Test {
   public void allZeroSlot_clearsBit() {
     contract.setConstantCall(true);
     FNDSA512 k = new FNDSA512();
-    byte[] zeroSlot = new byte[FNDSA512.SIGNATURE_LENGTH];
+    byte[] zeroSlot = new byte[FNDSA512.SIGNATURE_MAX_LENGTH - 1];
     List<String> sigs = Collections1(Hex.toHexString(zeroSlot));
     List<String> pks = Collections1(Hex.toHexString(k.getPublicKey()));
     List<String> addrs = Collections1(addrAsBytes32Hex(k.getPublicKey()));
@@ -328,15 +328,17 @@ public class BatchValidateFnDsa512Test {
   // -------- helpers --------
 
   /**
-   * Pin a canonical Falcon-512 signature into the precompile's fixed 666-byte slot.
-   * BC's variable-length encoding is preserved at the head; the tail is zero-padded.
-   * Mirrors the EIP-8052 slot convention enforced by 0x16 / 0x1a / 0x18.
+   * Pin a Falcon-512 signature into the precompile's fixed 666-byte slot using the
+   * EIP-8052 headerless convention enforced by 0x16 / 0x1a / 0x18: strip BC's leading
+   * 0x39 header so the slot holds {@code salt ‖ s2}; the tail is zero-padded.
    */
   private static byte[] padSlot(byte[] sig) {
-    if (sig.length > FNDSA512.SIGNATURE_LENGTH) {
+    if (sig.length > FNDSA512.SIGNATURE_MAX_LENGTH) {
       throw new IllegalStateException("Falcon sig longer than slot: " + sig.length);
     }
-    return Arrays.copyOf(sig, FNDSA512.SIGNATURE_LENGTH);
+    byte[] slot = new byte[FNDSA512.SIGNATURE_MAX_LENGTH - 1];
+    System.arraycopy(sig, 1, slot, 0, sig.length - 1);
+    return slot;
   }
 
 

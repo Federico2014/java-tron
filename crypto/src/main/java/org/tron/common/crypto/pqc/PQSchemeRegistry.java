@@ -108,7 +108,7 @@ public final class PQSchemeRegistry {
     EnumMap<PQScheme, SchemeInfo> m = new EnumMap<>(PQScheme.class);
     m.put(PQScheme.FN_DSA_512, new SchemeInfo(
         FNDSA512.PRIVATE_KEY_LENGTH, FNDSA512.PUBLIC_KEY_LENGTH,
-        FNDSA512.SIGNATURE_LENGTH, FNDSA512.SIGNATURE_MIN_LENGTH,
+        FNDSA512.SIGNATURE_MAX_LENGTH, FNDSA512.SIGNATURE_MIN_LENGTH,
         FNDSA512.SEED_LENGTH,
         false, // Falcon keygen is FFT-based, not bit-stable across platforms.
         false, // BC has no public path from (f,g) to h (bcgit/bc-java#2297).

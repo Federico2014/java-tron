@@ -55,7 +55,8 @@ public class FNDSA512Test {
   public void schemeAndLengthsMatchFips206Draft() {
     assertEquals(PQScheme.FN_DSA_512, keypair.getScheme());
     assertEquals(FNDSA512.PUBLIC_KEY_LENGTH, keypair.getPublicKeyLength());
-    assertEquals(FNDSA512.SIGNATURE_LENGTH, keypair.getSignatureLength());
+    assertEquals(FNDSA512.SIGNATURE_MAX_LENGTH, keypair.getSignatureLength());
+    assertEquals(617, keypair.getSignatureMinLength());
     assertEquals(FNDSA512.PRIVATE_KEY_LENGTH, keypair.getPrivateKeyLength());
     assertEquals(FNDSA512.PUBLIC_KEY_LENGTH, pk.getH().length);
   }
@@ -85,19 +86,22 @@ public class FNDSA512Test {
     assertTrue("signature must be non-empty", sig.length > 0);
     assertTrue(
         "signature must respect protocol-level upper bound",
-        sig.length <= FNDSA512.SIGNATURE_LENGTH);
+        sig.length <= FNDSA512.SIGNATURE_MAX_LENGTH);
+    assertTrue(
+        "signature must respect protocol-level lower bound",
+        sig.length >= FNDSA512.SIGNATURE_MIN_LENGTH);
     assertTrue(FNDSA512.verify(pk.getH(), msg, sig));
   }
 
   @Test
   public void signatureBoundaryAtMaxAcceptedByLengthCheck() {
-    byte[] sig = new byte[FNDSA512.SIGNATURE_LENGTH];
+    byte[] sig = new byte[FNDSA512.SIGNATURE_MAX_LENGTH];
     keypair.validateSignature(sig);
   }
 
   @Test
   public void signatureBoundaryAboveMaxRejected() {
-    byte[] sig = new byte[FNDSA512.SIGNATURE_LENGTH + 1];
+    byte[] sig = new byte[FNDSA512.SIGNATURE_MAX_LENGTH + 1];
     try {
       keypair.validateSignature(sig);
       fail("signature longer than upper bound should be rejected");
@@ -137,7 +141,7 @@ public class FNDSA512Test {
   @Test
   public void verifyRejectsSignatureLongerThanUpperBound() {
     byte[] msg = new byte[] {1, 2, 3};
-    byte[] tooLong = new byte[FNDSA512.SIGNATURE_LENGTH + 1];
+    byte[] tooLong = new byte[FNDSA512.SIGNATURE_MAX_LENGTH + 1];
     try {
       FNDSA512.verify(pk.getH(), msg, tooLong);
       fail("signature exceeding upper bound should be rejected at static verify");
@@ -199,6 +203,31 @@ public class FNDSA512Test {
   }
 
   @Test
+  public void validSignatureCarriesCanonicalHeader() {
+    byte[] msg = "header check".getBytes();
+    byte[] sig = rawSign(msg);
+    assertEquals(
+        "BC must produce the canonical compressed header",
+        FNDSA512.SIGNATURE_HEADER, sig[0]);
+  }
+
+  @Test
+  public void nonCanonicalHeaderRejected() {
+    byte[] msg = "header check".getBytes();
+    byte[] sig = rawSign(msg);
+    assertTrue(FNDSA512.verify(pk.getH(), msg, sig));
+    // Padded (0x49) and constant-time (0x59) encodings must be rejected even though
+    // their length is in range — only the compressed 0x39 header is accepted.
+    for (byte header : new byte[] {0x49, 0x59, 0x00, (byte) 0xFF}) {
+      byte[] tampered = sig.clone();
+      tampered[0] = header;
+      assertFalse(
+          "non-canonical header 0x" + Integer.toHexString(header & 0xFF) + " must be rejected",
+          FNDSA512.verify(pk.getH(), msg, tampered));
+    }
+  }
+
+  @Test
   public void wrongPublicKeyFailsVerification() {
     byte[] msg = "payload".getBytes();
     byte[] sig = rawSign(msg);
@@ -236,7 +265,7 @@ public class FNDSA512Test {
     FNDSA512 signer = new FNDSA512();
     byte[] msg = "keypair-bound".getBytes();
     byte[] sig = signer.sign(msg);
-    assertTrue(sig.length > 0 && sig.length <= FNDSA512.SIGNATURE_LENGTH);
+    assertTrue(sig.length > 0 && sig.length <= FNDSA512.SIGNATURE_MAX_LENGTH);
     assertTrue(signer.verify(msg, sig));
   }
 
@@ -278,7 +307,7 @@ public class FNDSA512Test {
     assertTrue(FNDSA512.verify(pk.getH(), msg, sigViaRegistry));
     assertEquals(FNDSA512.PUBLIC_KEY_LENGTH,
         PQSchemeRegistry.getPublicKeyLength(PQScheme.FN_DSA_512));
-    assertEquals(FNDSA512.SIGNATURE_LENGTH,
+    assertEquals(FNDSA512.SIGNATURE_MAX_LENGTH,
         PQSchemeRegistry.getSignatureLength(PQScheme.FN_DSA_512));
   }
 
@@ -287,12 +316,12 @@ public class FNDSA512Test {
     assertTrue(PQSchemeRegistry.isValidSignatureLength(
         PQScheme.FN_DSA_512, FNDSA512.SIGNATURE_MIN_LENGTH));
     assertTrue(PQSchemeRegistry.isValidSignatureLength(
-        PQScheme.FN_DSA_512, FNDSA512.SIGNATURE_LENGTH));
+        PQScheme.FN_DSA_512, FNDSA512.SIGNATURE_MAX_LENGTH));
     assertFalse(PQSchemeRegistry.isValidSignatureLength(PQScheme.FN_DSA_512, 0));
     assertFalse(PQSchemeRegistry.isValidSignatureLength(
         PQScheme.FN_DSA_512, FNDSA512.SIGNATURE_MIN_LENGTH - 1));
     assertFalse(PQSchemeRegistry.isValidSignatureLength(
-        PQScheme.FN_DSA_512, FNDSA512.SIGNATURE_LENGTH + 1));
+        PQScheme.FN_DSA_512, FNDSA512.SIGNATURE_MAX_LENGTH + 1));
   }
 
   @Test
@@ -400,7 +429,7 @@ public class FNDSA512Test {
     byte[] extended = keypair.getPrivateKeyWithPublicKey();
     byte[] msg = "static-sign-extended".getBytes();
     byte[] sig = FNDSA512.sign(extended, msg);
-    assertTrue(sig.length > 0 && sig.length <= FNDSA512.SIGNATURE_LENGTH);
+    assertTrue(sig.length > 0 && sig.length <= FNDSA512.SIGNATURE_MAX_LENGTH);
     assertTrue(FNDSA512.verify(pk.getH(), msg, sig));
   }
 

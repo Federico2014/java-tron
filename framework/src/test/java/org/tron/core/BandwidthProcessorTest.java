@@ -906,7 +906,7 @@ public class BandwidthProcessorTest extends BaseTest {
         .setAmount(100L)
         .build();
 
-    byte[] fakeSig = new byte[FNDSA512.SIGNATURE_LENGTH];
+    byte[] fakeSig = new byte[FNDSA512.SIGNATURE_MAX_LENGTH];
     byte[] fakePub = new byte[FNDSA512.PUBLIC_KEY_LENGTH];
     Protocol.PQAuthSig pqAuthSig = Protocol.PQAuthSig.newBuilder()
         .setScheme(Protocol.PQScheme.FN_DSA_512)
@@ -968,7 +968,7 @@ public class BandwidthProcessorTest extends BaseTest {
         .setAmount(100L)
         .build();
 
-    byte[] fakeSig = new byte[FNDSA512.SIGNATURE_LENGTH];
+    byte[] fakeSig = new byte[FNDSA512.SIGNATURE_MAX_LENGTH];
     byte[] fakePub = new byte[FNDSA512.PUBLIC_KEY_LENGTH];
     Protocol.PQAuthSig pqAuthSig = Protocol.PQAuthSig.newBuilder()
         .setScheme(Protocol.PQScheme.FN_DSA_512)

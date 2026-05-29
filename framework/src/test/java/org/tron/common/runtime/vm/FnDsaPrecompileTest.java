@@ -13,6 +13,8 @@ import org.tron.core.vm.config.VMConfig;
 /**
  * Unit tests for the FN-DSA / Falcon-512 (0x16) verify precompile (EIP-8052 / TRON extension).
  * Input layout (fixed-length): [msg 32B | sig 666B (zero-padded) | pk 896B] = 1594B total.
+ * The 666-byte sig slot holds the EIP-8052 <em>headerless</em> body (salt ‖ s2): BC's
+ * leading 0x39 header is stripped on the way in and re-inserted by the precompile.
  * Stateless — no chain DB.
  */
 public class FnDsaPrecompileTest {
@@ -21,7 +23,7 @@ public class FnDsaPrecompileTest {
       "0000000000000000000000000000000000000000000000000000000000000016");
 
   private static final int INPUT_LEN =
-      32 + FNDSA512.SIGNATURE_LENGTH + FNDSA512.PUBLIC_KEY_LENGTH;
+      32 + FNDSA512.SIGNATURE_MAX_LENGTH - 1 + FNDSA512.PUBLIC_KEY_LENGTH;
 
   private static final byte[] MESSAGE_HASH = new byte[32];
 
@@ -85,7 +87,8 @@ public class FnDsaPrecompileTest {
   public void tamperedSignature_returnsZero() {
     FNDSA512 key = new FNDSA512();
     byte[] sig = key.sign(MESSAGE_HASH);
-    sig[0] ^= 0x01;
+    // sig[0] is the 0x39 header, stripped by buildInput; flip a salt byte instead.
+    sig[1] ^= 0x01;
     byte[] input = buildInput(MESSAGE_HASH, sig, key.getPublicKey());
 
     Pair<Boolean, byte[]> result =
@@ -146,12 +149,12 @@ public class FnDsaPrecompileTest {
 
   @Test
   public void emptySigSlot_returnsZero() {
-    // All-zero sig slot → recovered length 0 → below SIGNATURE_MIN_LENGTH (41).
+    // All-zero sig slot -> recovered length 0, below the headerless minimum.
     FNDSA512 key = new FNDSA512();
     byte[] input = new byte[INPUT_LEN];
     System.arraycopy(MESSAGE_HASH, 0, input, 0, 32);
     System.arraycopy(key.getPublicKey(), 0, input,
-        32 + FNDSA512.SIGNATURE_LENGTH, FNDSA512.PUBLIC_KEY_LENGTH);
+        32 + FNDSA512.SIGNATURE_MAX_LENGTH - 1, FNDSA512.PUBLIC_KEY_LENGTH);
 
     Pair<Boolean, byte[]> result =
         PrecompiledContracts.getContractForAddress(FNDSA_ADDR).execute(input);
@@ -162,14 +165,15 @@ public class FnDsaPrecompileTest {
 
   @Test
   public void sigSlotShorterThanMin_returnsZero() {
-    // Recovered logical length 32 (last non-zero at offset 31 of sig slot) is below
-    // SIGNATURE_MIN_LENGTH (41) — too short to contain header + nonce.
+    // Recovered headerless body length 32 (last non-zero at offset 31 of sig slot) is
+    // below the headerless minimum (SIGNATURE_MIN_LENGTH - 1 = 616) — too short to
+    // contain a syntactically well-formed compressed_s2 body.
     FNDSA512 key = new FNDSA512();
     byte[] input = new byte[INPUT_LEN];
     System.arraycopy(MESSAGE_HASH, 0, input, 0, 32);
     input[32 + 31] = (byte) 0xFF;
     System.arraycopy(key.getPublicKey(), 0, input,
-        32 + FNDSA512.SIGNATURE_LENGTH, FNDSA512.PUBLIC_KEY_LENGTH);
+        32 + FNDSA512.SIGNATURE_MAX_LENGTH - 1, FNDSA512.PUBLIC_KEY_LENGTH);
 
     Pair<Boolean, byte[]> result =
         PrecompiledContracts.getContractForAddress(FNDSA_ADDR).execute(input);
@@ -179,16 +183,16 @@ public class FnDsaPrecompileTest {
   }
 
   /**
-   * Encodes input as [msg 32B | sig 666B (zero-padded) | pk 896B]. The caller's
-   * {@code sig} must satisfy {@code FNDSA512.SIGNATURE_MIN_LENGTH <= sig.length
-   * <= FNDSA512.SIGNATURE_LENGTH}; bytes beyond {@code sig.length} are zero-padded
-   * to fill the 666-byte slot.
+   * Encodes input as [msg 32B | sig 666B (zero-padded) | pk 896B]. The caller passes
+   * a BC-native headered signature ({@code 0x39 ‖ salt ‖ s2}); this strips the leading
+   * 0x39 header to produce the EIP-8052 headerless body the precompile expects, then
+   * zero-pads the tail to fill the 666-byte slot.
    */
   private static byte[] buildInput(byte[] msg, byte[] sig, byte[] pk) {
     byte[] out = new byte[INPUT_LEN];
     System.arraycopy(msg, 0, out, 0, 32);
-    System.arraycopy(sig, 0, out, 32, sig.length);
-    System.arraycopy(pk, 0, out, 32 + FNDSA512.SIGNATURE_LENGTH, pk.length);
+    System.arraycopy(sig, 1, out, 32, sig.length - 1);
+    System.arraycopy(pk, 0, out, 32 + FNDSA512.SIGNATURE_MAX_LENGTH - 1, pk.length);
     return out;
   }
 }
