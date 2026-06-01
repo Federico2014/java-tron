@@ -486,20 +486,11 @@ public class PrecompiledContracts {
     return bytes32Array;
   }
 
-  // Hard cap on the outer array element count. All callers separately enforce
-  // their own MAX_SIZE (≤ 16); this is a defense-in-depth ceiling so that a
-  // length word recovered as Integer.MAX_VALUE cannot trigger a ~17 GB
-  // byte[][] reference allocation before any per-precompile check runs.
-  static final int MAX_DYNAMIC_ARRAY = 64;
-
   private static byte[][] extractBytesArray(DataWord[] words, int offset, byte[] data) {
     if (offset > words.length - 1) {
       return new byte[0][];
     }
     int len = words[offset].intValueSafe();
-    if (len < 0 || len > MAX_DYNAMIC_ARRAY) {
-      return new byte[0][];
-    }
     byte[][] bytesArray = new byte[len][];
     for (int i = 0; i < len; i++) {
       int bytesOffset = words[offset + i + 1].intValueSafe() / WORD_SIZE;
@@ -525,16 +516,7 @@ public class PrecompiledContracts {
   }
 
   private static byte[] extractBytes(byte[] data, int offset, int len) {
-    // Cap the allocation by remaining calldata. Without this, a single ABI
-    // length word can request an Integer.MAX_VALUE byte[] which Arrays.copyOfRange
-    // happily zero-pads — a sub-30 k gas call could allocate ~2 GB. Callers
-    // strictly compare returned length against expected slot size, so trimming
-    // here just routes malformed calldata to the caller's normal reject path.
-    if (offset < 0 || len < 0 || offset > data.length) {
-      return EMPTY_BYTE_ARRAY;
-    }
-    int safe = StrictMathWrapper.min(len, data.length - offset);
-    return Arrays.copyOfRange(data, offset, offset + safe);
+    return Arrays.copyOfRange(data, offset, offset + len);
   }
 
   private static boolean isValidAbiEncoding(byte[] data, int headerWords, int itemWords) {
@@ -624,31 +606,8 @@ public class PrecompiledContracts {
     return sig;
   }
 
-  /**
-   * Base class for precompiled contracts. Subclasses follow one of two
-   * return-semantics conventions; mixing them within a single precompile
-   * breaks caller expectations and must be avoided.
-   *
-   * <p><b>Single-verify convention</b> (e.g. {@code VerifyFnDsa512} 0x16,
-   * {@code VerifyMlDsa44Eip8051} 0x12, {@code VerifyMlDsa44} 0x19):
-   * {@code execute} always returns
-   * {@code Pair.of(true, X)} where {@code X} is a 32-byte word — {@code dataOne()}
-   * on cryptographic success, {@code DATA_FALSE} on any malformed input or
-   * verification failure. The caller never observes an ABI/structural error;
-   * everything is a boolean. Energy is a flat constant.
-   *
-   * <p><b>Multi-verify convention</b> (e.g. {@code BatchValidateFnDsa512} 0x18,
-   * {@code BatchValidateMlDsa44} 0x1b, {@code ValidateMultiPQSig} 0x1a):
-   * {@code execute} returns {@code Pair.of(false, EMPTY_BYTE_ARRAY)} on
-   * structural ABI errors (head too short, out-of-range offsets, length
-   * cross-check failures) so the VM aborts the call and refunds gas; and
-   * {@code Pair.of(true, DATA_FALSE)} or {@code Pair.of(true, dataOne())}
-   * for per-entry verification outcomes that the caller is expected to
-   * branch on. Energy is computed from array lengths up front.
-   */
   public abstract static class PrecompiledContract {
 
-    /** 32-byte zero word — see class Javadoc for return-semantics conventions. */
     protected static final byte[] DATA_FALSE = new byte[WORD_SIZE];
     private byte[] callerAddress;
     private Repository deposit;
