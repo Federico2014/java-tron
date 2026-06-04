@@ -76,6 +76,12 @@ public final class FNDSA512 implements PQSignature {
    */
   public static final byte SIGNATURE_HEADER = 0x39;
   /**
+   * Length in bytes of the {@link #SIGNATURE_HEADER} prefix. The EIP-8052
+   * headerless signature slot strips this single byte, so headerless lengths
+   * are the BC-native lengths minus this value.
+   */
+  public static final int SIGNATURE_HEADER_LENGTH = 1;
+  /**
    * Maximum signing retries before {@link #sign(byte[], byte[])} gives up.
    * Empirically BC produces signatures above {@link #SIGNATURE_MAX_LENGTH} with
    * probability ≪ 1/5000, so 16 attempts is comfortably above the

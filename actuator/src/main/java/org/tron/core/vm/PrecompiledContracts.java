@@ -588,7 +588,8 @@ public class PrecompiledContracts {
   /**
    * Reconstructs the BC-native Falcon-512 signature from an EIP-8052 headerless
    * slot. The slot {@code data[from..to)} holds {@code salt ‖ s2_compressed}
-   * (no leading {@code 0x39}) zero-padded to {@code SIGNATURE_MAX_LENGTH - 1};
+   * (no leading {@code 0x39}) zero-padded to
+   * {@code SIGNATURE_MAX_LENGTH - SIGNATURE_HEADER_LENGTH};
    * the logical body ends at the last non-zero byte. Returns
    * {@code 0x39 ‖ body} so BC's {@code FalconSigner} (which requires the header)
    * can verify it, or {@code null} if the recovered body length is out of range.
@@ -596,13 +597,13 @@ public class PrecompiledContracts {
    */
   static byte[] falconSlotToHeaderedSig(byte[] data, int from, int to) {
     int bodyLen = recoverFalconSigLen(data, from, to);
-    if (bodyLen < FNDSA512.SIGNATURE_MIN_LENGTH - 1
-        || bodyLen > FNDSA512.SIGNATURE_MAX_LENGTH - 1) {
+    if (bodyLen < FNDSA512.SIGNATURE_MIN_LENGTH - FNDSA512.SIGNATURE_HEADER_LENGTH
+        || bodyLen > FNDSA512.SIGNATURE_MAX_LENGTH - FNDSA512.SIGNATURE_HEADER_LENGTH) {
       return null;
     }
-    byte[] sig = new byte[bodyLen + 1];
+    byte[] sig = new byte[bodyLen + FNDSA512.SIGNATURE_HEADER_LENGTH];
     sig[0] = FNDSA512.SIGNATURE_HEADER;
-    System.arraycopy(data, from, sig, 1, bodyLen);
+    System.arraycopy(data, from, sig, FNDSA512.SIGNATURE_HEADER_LENGTH, bodyLen);
     return sig;
   }
 
@@ -2575,7 +2576,8 @@ public class PrecompiledContracts {
   public static class VerifyFnDsa512 extends PrecompiledContract {
 
     private static final int MSG_LEN = 32;
-    private static final int SIG_SLOT_LEN = FNDSA512.SIGNATURE_MAX_LENGTH - 1;
+    private static final int SIG_SLOT_LEN =
+        FNDSA512.SIGNATURE_MAX_LENGTH - FNDSA512.SIGNATURE_HEADER_LENGTH;
     private static final int PK_LEN = FNDSA512.PUBLIC_KEY_LENGTH;
     private static final int INPUT_LEN = MSG_LEN + SIG_SLOT_LEN + PK_LEN;
 
@@ -2640,7 +2642,8 @@ public class PrecompiledContracts {
     private static final int ENERGY_PER_SIGN = 2000;
     private static final int MAX_SIZE = 16;
     private static final int PK_LEN = FNDSA512.PUBLIC_KEY_LENGTH;
-    private static final int SIG_SLOT_LEN = FNDSA512.SIGNATURE_MAX_LENGTH - 1;
+    private static final int SIG_SLOT_LEN =
+        FNDSA512.SIGNATURE_MAX_LENGTH - FNDSA512.SIGNATURE_HEADER_LENGTH;
     // hash, sigArrayOffset, pkArrayOffset, addrArrayOffset.
     private static final int ABI_HEAD_WORDS = 4;
 
@@ -3046,7 +3049,7 @@ public class PrecompiledContracts {
           byte[] pk = pqPks[i];
           int expectedPkLen = PQSchemeRegistry.getPublicKeyLength(scheme);
           int expectedSigSlot = scheme == PQScheme.FN_DSA_512
-              ? FNDSA512.SIGNATURE_MAX_LENGTH - 1
+              ? FNDSA512.SIGNATURE_MAX_LENGTH - FNDSA512.SIGNATURE_HEADER_LENGTH
               : PQSchemeRegistry.getSignatureLength(scheme);
           if (pk == null || pk.length != expectedPkLen
               || sig == null || sig.length != expectedSigSlot) {
