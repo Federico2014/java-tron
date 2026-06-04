@@ -184,6 +184,7 @@ public class TransactionUtil {
   }
 
   public TransactionSignWeight getTransactionSignWeight(Transaction trx) {
+    trx = TransactionCapsule.truncateSignatures(trx);
     TransactionSignWeight.Builder tswBuilder = TransactionSignWeight.newBuilder();
     TransactionExtention.Builder trxExBuilder = TransactionExtention.newBuilder();
     trxExBuilder.setTransaction(trx);
