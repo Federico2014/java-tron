@@ -47,6 +47,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.bouncycastle.util.encoders.Hex;
 import org.fusesource.jansi.AnsiConsole;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -56,6 +57,9 @@ import org.tron.common.args.GenesisBlock;
 import org.tron.common.args.Witness;
 import org.tron.common.config.DbBackupConfig;
 import org.tron.common.cron.CronExpression;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
+import org.tron.common.crypto.pqc.PQSignature;
+import org.tron.common.crypto.pqc.PqKeypair;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.logsfilter.FilterQuery;
 import org.tron.common.logsfilter.TriggerConfig;
@@ -78,6 +82,7 @@ import org.tron.p2p.dns.update.DnsType;
 import org.tron.p2p.dns.update.PublishConfig;
 import org.tron.p2p.utils.NetUtil;
 import org.tron.program.Version;
+import org.tron.protos.Protocol.PQScheme;
 
 @Slf4j(topic = "app")
 @NoArgsConstructor
@@ -1293,7 +1298,25 @@ public class Args extends CommonParameter {
         config.hasPath(Constant.COMMITTEE_ALLOW_TVM_BLOB) ? config
             .getInt(Constant.COMMITTEE_ALLOW_TVM_BLOB) : 0;
 
+    PARAMETER.allowFnDsa512 =
+        config.hasPath(Constant.COMMITTEE_ALLOW_FN_DSA_512) ? config
+            .getLong(Constant.COMMITTEE_ALLOW_FN_DSA_512) : 0;
+
+    PARAMETER.allowMlDsa44 =
+        config.hasPath(Constant.COMMITTEE_ALLOW_ML_DSA_44) ? config
+            .getLong(Constant.COMMITTEE_ALLOW_ML_DSA_44) : 0;
+
     logConfig();
+  }
+
+  private static String stripHexPrefix(String hex) {
+    if (hex == null) {
+      return null;
+    }
+    if (hex.startsWith("0x") || hex.startsWith("0X")) {
+      return hex.substring(2);
+    }
+    return hex;
   }
 
   private static long getProposalExpirationTime(final Config config) {

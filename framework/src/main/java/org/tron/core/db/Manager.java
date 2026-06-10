@@ -54,6 +54,7 @@ import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.cron.CronExpression;
+import org.tron.common.crypto.pqc.PQSchemeRegistry;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.logsfilter.EventPluginLoader;
@@ -84,6 +85,7 @@ import org.tron.common.utils.Sha256Hash;
 import org.tron.common.utils.StringUtil;
 import org.tron.common.zksnark.MerkleContainer;
 import org.tron.consensus.Consensus;
+import org.tron.consensus.base.Param;
 import org.tron.consensus.base.Param.Miner;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.Constant;
@@ -168,6 +170,8 @@ import org.tron.core.store.WitnessStore;
 import org.tron.core.utils.TransactionRegister;
 import org.tron.protos.Protocol;
 import org.tron.protos.Protocol.AccountType;
+import org.tron.protos.Protocol.PQAuthSig;
+import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract;
@@ -1548,7 +1552,8 @@ public class Manager {
         trace.exec();
         trace.setResult();
         logger.info("Retry result when push: {}, for tx id: {}, tx resultCode in receipt: {}.",
-            blockCap.hasWitnessSignature(), txId, trace.getReceipt().getResult());
+            blockCap.hasWitnessSignature(), txId,
+            trace.getReceipt().getResult());
       }
       if (blockCap.hasWitnessSignature()) {
         trace.check();
@@ -1609,7 +1614,8 @@ public class Manager {
    * Generate a block.
    */
   public BlockCapsule generateBlock(Miner miner, long blockTime, long timeout) {
-    String address =  StringUtil.encode58Check(miner.getWitnessAddress().toByteArray());
+    ByteString witnessAddress = miner.getEffectiveWitnessAddress();
+    String address =  StringUtil.encode58Check(witnessAddress.toByteArray());
     final Histogram.Timer timer = Metrics.histogramStartTimer(
         MetricKeys.Histogram.BLOCK_GENERATE_LATENCY, address);
     Metrics.histogramObserve(MetricKeys.Histogram.MINER_DELAY,
@@ -1619,7 +1625,7 @@ public class Manager {
 
     BlockCapsule blockCapsule = new BlockCapsule(chainBaseManager.getHeadBlockNum() + 1,
         chainBaseManager.getHeadBlockId(),
-        blockTime, miner.getWitnessAddress());
+        blockTime, witnessAddress);
     blockCapsule.generatedByMyself = true;
     session.reset();
     session.setValue(revokingStore.buildSession());
@@ -1627,9 +1633,9 @@ public class Manager {
     accountStateCallBack.preExecute(blockCapsule);
 
     if (getDynamicPropertiesStore().getAllowMultiSign() == 1) {
-      byte[] privateKeyAddress = miner.getPrivateKeyAddress().toByteArray();
+      byte[] privateKeyAddress = miner.getEffectivePrivateKeyAddress().toByteArray();
       AccountCapsule witnessAccount = getAccountStore()
-          .get(miner.getWitnessAddress().toByteArray());
+          .get(witnessAddress.toByteArray());
       if (!Arrays.equals(privateKeyAddress, witnessAccount.getWitnessPermissionAddress())) {
         logger.warn("Witness permission is wrong.");
         return null;
@@ -1738,7 +1744,25 @@ public class Manager {
     session.reset();
 
     blockCapsule.setMerkleRoot();
-    blockCapsule.sign(miner.getPrivateKey());
+    if (miner.isPq()) {
+      // PQ-only miner: never fall back to ECDSA signing — miner.getPrivateKey() is
+      // null on this path, and a silent fallback would NPE inside blockCapsule.sign.
+      // Fail fast with a clear cause; DposTask's Throwable handler logs it and the
+      // witness misses this slot, but the producer thread stays alive.
+      // Gate on this miner's specific scheme, not on the broader "any PQ scheme
+      // allowed" flag — a Falcon-configured miner must not produce while only
+      // ML-DSA is active (and vice versa).
+      Param.Miner.PQMiner pq = miner.getPq();
+      if (!getDynamicPropertiesStore().isPqSchemeAllowed(pq.getScheme())) {
+        throw new IllegalStateException(
+            "PQ miner " + Hex.toHexString(pq.getWitnessAddress().toByteArray())
+                + " has scheme " + pq.getScheme()
+                + " configured but that scheme is not allowed by dynamic properties");
+      }
+      signBlockCapsuleWithPQ(blockCapsule, miner);
+    } else {
+      blockCapsule.sign(miner.getPrivateKey());
+    }
 
     BlockCapsule capsule = new BlockCapsule(blockCapsule.getInstance());
     capsule.generatedByMyself = true;
@@ -1752,6 +1776,38 @@ public class Manager {
         capsule.getSerializedSize());
 
     return capsule;
+  }
+
+  private void signBlockCapsuleWithPQ(BlockCapsule blockCapsule, Miner miner) {
+    Param.Miner.PQMiner pq = miner.getPq();
+    PQScheme scheme = pq.getScheme();
+    if (scheme == null || !PQSchemeRegistry.contains(scheme)) {
+      throw new IllegalStateException(
+          "PQ miner " + Hex.toHexString(pq.getWitnessAddress().toByteArray())
+              + " has scheme " + scheme
+              + " which is not registered in PQSchemeRegistry");
+    }
+    if (!chainBaseManager.getDynamicPropertiesStore().isPqSchemeAllowed(scheme)) {
+      throw new IllegalStateException(
+          "PQ miner " + Hex.toHexString(pq.getWitnessAddress().toByteArray())
+              + " has scheme " + scheme
+              + " but it is not allowed by dynamic properties");
+    }
+    byte[] pqPrivateKey = pq.getPrivateKey();
+    byte[] pqPublicKey = pq.getPublicKey();
+    if (pqPrivateKey == null || pqPublicKey == null) {
+      throw new IllegalStateException(
+          "miner " + Hex.toHexString(pq.getWitnessAddress().toByteArray())
+              + " has scheme " + scheme
+              + " set but local PQ key material is missing");
+    }
+    byte[] digest = blockCapsule.getRawHashBytes();
+    byte[] signature = PQSchemeRegistry.sign(scheme, pqPrivateKey, digest);
+    PQAuthSig.Builder builder = PQAuthSig.newBuilder()
+        .setScheme(scheme)
+        .setPublicKey(ByteString.copyFrom(pqPublicKey))
+        .setSignature(ByteString.copyFrom(signature));
+    blockCapsule.setPqAuthSig(builder.build());
   }
 
   private void filterOwnerAddress(TransactionCapsule transactionCapsule, Set<String> result) {

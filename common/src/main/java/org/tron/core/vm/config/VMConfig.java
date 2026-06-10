@@ -61,6 +61,10 @@ public class VMConfig {
 
   private static boolean ALLOW_TVM_SELFDESTRUCT_RESTRICTION = false;
 
+  private static boolean ALLOW_FN_DSA_512 = false;
+
+  private static boolean ALLOW_ML_DSA_44 = false;
+
   private VMConfig() {
   }
 
@@ -172,6 +176,14 @@ public class VMConfig {
     ALLOW_TVM_SELFDESTRUCT_RESTRICTION = allow == 1;
   }
 
+  public static void initAllowFnDsa512(long allow) {
+    ALLOW_FN_DSA_512 = allow == 1;
+  }
+
+  public static void initAllowMlDsa44(long allow) {
+    ALLOW_ML_DSA_44 = allow == 1;
+  }
+
   public static boolean getEnergyLimitHardFork() {
     return CommonParameter.ENERGY_LIMIT_HARD_FORK;
   }
@@ -270,5 +282,13 @@ public class VMConfig {
 
   public static boolean allowTvmSelfdestructRestriction() {
     return ALLOW_TVM_SELFDESTRUCT_RESTRICTION;
+  }
+
+  public static boolean allowFnDsa512() {
+    return ALLOW_FN_DSA_512;
+  }
+
+  public static boolean allowMlDsa44() {
+    return ALLOW_ML_DSA_44;
   }
 }

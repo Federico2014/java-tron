@@ -37,6 +37,7 @@ import org.tron.api.GrpcAPI.Return.response_code;
 import org.tron.api.GrpcAPI.TransactionExtention;
 import org.tron.api.GrpcAPI.TransactionSignWeight;
 import org.tron.api.GrpcAPI.TransactionSignWeight.Result;
+import org.tron.common.math.StrictMathWrapper;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.ChainBaseManager;
@@ -221,14 +222,31 @@ public class TransactionUtil {
           }
         }
         tswBuilder.setPermission(permission);
-        if (trx.getSignatureCount() > 0) {
-          List<ByteString> approveList = new ArrayList<>();
-          long currentWeight = TransactionCapsule.checkWeight(permission, trx.getSignatureList(),
+        long currentWeight = 0L;
+        List<ByteString> approveList = new ArrayList<>();
+        if (trx.getSignatureCount() > 0 ) {
+          currentWeight = TransactionCapsule.checkWeight(permission, trx.getSignatureList(),
               Sha256Hash.hash(CommonParameter.getInstance()
                   .isECKeyCryptoEngine(), trx.getRawData().toByteArray()), approveList);
-          tswBuilder.addAllApprovedList(approveList);
-          tswBuilder.setCurrentWeight(currentWeight);
         }
+        if (chainBaseManager.getDynamicPropertiesStore().isAnyPqSchemeAllowed()
+            && trx.getPqAuthSigCount() > 0) {
+          try {
+            long pqWeight = TransactionCapsule.validatePQSignatureGetWeight(trx, permission,
+                chainBaseManager.getDynamicPropertiesStore(), approveList);
+            // sum all signature weight
+            currentWeight = StrictMathWrapper.addExact(currentWeight,pqWeight);
+          } catch (ArithmeticException e) {
+            throw new PermissionException("weight overflow");
+          }
+        } else if (trx.getPqAuthSigCount() > 0) {
+          throw new PermissionException(
+              "pq_auth_sig not allowed: no post-quantum scheme is activated");
+        }
+
+        tswBuilder.addAllApprovedList(approveList);
+        tswBuilder.setCurrentWeight(currentWeight);
+
         if (tswBuilder.getCurrentWeight() >= permission.getThreshold()) {
           resultBuilder.setCode(Result.response_code.ENOUGH_PERMISSION);
         } else {

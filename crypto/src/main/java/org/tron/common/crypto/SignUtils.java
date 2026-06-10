@@ -1,5 +1,8 @@
 package org.tron.common.crypto;
 
+import static org.tron.core.Constant.MAX_PER_SIGN_LENGTH;
+import static org.tron.core.Constant.PER_SIGN_LENGTH;
+
 import java.security.SecureRandom;
 import java.security.SignatureException;
 import org.tron.common.crypto.ECKey.ECDSASignature;
@@ -7,6 +10,10 @@ import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2.SM2Signature;
 
 public class SignUtils {
+
+  public static boolean isValidLength(int size) {
+    return size >= PER_SIGN_LENGTH && size <= MAX_PER_SIGN_LENGTH;
+  }
 
   public static SignInterface getGeneratedRandomSign(
       SecureRandom secureRandom, boolean isECKeyCryptoEngine) {

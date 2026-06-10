@@ -16,6 +16,7 @@ import com.typesafe.config.ConfigFactory;
 import com.typesafe.config.ConfigObject;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,6 +32,7 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.slf4j.LoggerFactory;
+import org.tron.common.TestConstants;
 import org.tron.common.arch.Arch;
 import org.tron.common.log.LogService;
 import org.tron.common.parameter.RateLimiterInitialization;
@@ -109,9 +111,16 @@ public class TronErrorTest {
   }
 
   @Test
-  public void witnessInitTest() {
+  public void witnessInitTest() throws IOException {
+    // Inherit config-test.conf and override every witness-key source so that
+    // --witness has nothing to initialize from.
+    Path conf = temporaryFolder.newFile("no-witness.conf").toPath();
+    String content = "include classpath(\"" + TestConstants.TEST_CONF + "\")\n"
+        + "localwitness = []\n"
+        + "localwitness_pq.keys = []\n";
+    Files.write(conf, content.getBytes());
     TronError thrown = assertThrows(TronError.class, () -> {
-      Args.setParam(new String[]{"--witness"}, Constant.TEST_CONF);
+      Args.setParam(new String[]{"--witness"}, conf.toString());
     });
     assertEquals(TronError.ErrCode.WITNESS_INIT, thrown.getErrCode());
   }

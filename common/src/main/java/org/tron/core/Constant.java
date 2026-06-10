@@ -40,6 +40,7 @@ public class Constant {
   public static final long ENERGY_LIMIT_IN_CONSTANT_TX = 3_000_000L; // ref: 1 us = 1 energy
   public static final long MAX_RESULT_SIZE_IN_TX = 64; // max 8 * 8 items in result
   public static final long PER_SIGN_LENGTH = 65L;
+  public static final long MAX_PER_SIGN_LENGTH = 68L;
   public static final long MAX_CONTRACT_RESULT_SIZE = 2L;
   public static final long PB_DEFAULT_ENERGY_LIMIT = 0L;
   public static final long CREATOR_DEFAULT_ENERGY_LIMIT = 1000 * 10_000L;
@@ -75,6 +76,8 @@ public class Constant {
   public static final String LOCAL_WITNESS = "localwitness";
   public static final String LOCAL_WITNESS_ACCOUNT_ADDRESS = "localWitnessAccountAddress";
   public static final String LOCAL_WITNESS_KEYSTORE = "localwitnesskeystore";
+  public static final String LOCAL_PQ_WITNESS_ACCOUNT_ADDRESS = "localPqWitnessAccountAddress";
+  public static final String LOCAL_WITNESS_PQ_KEYS = "localwitness_pq.keys";
   public static final String VM_SUPPORT_CONSTANT = "vm.supportConstant";
   public static final String VM_MAX_ENERGY_LIMIT_FOR_CONSTANT = "vm.maxEnergyLimitForConstant";
   public static final String VM_LRU_CACHE_SIZE = "vm.lruCacheSize";
@@ -421,6 +424,10 @@ public class Constant {
   public static final String COMMITTEE_ALLOW_TVM_CANCUN = "committee.allowTvmCancun";
 
   public static final String COMMITTEE_ALLOW_TVM_BLOB = "committee.allowTvmBlob";
+
+  public static final String COMMITTEE_ALLOW_FN_DSA_512 = "committee.allowFnDsa512";
+
+  public static final String COMMITTEE_ALLOW_ML_DSA_44 = "committee.allowMlDsa44";
 
   public static final String COMMITTEE_PROPOSAL_EXPIRE_TIME = "committee.proposalExpireTime";
 
