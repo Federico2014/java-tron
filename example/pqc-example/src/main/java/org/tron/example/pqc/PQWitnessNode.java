@@ -1,4 +1,4 @@
-package org.tron.common.crypto.pqc.program;
+package org.tron.example.pqc;
 
 import com.google.protobuf.ByteString;
 import java.io.File;
@@ -46,9 +46,9 @@ import org.tron.protos.Protocol.Permission.PermissionType;
  *
  * Usage:
  *   Terminal 1 — start this node:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
+ *     ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
+ *     ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQClient
  */
 public class PQWitnessNode {
 

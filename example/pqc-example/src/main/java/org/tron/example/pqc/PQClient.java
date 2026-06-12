@@ -1,4 +1,4 @@
-package org.tron.common.crypto.pqc.program;
+package org.tron.example.pqc;
 
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
@@ -33,9 +33,9 @@ import org.tron.protos.contract.BalanceContract.TransferContract;
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
+ *     ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQWitnessNode
  *   Terminal 2 — broadcast a PQC transaction:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQClient
+ *     ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQClient
  *
  * Optional JVM args:
  *   -Dpqc.scheme=FN_DSA_512  (default; or ML_DSA_44)

@@ -1,4 +1,4 @@
-package org.tron.common.crypto.pqc.program;
+package org.tron.example.pqc;
 
 import java.io.File;
 import java.net.InetSocketAddress;
@@ -32,9 +32,9 @@ import org.tron.protos.Protocol.PQScheme;
  *
  * Usage:
  *   Terminal 1 — start the witness node first:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQWitnessNode
+ *     ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQWitnessNode
  *   Terminal 2 — start a fullnode that syncs from it:
- *     ./gradlew :framework:run -PmainClass=org.tron.common.crypto.pqc.program.PQFullNode
+ *     ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQFullNode
  *
  * Optional JVM args:
  *   -Dpqc.witness.host=127.0.0.1   (default: 127.0.0.1)

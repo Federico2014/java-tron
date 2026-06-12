@@ -1,4 +1,4 @@
-package org.tron.common.crypto.pqc.program;
+package org.tron.example.pqc;
 
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
@@ -25,10 +25,9 @@ import org.tron.common.crypto.pqc.PQSignature;
 import org.tron.common.math.StrictMathWrapper;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
+import org.tron.common.crypto.Hash;
 import org.tron.common.utils.Commons;
 import org.tron.common.utils.Sha256Hash;
-import org.tron.common.utils.StringUtil;
-import org.tron.common.utils.client.utils.AbiUtil;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.PQAuthSig;
@@ -49,16 +48,7 @@ import org.tron.protos.contract.SmartContractOuterClass.TriggerSmartContract;
  * out-of-band key exchange is needed. ECDSA transactions use -Decdsa.private.key.
  * <p>
  * Run from the repository root:
- *   ./gradlew :framework:buildFullNodeJar :framework:compileTestJava
- *   CP="framework/build/classes/java/test:framework/build/resources/test"
- *   CP="$CP:framework/build/libs/FullNode.jar"
- *   java -Dpqc.host=127.0.0.1 -Dpqc.port=50051 \
- *     -Dpqc.fn-dsa-512.transfer.tps=5 -Dpqc.fn-dsa-512.trc20.tps=0 \
- *     -Dpqc.ml-dsa-44.transfer.tps=5  -Dpqc.ml-dsa-44.trc20.tps=0 \
- *     -Decdsa.private.key=HEX_PRIVATE_KEY \
- *     -Decdsa.transfer.tps=5 -Decdsa.trc20.tps=0 \
- *     -cp "$CP" \
- *     org.tron.common.crypto.pqc.program.PQTxSender
+ *   ./gradlew :example:pqc-example:run -PmainClass=org.tron.example.pqc.PQTxSender
  *
  * Optional JVM args:
  *   -Dpqc.host=localhost
@@ -439,12 +429,10 @@ public class PQTxSender {
 
   private static Transaction buildTrc20Transaction(byte[] ownerAddr, byte[] blockHash,
       long refNum) {
-    String callData = AbiUtil.parseMethod("transfer(address,uint256)",
-        Arrays.asList(StringUtil.encode58Check(TO_ADDR), Long.toString(TRC20_AMOUNT)));
     TriggerSmartContract trigger = TriggerSmartContract.newBuilder()
         .setOwnerAddress(ByteString.copyFrom(ownerAddr))
         .setContractAddress(ByteString.copyFrom(TRC20_CONTRACT_ADDR))
-        .setData(ByteString.copyFrom(ByteArray.fromHexString(callData)))
+        .setData(ByteString.copyFrom(encodeTransferCall(TO_ADDR, TRC20_AMOUNT)))
         .setCallValue(0L)
         .build();
     TransactionCapsule trxCap = new TransactionCapsule(trigger, ContractType.TriggerSmartContract);
@@ -454,6 +442,29 @@ public class PQTxSender {
     rawBuilder.setRefBlockBytes(ByteString.copyFrom(longToBytes(refNum), 6, 2));
     rawBuilder.setExpiration(randomExpiration());
     return tx.toBuilder().setRawData(rawBuilder).build();
+  }
+
+  /**
+   * ABI-encode a ERC20/TRC20 transfer(address,uint256) call.
+   * Layout: 4-byte selector | 32-byte address (left-padded) | 32-byte amount (big-endian).
+   * TRON addresses are 21 bytes (0x41 prefix); strip the prefix to get the 20-byte EVM address.
+   */
+  private static byte[] encodeTransferCall(byte[] tronAddr, long amount) {
+    // selector = keccak256("transfer(address,uint256)")[0:4]
+    byte[] selector = Arrays.copyOf(
+        Hash.sha3(("transfer(address,uint256)").getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+        4);
+    // address word: 12 zero bytes + 20-byte EVM address (TRON addr minus 0x41 prefix)
+    byte[] addrWord = new byte[32];
+    System.arraycopy(tronAddr, 1, addrWord, 12, 20);
+    // amount word: big-endian uint256
+    byte[] amountWord = new byte[32];
+    ByteBuffer.wrap(amountWord, 24, 8).putLong(amount);
+    byte[] result = new byte[4 + 32 + 32];
+    System.arraycopy(selector, 0, result, 0, 4);
+    System.arraycopy(addrWord, 0, result, 4, 32);
+    System.arraycopy(amountWord, 0, result, 36, 32);
+    return result;
   }
 
   /**

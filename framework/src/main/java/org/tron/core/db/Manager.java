@@ -1332,14 +1332,6 @@ public class Manager {
                     block.getNum(), SHIELDED_TRANS_IN_BLOCK_COUNTS));
           }
 
-          if (block.getTransactions().stream()
-                  .filter(tran -> isPQTransaction(tran.getInstance()))
-                  .count() > PQ_TRANS_IN_BLOCK_COUNTS) {
-            throw new BadBlockException(
-                String.format("num: %d, pq transaction count > %d",
-                    block.getNum(), PQ_TRANS_IN_BLOCK_COUNTS));
-          }
-
           BlockCapsule newBlock;
           try {
             newBlock = this.khaosDb.push(block);

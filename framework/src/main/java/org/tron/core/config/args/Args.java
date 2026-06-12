@@ -1046,14 +1046,15 @@ public class Args extends CommonParameter {
         }
       } else {
         if (!PQSchemeRegistry.isSeedDeterministic(scheme)) {
-          // Falcon's FFT-based keygen drifts across JVMs/architectures, so
-          // seed-only config would produce different witness keys on
-          // different nodes. Force operators to commit the expanded keypair.
-          throw new TronError(String.format(
-              "%s[%d].seed is not supported for %s (non-deterministic keygen); "
-                  + "use `key` with the extended priv‖pub hex instead",
-              path, i, scheme),
-              TronError.ErrCode.WITNESS_INIT);
+          // Falcon's FFT-based keygen is architecture- and JVM-dependent: the
+          // same seed may produce a different keypair on a different machine.
+          // Warn loudly so the operator knows their witness key may drift if
+          // the node is ever migrated; using `key` (expanded priv‖pub) is
+          // strongly recommended for production.
+          logger.warn("{} scheme {} uses non-deterministic keygen; the same seed "
+              + "may produce different keys on a different JVM or architecture. "
+              + "Consider using `key` with the extended priv‖pub hex instead.",
+              path, scheme);
         }
         int seedHexLen = PQSchemeRegistry.getSeedLength(scheme) * 2;
         String stripped = stripHexPrefix(entry.getSeed());
