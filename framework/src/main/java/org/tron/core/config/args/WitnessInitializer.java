@@ -179,7 +179,7 @@ public class WitnessInitializer {
   }
 
   public static LocalWitnesses buildPqWitnesses(List<PqEntryConfig> pqEntries,
-                                                String accountAddress) {
+      String accountAddress) {
     // Each entry is an object { scheme = "<PQScheme>", key | seed = "<hex>" }
     // so a single node can host SRs running different PQ algorithms (e.g.
     // Falcon-512 and ML-DSA-44 side by side). `key` carries the expanded
@@ -254,14 +254,13 @@ public class WitnessInitializer {
    */
   private static PqKeypair keypairFromSeed(int index, PQScheme scheme, String rawSeed) {
     if (!PQSchemeRegistry.isSeedDeterministic(scheme)) {
-      // Falcon's FFT-based keygen is architecture- and JVM-dependent: the
-      // same seed may produce a different keypair on a different machine.
-      // Warn loudly so the operator knows their witness key may drift if
-      // the node is ever migrated; using `key` (expanded priv‖pub) is
-      // strongly recommended for production.
-      logger.warn("{} scheme {} uses non-deterministic keygen; the same seed "
-          + "may produce different keys on a different JVM or architecture. "
-          + "Consider using `key` with the extended priv‖pub hex instead.",
+      // Falcon's FFT-based keygen is architecture- and JVM-dependent: the same seed may produce a
+      // different keypair on a different machine. Warn loudly so the operator knows their witness
+      // key may drift if the node is ever migrated; using `key` (expanded priv‖pub) is strongly
+      // recommended for production.
+      logger.warn("{} scheme {} uses non-deterministic keygen; the same seed may produce different "
+              + "keys on a different JVM or architecture. Consider using `key` with the extended "
+              + "priv‖pub hex instead.",
           PQ_KEYS_PATH, scheme);
     }
     int seedHexLen = PQSchemeRegistry.getSeedLength(scheme) * 2;

@@ -950,8 +950,7 @@ public class Args extends CommonParameter {
       // Carry both addresses so a node hosting one ECDSA SR + one PQ SR can
       // match either schedule slot. Consumers consult the field that matches
       // their signing path (ECDSA address for ECDSA sigs, PQ address for PQ).
-      merged.initWitnessAccountAddress(
-          ecdsaWitnesses.getWitnessAccountAddress(),
+      merged.initWitnessAccountAddress(ecdsaWitnesses.getWitnessAccountAddress(),
           PARAMETER.isECKeyCryptoEngine());
       merged.initPqWitnessAccountAddress(pqWitnesses.getPqWitnessAccountAddress());
       localWitnesses = merged;
@@ -978,15 +977,6 @@ public class Args extends CommonParameter {
     metricsConfig = null;
     eventConfig = null;
   }
-
-  // getProposalExpirationTime removed — logic moved to BlockConfig.fromConfig()
-
-  // getWitnessesFromConfig, createWitness, getAccountsFromConfig, createAccount
-  // removed — logic moved to applyGenesisConfig()
-
-  // getRateLimiterFromConfig removed — logic moved to applyRateLimiterConfig()
-
-  // getInetSocketAddress removed — use filterInetSocketAddress
 
   /**
    * Parse and optionally filter a list of address strings.

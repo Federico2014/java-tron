@@ -21,8 +21,9 @@ public class LocalWitnessPqConfig {
   /**
    * Counterpart to {@code localWitnessAccountAddress} for the PQ witness path:
    * overrides the on-chain witness account address for the single-PQ-witness
-   * case. Independent of the ECDSA address so mixed-mode nodes can set either,
-   * both, or neither. Validated in {@link Args} / WitnessInitializer.
+   * case. Independent of the ECDSA address, but the two overrides are mutually
+   * exclusive — setting both is rejected in {@link LocalWitnessConfig#fromConfig}.
+   * Validated in {@link Args} / WitnessInitializer.
    */
   @Optional
   private String accountAddress;

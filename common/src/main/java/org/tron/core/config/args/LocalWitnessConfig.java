@@ -1,13 +1,17 @@
 package org.tron.core.config.args;
 
+import static org.tron.core.exception.TronError.ErrCode.PARAMETER_INIT;
+
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigBeanFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
+import org.tron.core.exception.TronError;
 
 /**
  * Local witness configuration bean.
@@ -25,10 +29,14 @@ import lombok.extern.slf4j.Slf4j;
 @Getter
 public class LocalWitnessConfig {
 
-  /** Root path of the PQ witness section within config.conf. */
+  /**
+   * Root path of the PQ witness section within config.conf.
+   */
   public static final String PQ_SECTION_PATH = "localwitness_pq";
 
-  /** Path of the PQ witness key list; used for entry-level error messages. */
+  /**
+   * Path of the PQ witness key list; used for entry-level error messages.
+   */
   public static final String PQ_KEYS_PATH = "localwitness_pq.keys";
 
   private List<String> privateKeys = new ArrayList<>();
@@ -54,6 +62,12 @@ public class LocalWitnessConfig {
       pq.postProcess();
       lw.pqEntries = pq.getKeys();
       lw.pqAccountAddress = pq.getAccountAddress();
+
+      if (StringUtils.isNotEmpty(lw.accountAddress) && StringUtils.isNotEmpty(
+          lw.pqAccountAddress)) {
+        throw new TronError("localWitnessAccountAddress and localwitness_pq.accountAddress "
+            + "should not exist at the same time", PARAMETER_INIT);
+      }
     }
     return lw;
   }

@@ -35,12 +35,22 @@ public class LocalWitnessConfigTest {
 
   @Test
   public void testWithPqAccountAddress() {
+    Config config = withRef("localwitness_pq.accountAddress = \"TPqAddr\"");
+    LocalWitnessConfig lw = LocalWitnessConfig.fromConfig(config);
+    assertNull(lw.getAccountAddress());
+    assertEquals("TPqAddr", lw.getPqAccountAddress());
+  }
+
+  @Test
+  public void testEcdsaAndPqAccountAddressBothSetRejected() {
     Config config = withRef(
         "localWitnessAccountAddress = \"TEcdsaAddr\"\n"
             + "localwitness_pq.accountAddress = \"TPqAddr\"");
-    LocalWitnessConfig lw = LocalWitnessConfig.fromConfig(config);
-    assertEquals("TEcdsaAddr", lw.getAccountAddress());
-    assertEquals("TPqAddr", lw.getPqAccountAddress());
+    TronError err = assertThrows(TronError.class,
+        () -> LocalWitnessConfig.fromConfig(config));
+    assertEquals(TronError.ErrCode.PARAMETER_INIT, err.getErrCode());
+    assertTrue(err.getMessage(),
+        err.getMessage().contains("should not exist at the same time"));
   }
 
   @Test
