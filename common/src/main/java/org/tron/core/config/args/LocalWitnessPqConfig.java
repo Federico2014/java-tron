@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
+import org.tron.core.exception.TronError;
 
 /**
  * Auto-bound shape of the {@code localwitness_pq} section. Bound via
@@ -28,6 +29,33 @@ public class LocalWitnessPqConfig {
 
   @Optional
   private List<PqEntryConfig> keys = new ArrayList<>();
+
+  /**
+   * Validate the structural shape of the bound entries: every entry must name a
+   * {@code scheme} and define exactly one of {@code key} or {@code seed}. Scheme
+   * validity and key material (hex length, public-key recovery) are checked later
+   * in WitnessInitializer, which has access to the crypto module.
+   */
+  public void postProcess() {
+    for (int i = 0; i < keys.size(); i++) {
+      PqEntryConfig entry = keys.get(i);
+      if (entry.getScheme() == null) {
+        throw witnessError("%s[%d] must define `scheme`", LocalWitnessConfig.PQ_KEYS_PATH, i);
+      }
+      if (!entry.hasKey() && !entry.hasSeed()) {
+        throw witnessError("%s[%d] must define exactly one of `key` or `seed`, but neither is set",
+            LocalWitnessConfig.PQ_KEYS_PATH, i);
+      }
+      if (entry.hasKey() && entry.hasSeed()) {
+        throw witnessError("%s[%d] must define exactly one of `key` or `seed`, but both are set",
+            LocalWitnessConfig.PQ_KEYS_PATH, i);
+      }
+    }
+  }
+
+  private static TronError witnessError(String format, Object... args) {
+    return new TronError(String.format(format, args), TronError.ErrCode.WITNESS_INIT);
+  }
 
   @Getter
   @Setter

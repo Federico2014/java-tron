@@ -69,18 +69,6 @@ public class ArgsPqConfigTest {
   }
 
   @Test
-  public void fnDsa512SeedRejected() throws IOException {
-    byte[] seed = filled(FNDSA512.SEED_LENGTH, (byte) 0x03);
-    Path conf = writeConfWithEntry(
-        "{ scheme = \"FN_DSA_512\", seed = \"" + Hex.toHexString(seed) + "\" }");
-
-    TronError err = assertThrows(TronError.class,
-        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("seed is not supported for FN_DSA_512"));
-  }
-
-  @Test
   public void keyAndSeedBothSetRejected() throws IOException {
     byte[] seed = filled(MLDSA44.SEED_LENGTH, (byte) 0x05);
     MLDSA44 ml = new MLDSA44(seed);

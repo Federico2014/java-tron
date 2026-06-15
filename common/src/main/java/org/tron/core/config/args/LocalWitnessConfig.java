@@ -51,6 +51,7 @@ public class LocalWitnessConfig {
     if (config.hasPath(PQ_SECTION_PATH)) {
       LocalWitnessPqConfig pq = ConfigBeanFactory.create(
           config.getConfig(PQ_SECTION_PATH), LocalWitnessPqConfig.class);
+      pq.postProcess();
       lw.pqEntries = pq.getKeys();
       lw.pqAccountAddress = pq.getAccountAddress();
     }

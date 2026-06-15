@@ -6,12 +6,15 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.bouncycastle.util.encoders.Hex;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.pqc.PQSchemeRegistry;
+import org.tron.common.crypto.pqc.PQSignature;
 import org.tron.common.crypto.pqc.PqKeypair;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Commons;
 import org.tron.common.utils.LocalWitnesses;
+import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 import org.tron.core.exception.CipherException;
 import org.tron.core.exception.TronError;
 import org.tron.keystore.Credentials;
@@ -20,6 +23,8 @@ import org.tron.protos.Protocol.PQScheme;
 
 @Slf4j
 public class WitnessInitializer {
+
+  private static final String PQ_KEYS_PATH = LocalWitnessConfig.PQ_KEYS_PATH;
 
   /**
    * Init from a single private key (and optional witness address).
@@ -116,13 +121,11 @@ public class WitnessInitializer {
   }
 
   /**
-   * Init for PQ-only witness nodes (no legacy ECDSA key). Each PqKeypair
-   * carries its own PQScheme. When {@code pqWitnessAccountAddress} is blank,
-   * the address is derived from the first PQ public key via
-   * {@link PQSchemeRegistry#computeAddress(PQScheme, byte[])} using that
-   * entry's scheme. Only {@code pqWitnessAccountAddress} is populated; the
-   * legacy ECDSA-side field stays {@code null} so downstream callers must
-   * decide which identity (ECDSA vs PQ) to consult.
+   * Init for PQ-only witness nodes (no legacy ECDSA key). Each PqKeypair carries its own PQScheme.
+   * When {@code pqWitnessAccountAddress} is blank, the address is derived from the first PQ public
+   * key via {@link PQSchemeRegistry#computeAddress(PQScheme, byte[])} using that entry's scheme.
+   * Only {@code pqWitnessAccountAddress} is populated; the legacy ECDSA-side field stays
+   * {@code null} so downstream callers must decide which identity (ECDSA vs PQ) to consult.
    */
   public static LocalWitnesses initFromPQOnly(
       List<PqKeypair> pqKeypairs, String pqWitnessAccountAddress) {
@@ -134,24 +137,23 @@ public class WitnessInitializer {
     LocalWitnesses witnesses = new LocalWitnesses();
     witnesses.setPqKeypairs(pqKeypairs);
 
-    byte[] explicit = null;
+    byte[] accountAddress = null;
     if (StringUtils.isNotBlank(pqWitnessAccountAddress)) {
       if (pqKeypairs.size() != 1) {
         throw new TronError(
             "localwitness_pq.accountAddress can only be set when there is only one PQ keypair",
             TronError.ErrCode.WITNESS_INIT);
       }
-      explicit = Commons.decodeFromBase58Check(pqWitnessAccountAddress);
-      if (explicit == null) {
-        throw new TronError(
-            "localwitness_pq.accountAddress format is incorrect",
+      accountAddress = Commons.decodeFromBase58Check(pqWitnessAccountAddress);
+      if (accountAddress == null) {
+        throw new TronError("localwitness_pq.accountAddress format is incorrect",
             TronError.ErrCode.WITNESS_INIT);
       }
       logger.debug("Got localwitness_pq.accountAddress from config.conf");
     } else {
       logger.debug("Derived PQ-only witness address from public key");
     }
-    witnesses.initPqWitnessAccountAddress(explicit);
+    witnesses.initPqWitnessAccountAddress(accountAddress);
     return witnesses;
   }
 
@@ -174,5 +176,123 @@ public class WitnessInitializer {
           TronError.ErrCode.WITNESS_INIT);
     }
     return address;
+  }
+
+  public static LocalWitnesses buildPqWitnesses(List<PqEntryConfig> pqEntries,
+                                                String accountAddress) {
+    // Each entry is an object { scheme = "<PQScheme>", key | seed = "<hex>" }
+    // so a single node can host SRs running different PQ algorithms (e.g.
+    // Falcon-512 and ML-DSA-44 side by side). `key` carries the expanded
+    // priv‖pub hex (any scheme); `seed` carries the keygen seed hex and is
+    // accepted only when PQSchemeRegistry.isSeedDeterministic(scheme) is true.
+    List<PqKeypair> pqKeypairs = new ArrayList<>(pqEntries.size());
+    for (int i = 0; i < pqEntries.size(); i++) {
+      pqKeypairs.add(buildPqKeypair(i, pqEntries.get(i)));
+    }
+    return initFromPQOnly(pqKeypairs, accountAddress);
+  }
+
+  private static PqKeypair buildPqKeypair(int index, PqEntryConfig entry) {
+    // Structural validation (scheme present, exactly one of key/seed) is done
+    // up front in LocalWitnessPqConfig.postProcess(); here the entry is already
+    // known to name a scheme and define exactly one of key or seed.
+    PQScheme scheme = resolveScheme(index, entry.getScheme());
+    return entry.hasKey()
+        ? keypairFromKey(index, scheme, entry.getKey())
+        : keypairFromSeed(index, scheme, entry.getSeed());
+  }
+
+  private static PQScheme resolveScheme(int index, String schemeName) {
+    PQScheme scheme;
+    try {
+      scheme = PQScheme.valueOf(schemeName);
+    } catch (IllegalArgumentException e) {
+      throw witnessError("invalid %s[%d].scheme: %s", PQ_KEYS_PATH, index, schemeName);
+    }
+    if (!PQSchemeRegistry.contains(scheme)) {
+      throw witnessError("unsupported %s[%d].scheme: %s; registered schemes: %s",
+          PQ_KEYS_PATH, index, schemeName, PQSchemeRegistry.registeredSchemes());
+    }
+    return scheme;
+  }
+
+  /**
+   * Build a keypair from a `key` entry: the expanded {@code priv‖pub} hex, or —
+   * for schemes whose public key can be recovered — the priv-only hex.
+   */
+  private static PqKeypair keypairFromKey(int index, PQScheme scheme, String rawKey) {
+    int privHexLen = PQSchemeRegistry.getPrivateKeyLength(scheme) * 2;
+    int extHexLen = privHexLen + PQSchemeRegistry.getPublicKeyLength(scheme) * 2;
+    boolean canRecoverPk = PQSchemeRegistry.canDerivePublicKey(scheme);
+    String stripped = stripHexPrefix(rawKey);
+    int len = stripped.length();
+    boolean shortForm = canRecoverPk && len == privHexLen;
+    if (len != extHexLen && !shortForm) {
+      String expected = canRecoverPk
+          ? String.format("%d (priv-only) or %d (extended priv‖pub)", privHexLen, extHexLen)
+          : String.format("%d (extended priv‖pub)", extHexLen);
+      throw witnessError("%s[%d].key must be %s hex chars for %s, actual: %d",
+          PQ_KEYS_PATH, index, expected, scheme, len);
+    }
+    String privHex = stripped.substring(0, privHexLen);
+    if (!shortForm) {
+      return new PqKeypair(scheme, privHex, stripped.substring(privHexLen));
+    }
+    byte[] privBytes = decodeHex(privHex, index, scheme, "key");
+    byte[] pubBytes;
+    try {
+      pubBytes = PQSchemeRegistry.derivePublicKey(scheme, privBytes);
+    } catch (RuntimeException e) {
+      throw witnessError("%s[%d].key cannot recover public key for %s: %s",
+          PQ_KEYS_PATH, index, scheme, e.getMessage());
+    }
+    return new PqKeypair(scheme, privHex, Hex.toHexString(pubBytes));
+  }
+
+  /**
+   * Build a keypair from a `seed` entry by running the scheme's keygen.
+   */
+  private static PqKeypair keypairFromSeed(int index, PQScheme scheme, String rawSeed) {
+    if (!PQSchemeRegistry.isSeedDeterministic(scheme)) {
+      // Falcon's FFT-based keygen is architecture- and JVM-dependent: the
+      // same seed may produce a different keypair on a different machine.
+      // Warn loudly so the operator knows their witness key may drift if
+      // the node is ever migrated; using `key` (expanded priv‖pub) is
+      // strongly recommended for production.
+      logger.warn("{} scheme {} uses non-deterministic keygen; the same seed "
+          + "may produce different keys on a different JVM or architecture. "
+          + "Consider using `key` with the extended priv‖pub hex instead.",
+          PQ_KEYS_PATH, scheme);
+    }
+    int seedHexLen = PQSchemeRegistry.getSeedLength(scheme) * 2;
+    String stripped = stripHexPrefix(rawSeed);
+    if (stripped.length() != seedHexLen) {
+      throw witnessError("%s[%d].seed must be %d hex chars for %s, actual: %d",
+          PQ_KEYS_PATH, index, seedHexLen, scheme, stripped.length());
+    }
+    byte[] seedBytes = decodeHex(stripped, index, scheme, "seed");
+    PQSignature derived = PQSchemeRegistry.fromSeed(scheme, seedBytes);
+    return new PqKeypair(scheme, Hex.toHexString(derived.getPrivateKey()),
+        Hex.toHexString(derived.getPublicKey()));
+  }
+
+  private static byte[] decodeHex(String hex, int index, PQScheme scheme, String field) {
+    try {
+      return Hex.decode(hex);
+    } catch (RuntimeException e) {
+      throw witnessError("%s[%d].%s is not valid hex for %s: %s",
+          PQ_KEYS_PATH, index, field, scheme, e.getMessage());
+    }
+  }
+
+  private static TronError witnessError(String format, Object... args) {
+    return new TronError(String.format(format, args), TronError.ErrCode.WITNESS_INIT);
+  }
+
+  private static String stripHexPrefix(String hex) {
+    if (hex.startsWith("0x") || hex.startsWith("0X")) {
+      return hex.substring(2);
+    }
+    return hex;
   }
 }
