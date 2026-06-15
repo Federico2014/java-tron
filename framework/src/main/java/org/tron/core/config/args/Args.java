@@ -60,6 +60,7 @@ import org.tron.common.utils.LocalWitnesses;
 import org.tron.core.Constant;
 import org.tron.core.Wallet;
 import org.tron.core.config.Configuration;
+import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 import org.tron.core.exception.TronError;
 import org.tron.core.store.AccountStore;
 import org.tron.p2p.P2pConfig;
@@ -933,8 +934,8 @@ public class Args extends CommonParameter {
 
     // Load PQ keypairs independently so a node can host a mix of ECDSA and PQ
     // SRs (e.g. during a rolling migration where some SRs have moved to PQ and
-    // others have not yet). The PQ side has its own *AccountAddress key
-    // (localPqWitnessAccountAddress) so mixed-mode configs do not have to drop
+    // others have not yet). The PQ side has its own account-address key
+    // (localwitness_pq.accountAddress) so mixed-mode configs do not have to drop
     // the legacy override for the ECDSA side.
     LocalWitnesses pqWitnesses = null;
     if (hasPqKeys) {
@@ -975,8 +976,8 @@ public class Args extends CommonParameter {
     // accepted only when PQSchemeRegistry.isSeedDeterministic(scheme) is true.
     String path = LocalWitnessConfig.PQ_KEYS_PATH;
     List<PqKeypair> pqKeypairs = new ArrayList<>(pqEntries.size());
-    for (PqEntryConfig entry : pqEntries) {
-      int i = entry.getIndex();
+    for (int i = 0; i < pqEntries.size(); i++) {
+      PqEntryConfig entry = pqEntries.get(i);
       if (entry.getScheme() == null) {
         throw new TronError(String.format(
             "%s[%d] must define `scheme`", path, i),

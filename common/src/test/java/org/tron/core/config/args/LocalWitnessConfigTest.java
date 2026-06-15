@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import org.junit.Test;
+import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 
 public class LocalWitnessConfigTest {
 
@@ -34,7 +35,7 @@ public class LocalWitnessConfigTest {
   public void testWithPqAccountAddress() {
     Config config = withRef(
         "localWitnessAccountAddress = \"TEcdsaAddr\"\n"
-            + "localPqWitnessAccountAddress = \"TPqAddr\"");
+            + "localwitness_pq.accountAddress = \"TPqAddr\"");
     LocalWitnessConfig lw = LocalWitnessConfig.fromConfig(config);
     assertEquals("TEcdsaAddr", lw.getAccountAddress());
     assertEquals("TPqAddr", lw.getPqAccountAddress());
@@ -71,7 +72,6 @@ public class LocalWitnessConfigTest {
     assertEquals(3, lw.getPqEntries().size());
 
     PqEntryConfig first = lw.getPqEntries().get(0);
-    assertEquals(0, first.getIndex());
     assertEquals("FN_DSA_512", first.getScheme());
     assertEquals("deadbeef", first.getKey());
     assertNull(first.getSeed());
@@ -79,7 +79,6 @@ public class LocalWitnessConfigTest {
     assertFalse(first.hasSeed());
 
     PqEntryConfig second = lw.getPqEntries().get(1);
-    assertEquals(1, second.getIndex());
     assertEquals("ML_DSA_44", second.getScheme());
     assertNull(second.getKey());
     assertEquals("cafebabe", second.getSeed());
@@ -87,7 +86,6 @@ public class LocalWitnessConfigTest {
     // Shape validation (e.g. missing key/seed, unknown scheme) is left to Args;
     // the bean only normalizes presence into nullable fields.
     PqEntryConfig third = lw.getPqEntries().get(2);
-    assertEquals(2, third.getIndex());
     assertEquals("FN_DSA_512", third.getScheme());
     assertFalse(third.hasKey());
     assertFalse(third.hasSeed());

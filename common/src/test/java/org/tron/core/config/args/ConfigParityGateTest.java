@@ -113,6 +113,7 @@ public class ConfigParityGateTest {
           "crypto",       // MiscConfig.cryptoEngine manual-read root
           "enery",        // MiscConfig manual-read root (preserves historical typo of "energy")
           "localwitness", // bound by LocalWitnessConfig, not in the *ConfigBean factory pattern
+          "localwitness_pq", // bound by LocalWitnessConfig (localwitness_pq.keys), not the *ConfigBean factory pattern
           "net",          // deprecated wrapper for net.type; intentionally empty in reference.conf
           "seed",         // MiscConfig.seedNodeIpList manual-read root (seed.node.ip.list)
           "trx"           // MiscConfig.trxReferenceBlock manual-read root (trx.reference.block)
