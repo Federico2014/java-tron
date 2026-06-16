@@ -650,7 +650,8 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     this.transaction = this.transaction.toBuilder().addSignature(sig).build();
   }
 
-  private static void checkPermission(int permissionId, Permission permission, Transaction.Contract contract) throws PermissionException {
+  private static void checkPermission(int permissionId, Permission permission, Transaction.Contract
+      contract) throws PermissionException {
     if (permissionId != 0) {
       if (permission.getType() != PermissionType.Active) {
         throw new PermissionException("Permission type is error");
@@ -735,9 +736,8 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
    * </ol>
    */
   public static long validatePQSignatureGetWeight(Transaction transaction, Permission permission,
-      DynamicPropertiesStore dynamicPropertiesStore,
-      List<ByteString> approveList)
-      throws PermissionException {
+      DynamicPropertiesStore dynamicPropertiesStore, List<ByteString> approveList)
+      throws PermissionException, SignatureException, SignatureFormatException {
 
     byte[] digest = computeRawHash(transaction).getBytes();
 
@@ -756,7 +756,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
       byte[] sig = witness.getSignature().toByteArray();
       if (pk.length != PQSchemeRegistry.getPublicKeyLength(scheme)
           || !PQSchemeRegistry.isValidSignatureLength(scheme, sig.length)) {
-        throw new PermissionException("public key or signature length mismatch");
+        throw new SignatureFormatException("public key or signature length mismatch");
       }
       byte[] derivedAddr = PQSchemeRegistry.computeAddress(scheme, pk);
       ByteString addrBs = ByteString.copyFrom(derivedAddr);
@@ -776,16 +776,14 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
                 + " but it is not contained of permission.");
       }
       if (!PQSchemeRegistry.verify(scheme, pk, digest, sig)) {
-        throw new PermissionException("pq sig invalid");
+        throw new SignatureException("pq sig invalid");
       }
       try {
         weight = StrictMathWrapper.addExact(weight, matched.getWeight());
       } catch (ArithmeticException e) {
         throw new PermissionException("weight overflow");
       }
-      if (approveList != null) {
-        approveList.add(addrBs);
-      }
+      approveList.add(addrBs);
     }
     return weight;
   }

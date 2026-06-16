@@ -157,13 +157,6 @@ public class PQSchemeRegistryTest {
   }
 
   @Test
-  public void resolveIsPassThrough() {
-    assertEquals(PQScheme.FN_DSA_512, PQSchemeRegistry.resolve(PQScheme.FN_DSA_512));
-    assertEquals(PQScheme.UNKNOWN_PQ_SCHEME, PQSchemeRegistry.resolve(PQScheme.UNKNOWN_PQ_SCHEME));
-    assertTrue(PQSchemeRegistry.resolve(null) == null);
-  }
-
-  @Test
   public void isValidSignatureLengthRejectsZero() {
     assertFalse(PQSchemeRegistry.isValidSignatureLength(PQScheme.FN_DSA_512, 0));
   }

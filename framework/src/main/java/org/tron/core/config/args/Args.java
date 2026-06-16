@@ -36,7 +36,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.bouncycastle.util.encoders.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.arch.Arch;
@@ -44,9 +43,6 @@ import org.tron.common.args.Account;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.args.Witness;
 import org.tron.common.cron.CronExpression;
-import org.tron.common.crypto.pqc.PQSchemeRegistry;
-import org.tron.common.crypto.pqc.PQSignature;
-import org.tron.common.crypto.pqc.PqKeypair;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.logsfilter.FilterQuery;
 import org.tron.common.logsfilter.TriggerConfig;
@@ -67,7 +63,6 @@ import org.tron.p2p.dns.update.DnsType;
 import org.tron.p2p.dns.update.PublishConfig;
 import org.tron.p2p.utils.NetUtil;
 import org.tron.program.Version;
-import org.tron.protos.Protocol.PQScheme;
 
 @Slf4j(topic = "app")
 @NoArgsConstructor
@@ -933,12 +928,13 @@ public class Args extends CommonParameter {
 
     // Load PQ keypairs independently so a node can host a mix of ECDSA and PQ
     // SRs (e.g. during a rolling migration where some SRs have moved to PQ and
-    // others have not yet). The PQ side has its own *AccountAddress key
-    // (localPqWitnessAccountAddress) so mixed-mode configs do not have to drop
+    // others have not yet). The PQ side has its own account-address key
+    // (localwitness_pq.accountAddress) so mixed-mode configs do not have to drop
     // the legacy override for the ECDSA side.
     LocalWitnesses pqWitnesses = null;
     if (hasPqKeys) {
-      pqWitnesses = buildPqWitnesses(lwConfig.getPqEntries(), lwConfig.getPqAccountAddress());
+      pqWitnesses = WitnessInitializer.buildPqWitnesses(
+          lwConfig.getPqEntries(), lwConfig.getPqAccountAddress());
     }
 
     if (ecdsaWitnesses == null && pqWitnesses == null) {
@@ -954,8 +950,7 @@ public class Args extends CommonParameter {
       // Carry both addresses so a node hosting one ECDSA SR + one PQ SR can
       // match either schedule slot. Consumers consult the field that matches
       // their signing path (ECDSA address for ECDSA sigs, PQ address for PQ).
-      merged.initWitnessAccountAddress(
-          ecdsaWitnesses.getWitnessAccountAddress(),
+      merged.initWitnessAccountAddress(ecdsaWitnesses.getWitnessAccountAddress(),
           PARAMETER.isECKeyCryptoEngine());
       merged.initPqWitnessAccountAddress(pqWitnesses.getPqWitnessAccountAddress());
       localWitnesses = merged;
@@ -964,133 +959,6 @@ public class Args extends CommonParameter {
     } else {
       localWitnesses = pqWitnesses;
     }
-  }
-
-  private static LocalWitnesses buildPqWitnesses(List<PqEntryConfig> pqEntries,
-                                                 String accountAddress) {
-    // Each entry is an object { scheme = "<PQScheme>", key | seed = "<hex>" }
-    // so a single node can host SRs running different PQ algorithms (e.g.
-    // Falcon-512 and ML-DSA-44 side by side). `key` carries the expanded
-    // priv‖pub hex (any scheme); `seed` carries the keygen seed hex and is
-    // accepted only when PQSchemeRegistry.isSeedDeterministic(scheme) is true.
-    String path = LocalWitnessConfig.PQ_KEYS_PATH;
-    List<PqKeypair> pqKeypairs = new ArrayList<>(pqEntries.size());
-    for (PqEntryConfig entry : pqEntries) {
-      int i = entry.getIndex();
-      if (entry.getScheme() == null) {
-        throw new TronError(String.format(
-            "%s[%d] must define `scheme`", path, i),
-            TronError.ErrCode.WITNESS_INIT);
-      }
-      if (entry.hasKey() == entry.hasSeed()) {
-        throw new TronError(String.format(
-            "%s[%d] must define exactly one of `key` or `seed`", path, i),
-            TronError.ErrCode.WITNESS_INIT);
-      }
-      PQScheme scheme;
-      try {
-        scheme = PQScheme.valueOf(entry.getScheme());
-      } catch (IllegalArgumentException e) {
-        throw new TronError(String.format("invalid %s[%d].scheme: %s",
-            path, i, entry.getScheme()),
-            TronError.ErrCode.WITNESS_INIT);
-      }
-      if (!PQSchemeRegistry.contains(scheme)) {
-        throw new TronError(String.format(
-            "unsupported %s[%d].scheme: %s; registered schemes: %s",
-            path, i, entry.getScheme(), PQSchemeRegistry.registeredSchemes()),
-            TronError.ErrCode.WITNESS_INIT);
-      }
-      String privHex;
-      String pubHex;
-      if (entry.hasKey()) {
-        int privHexLen = PQSchemeRegistry.getPrivateKeyLength(scheme) * 2;
-        int extHexLen = privHexLen + PQSchemeRegistry.getPublicKeyLength(scheme) * 2;
-        boolean canRecoverPk = PQSchemeRegistry.canDerivePublicKey(scheme);
-        String stripped = stripHexPrefix(entry.getKey());
-        int len = stripped == null ? 0 : stripped.length();
-        boolean shortForm = canRecoverPk && len == privHexLen;
-        if (stripped == null || (len != extHexLen && !shortForm)) {
-          String expected = canRecoverPk
-              ? String.format("%d (priv-only) or %d (extended priv‖pub)",
-                  privHexLen, extHexLen)
-              : String.format("%d (extended priv‖pub)", extHexLen);
-          throw new TronError(String.format(
-              "%s[%d].key must be %s hex chars for %s, actual: %d",
-              path, i, expected, scheme, len),
-              TronError.ErrCode.WITNESS_INIT);
-        }
-        privHex = stripped.substring(0, privHexLen);
-        if (shortForm) {
-          byte[] privBytes;
-          try {
-            privBytes = Hex.decode(privHex);
-          } catch (RuntimeException e) {
-            throw new TronError(String.format(
-                "%s[%d].key is not valid hex for %s: %s",
-                path, i, scheme, e.getMessage()),
-                TronError.ErrCode.WITNESS_INIT);
-          }
-          byte[] pubBytes;
-          try {
-            pubBytes = PQSchemeRegistry.derivePublicKey(scheme, privBytes);
-          } catch (RuntimeException e) {
-            throw new TronError(String.format(
-                "%s[%d].key cannot recover public key for %s: %s",
-                path, i, scheme, e.getMessage()),
-                TronError.ErrCode.WITNESS_INIT);
-          }
-          pubHex = Hex.toHexString(pubBytes);
-        } else {
-          pubHex = stripped.substring(privHexLen);
-        }
-      } else {
-        if (!PQSchemeRegistry.isSeedDeterministic(scheme)) {
-          // Falcon's FFT-based keygen is architecture- and JVM-dependent: the
-          // same seed may produce a different keypair on a different machine.
-          // Warn loudly so the operator knows their witness key may drift if
-          // the node is ever migrated; using `key` (expanded priv‖pub) is
-          // strongly recommended for production.
-          logger.warn("{} scheme {} uses non-deterministic keygen; the same seed "
-              + "may produce different keys on a different JVM or architecture. "
-              + "Consider using `key` with the extended priv‖pub hex instead.",
-              path, scheme);
-        }
-        int seedHexLen = PQSchemeRegistry.getSeedLength(scheme) * 2;
-        String stripped = stripHexPrefix(entry.getSeed());
-        if (stripped == null || stripped.length() != seedHexLen) {
-          throw new TronError(String.format(
-              "%s[%d].seed must be %d hex chars for %s, actual: %d",
-              path, i, seedHexLen, scheme,
-              stripped == null ? 0 : stripped.length()),
-              TronError.ErrCode.WITNESS_INIT);
-        }
-        byte[] seedBytes;
-        try {
-          seedBytes = Hex.decode(stripped);
-        } catch (RuntimeException e) {
-          throw new TronError(String.format(
-              "%s[%d].seed is not valid hex for %s: %s",
-              path, i, scheme, e.getMessage()),
-              TronError.ErrCode.WITNESS_INIT);
-        }
-        PQSignature derived = PQSchemeRegistry.fromSeed(scheme, seedBytes);
-        privHex = Hex.toHexString(derived.getPrivateKey());
-        pubHex = Hex.toHexString(derived.getPublicKey());
-      }
-      pqKeypairs.add(new PqKeypair(scheme, privHex, pubHex));
-    }
-    return WitnessInitializer.initFromPQOnly(pqKeypairs, accountAddress);
-  }
-
-  private static String stripHexPrefix(String hex) {
-    if (hex == null) {
-      return null;
-    }
-    if (hex.startsWith("0x") || hex.startsWith("0X")) {
-      return hex.substring(2);
-    }
-    return hex;
   }
 
   @VisibleForTesting
@@ -1109,15 +977,6 @@ public class Args extends CommonParameter {
     metricsConfig = null;
     eventConfig = null;
   }
-
-  // getProposalExpirationTime removed — logic moved to BlockConfig.fromConfig()
-
-  // getWitnessesFromConfig, createWitness, getAccountsFromConfig, createAccount
-  // removed — logic moved to applyGenesisConfig()
-
-  // getRateLimiterFromConfig removed — logic moved to applyRateLimiterConfig()
-
-  // getInetSocketAddress removed — use filterInetSocketAddress
 
   /**
    * Parse and optionally filter a list of address strings.

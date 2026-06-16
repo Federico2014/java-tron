@@ -4,28 +4,25 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
+import lombok.AllArgsConstructor;
 import org.tron.common.crypto.Hash;
 import org.tron.protos.Protocol.PQScheme;
 
 /**
- * Static dispatch table for post-quantum signature schemes keyed by
- * {@link PQScheme}. Each entry binds a scheme to its public-key length,
- * signature length, seed length, fingerprint hash function, and stateless
- * sign/verify/keygen operations. Legacy ECDSA secp256k1 / SM2 schemes are NOT
- * registered — they flow through the existing {@code SignInterface} path.
+ * Static dispatch table for post-quantum signature schemes keyed by {@link PQScheme}. Each entry
+ * binds a scheme to its public-key length, signature length, seed length, fingerprint hash
+ * function, and stateless sign/verify/keygen operations. Legacy ECDSA secp256k1 / SM2 schemes are
+ * NOT registered — they flow through the existing {@code SignInterface} path.
  *
- * <p><b>Address binding (V2).</b> A PQ-derived TRON address is
- * {@code 0x41 ‖ deriveHash(scheme, public_key)[12..32]}, matching the ECDSA
- * flow's {@code 0x41 ‖ Keccak-256(public_key)[12..32]} so PQ and ECDSA
- * addresses share the same derivation shape. The hash function is scheme-
- * specific (see {@link #deriveHash}); {@code FN_DSA_512} and {@code ML_DSA_44}
- * both use Keccak-256.
+ * <p><b>Address binding (V2).</b> A PQ-derived TRON address is {@code 0x41 ‖ deriveHash(scheme,
+ * public_key)[12..32]}, matching the ECDSA flow's {@code 0x41 ‖ Keccak-256(public_key)[12..32]} so
+ * PQ and ECDSA addresses share the same derivation shape. The hash function is scheme-specific
+ * (see {@link #deriveHash}); {@code FN_DSA_512} and {@code ML_DSA_44} both use Keccak-256.
  *
- * <p><b>Wire format.</b> The proto3 default {@code UNKNOWN_PQ_SCHEME = 0} is
- * reserved for the {@code UNKNOWN_} API-evolution slot and is NOT interpreted
- * as any registered scheme — producers must set the scheme tag explicitly so
- * future schemes can be added without ambiguity between "client did not set
- * scheme" and "client meant FN_DSA_512". {@link #contains}/{@link #require}
+ * <p><b>Wire format.</b> The proto3 default {@code UNKNOWN_PQ_SCHEME = 0} is reserved for the
+ * {@code UNKNOWN_} API-evolution slot and is NOT interpreted as any registered scheme — producers
+ * must set the scheme tag explicitly so future schemes can be added without ambiguity between
+ * "client did not set scheme" and "client meant FN_DSA_512". {@link #contains}/{@link #require}
  * reject {@code UNKNOWN_PQ_SCHEME} on the same path as {@code UNRECOGNIZED}.
  */
 public final class PQSchemeRegistry {
@@ -71,6 +68,8 @@ public final class PQSchemeRegistry {
 
   private static final FingerprintHash KECCAK_256 = Hash::sha3;
 
+  // @AllArgsConstructor generates a positional constructor in field-declaration order
+  @AllArgsConstructor
   private static final class SchemeInfo {
 
     final int privateKeyLength;
@@ -92,21 +91,6 @@ public final class PQSchemeRegistry {
     final boolean publicKeyRecoverable;
     final FingerprintHash hash;
     final SignatureOps ops;
-
-    SchemeInfo(int privateKeyLength, int publicKeyLength, int signatureLength,
-        int signatureMinLength, int seedLength, boolean seedDeterministic,
-        boolean publicKeyRecoverable,
-        FingerprintHash hash, SignatureOps ops) {
-      this.privateKeyLength = privateKeyLength;
-      this.publicKeyLength = publicKeyLength;
-      this.signatureLength = signatureLength;
-      this.signatureMinLength = signatureMinLength;
-      this.seedLength = seedLength;
-      this.seedDeterministic = seedDeterministic;
-      this.publicKeyRecoverable = publicKeyRecoverable;
-      this.hash = hash;
-      this.ops = ops;
-    }
   }
 
   private static final Map<PQScheme, SchemeInfo> SCHEMES;
@@ -114,8 +98,10 @@ public final class PQSchemeRegistry {
   static {
     EnumMap<PQScheme, SchemeInfo> m = new EnumMap<>(PQScheme.class);
     m.put(PQScheme.FN_DSA_512, new SchemeInfo(
-        FNDSA512.PRIVATE_KEY_LENGTH, FNDSA512.PUBLIC_KEY_LENGTH,
-        FNDSA512.SIGNATURE_MAX_LENGTH, FNDSA512.SIGNATURE_MIN_LENGTH,
+        FNDSA512.PRIVATE_KEY_LENGTH,
+        FNDSA512.PUBLIC_KEY_LENGTH,
+        FNDSA512.SIGNATURE_MAX_LENGTH,
+        FNDSA512.SIGNATURE_MIN_LENGTH,
         FNDSA512.SEED_LENGTH,
         false, // Falcon keygen is FFT-based, not bit-stable across platforms.
         false, // BC has no public path from (f,g) to h (bcgit/bc-java#2297).
@@ -141,9 +127,12 @@ public final class PQSchemeRegistry {
             return new FNDSA512(privateKey, publicKey);
           }
         }));
+
     m.put(PQScheme.ML_DSA_44, new SchemeInfo(
-        MLDSA44.PRIVATE_KEY_LENGTH, MLDSA44.PUBLIC_KEY_LENGTH,
-        MLDSA44.SIGNATURE_LENGTH, MLDSA44.SIGNATURE_LENGTH, // fixed-length scheme
+        MLDSA44.PRIVATE_KEY_LENGTH,
+        MLDSA44.PUBLIC_KEY_LENGTH,
+        MLDSA44.SIGNATURE_LENGTH,
+        MLDSA44.SIGNATURE_LENGTH, // fixed-length scheme
         MLDSA44.SEED_LENGTH,
         true, // FIPS-204 keygen is pure integer arithmetic and reproducible.
         true, // expanded sk carries rho ‖ t0; t1 is re-derived in BC ctor.
@@ -174,20 +163,11 @@ public final class PQSchemeRegistry {
             return MLDSA44.derivePublicKey(privateKey);
           }
         }));
+
     SCHEMES = Collections.unmodifiableMap(m);
   }
 
   private PQSchemeRegistry() {
-  }
-
-  /**
-   * Pass-through for API stability. {@code UNKNOWN_PQ_SCHEME} is no longer
-   * normalized to {@code FN_DSA_512}; producers must set the scheme tag
-   * explicitly. {@code null} and {@code UNRECOGNIZED} pass through unchanged
-   * so the caller-side {@code contains}/{@code require} checks reject them.
-   */
-  public static PQScheme resolve(PQScheme scheme) {
-    return scheme;
   }
 
   public static boolean contains(PQScheme scheme) {
@@ -363,9 +343,6 @@ public final class PQSchemeRegistry {
   private static SchemeInfo require(PQScheme scheme) {
     if (scheme == null) {
       throw new IllegalArgumentException("scheme must not be null");
-    }
-    if (scheme == PQScheme.UNKNOWN_PQ_SCHEME) {
-      throw new IllegalArgumentException("no PQSignature registered for scheme: " + scheme);
     }
     SchemeInfo info = SCHEMES.get(scheme);
     if (info == null) {

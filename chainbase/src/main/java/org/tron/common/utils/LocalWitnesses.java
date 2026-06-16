@@ -98,14 +98,14 @@ public class LocalWitnesses {
   }
 
   /**
-   * Resolve the PQ witness account address from an explicit override, or fall
+   * Resolve the PQ witness account address from an explicitAccountAddress override, or fall
    * back to the first configured PQ keypair's public key. Kept separate from
    * {@link #initWitnessAccountAddress} so a node running two SRs (one ECDSA +
    * one PQ) can carry both addresses without one path overwriting the other.
    */
-  public void initPqWitnessAccountAddress(final byte[] explicit) {
-    if (explicit != null) {
-      this.pqWitnessAccountAddress = explicit;
+  public void initPqWitnessAccountAddress(final byte[] explicitAccountAddress) {
+    if (explicitAccountAddress != null) {
+      this.pqWitnessAccountAddress = explicitAccountAddress;
       return;
     }
     if (!CollectionUtils.isEmpty(pqKeypairs)) {

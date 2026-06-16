@@ -252,19 +252,18 @@ public class TransactionUtil {
               Sha256Hash.hash(CommonParameter.getInstance()
                   .isECKeyCryptoEngine(), trx.getRawData().toByteArray()), approveList);
         }
-        if (chainBaseManager.getDynamicPropertiesStore().isAnyPqSchemeAllowed()
-            && trx.getPqAuthSigCount() > 0) {
+        if (trx.getPqAuthSigCount() > 0) {
+          if (!chainBaseManager.getDynamicPropertiesStore().isAnyPqSchemeAllowed()) {
+            throw new PermissionException(
+                "pq_auth_sig not allowed: no post-quantum scheme is activated");
+          }
           try {
             long pqWeight = TransactionCapsule.validatePQSignatureGetWeight(trx, permission,
                 chainBaseManager.getDynamicPropertiesStore(), approveList);
-            // sum all signature weight
             currentWeight = StrictMathWrapper.addExact(currentWeight, pqWeight);
           } catch (ArithmeticException e) {
             throw new PermissionException("weight overflow");
           }
-        } else if (trx.getPqAuthSigCount() > 0) {
-          throw new PermissionException(
-              "pq_auth_sig not allowed: no post-quantum scheme is activated");
         }
 
         tswBuilder.addAllApprovedList(approveList);

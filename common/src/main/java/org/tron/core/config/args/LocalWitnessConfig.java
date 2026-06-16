@@ -1,25 +1,42 @@
 package org.tron.core.config.args;
 
+import static org.tron.core.exception.TronError.ErrCode.PARAMETER_INIT;
+
 import com.typesafe.config.Config;
+import com.typesafe.config.ConfigBeanFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
+import org.tron.core.exception.TronError;
 
 /**
  * Local witness configuration bean.
  * Reads top-level config keys: localwitness, localWitnessAccountAddress,
- * localPqWitnessAccountAddress, localwitnesskeystore, and
- * localwitness_pq.keys. These are not under a sub-section — they are at the
- * root of config.conf. ECDSA and PQ witness accounts use independent
- * `*AccountAddress` keys so the two consensus paths do not interfere.
+ * localwitnesskeystore, and the localwitness_pq section. These top-level keys
+ * are not under a sub-section — they are at the root of config.conf. The
+ * localwitness_pq section is auto-bound through
+ * {@link com.typesafe.config.ConfigBeanFactory} into {@link LocalWitnessPqConfig}
+ * (which carries the PQ witness account address plus the {@link PqEntryConfig}
+ * list) instead of being read field-by-field. ECDSA and PQ witness accounts use
+ * independent account-address keys (localWitnessAccountAddress vs
+ * localwitness_pq.accountAddress) so the two consensus paths do not interfere.
  */
 @Slf4j
 @Getter
 public class LocalWitnessConfig {
 
-  /** Path of the PQ witness key list within config.conf. */
+  /**
+   * Root path of the PQ witness section within config.conf.
+   */
+  public static final String PQ_SECTION_PATH = "localwitness_pq";
+
+  /**
+   * Path of the PQ witness key list; used for entry-level error messages.
+   */
   public static final String PQ_KEYS_PATH = "localwitness_pq.keys";
 
   private List<String> privateKeys = new ArrayList<>();
@@ -36,23 +53,15 @@ public class LocalWitnessConfig {
     if (config.hasPath("localWitnessAccountAddress")) {
       lw.accountAddress = config.getString("localWitnessAccountAddress");
     }
-    if (config.hasPath("localPqWitnessAccountAddress")) {
-      lw.pqAccountAddress = config.getString("localPqWitnessAccountAddress");
-    }
     if (config.hasPath("localwitnesskeystore")) {
       lw.keystores = config.getStringList("localwitnesskeystore");
     }
-    if (config.hasPath(PQ_KEYS_PATH)) {
-      List<? extends Config> raw = config.getConfigList(PQ_KEYS_PATH);
-      List<PqEntryConfig> entries = new ArrayList<>(raw.size());
-      for (int i = 0; i < raw.size(); i++) {
-        Config entry = raw.get(i);
-        String scheme = entry.hasPath("scheme") ? entry.getString("scheme") : null;
-        String key = entry.hasPath("key") ? entry.getString("key") : null;
-        String seed = entry.hasPath("seed") ? entry.getString("seed") : null;
-        entries.add(new PqEntryConfig(i, scheme, key, seed));
-      }
-      lw.pqEntries = entries;
+    if (config.hasPath(PQ_SECTION_PATH)) {
+      LocalWitnessPqConfig pq = ConfigBeanFactory.create(
+          config.getConfig(PQ_SECTION_PATH), LocalWitnessPqConfig.class);
+      pq.postProcess();
+      lw.pqEntries = pq.getKeys();
+      lw.pqAccountAddress = pq.getAccountAddress();
     }
     return lw;
   }

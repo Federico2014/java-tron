@@ -1,7 +1,9 @@
 package org.tron.core.net.service.relay;
 
 import com.google.protobuf.ByteString;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.security.SignatureException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -65,12 +67,12 @@ public class RelayService {
   private BackupManager backupManager;
   private final String esName = "relay-service";
 
-  private ScheduledExecutorService executorService = ExecutorServiceManager
+  private final ScheduledExecutorService executorService = ExecutorServiceManager
       .newSingleThreadScheduledExecutor(esName);
 
-  private CommonParameter parameter = Args.getInstance();
+  private final CommonParameter parameter = Args.getInstance();
 
-  private List<InetSocketAddress> fastForwardNodes = parameter.getFastForwardNodes();
+  private final List<InetSocketAddress> fastForwardNodes = parameter.getFastForwardNodes();
 
   private final int keySize = Args.getLocalWitnesses().getPrivateKeys().size();
 
@@ -87,7 +89,7 @@ public class RelayService {
       Args.getLocalWitnesses().getPqWitnessAccountAddress() != null ? ByteString
           .copyFrom(Args.getLocalWitnesses().getPqWitnessAccountAddress()) : null;
 
-  private int maxFastForwardNum = Args.getInstance().getMaxFastForwardNum();
+  private final int maxFastForwardNum = Args.getInstance().getMaxFastForwardNum();
 
   public void init() {
     manager = ctx.getBean(Manager.class);
@@ -104,7 +106,7 @@ public class RelayService {
 
     executorService.scheduleWithFixedDelay(() -> {
       try {
-        if (scheduledHere()
+        if (isAnyLocalWitnessActive()
             && backupManager.getStatus().equals(BackupStatusEnum.MASTER)) {
           connect();
         } else {
@@ -124,67 +126,58 @@ public class RelayService {
    * Whether the channel's remote peer is in {@code node.fastForward.nodes}.
    */
   public boolean isFastForwardPeer(Channel channel) {
-    if (fastForwardNodes.isEmpty() || channel == null || channel.getInetAddress() == null) {
+    if (channel == null || channel.getInetAddress() == null) {
       return false;
     }
-    for (InetSocketAddress ff : fastForwardNodes) {
-      if (channel.getInetAddress().equals(ff.getAddress())) {
-        return true;
-      }
-    }
-    return false;
+    return fastForwardNodes.stream()
+        .anyMatch(ff -> channel.getInetAddress().equals(ff.getAddress()));
   }
 
   public void fillHelloMessage(HelloMessage message, Channel channel) {
-    if (!isActiveWitness()) {
+    if (!isActiveWitness() || !isFastForwardPeer(channel)) {
       return;
     }
-    fastForwardNodes.forEach(address -> {
-      if (!address.getAddress().equals(channel.getInetAddress())) {
+    byte[] digest = Sha256Hash.of(CommonParameter.getInstance()
+        .isECKeyCryptoEngine(), ByteArray.fromLong(message.getTimestamp()))
+        .getBytes();
+    // In a mixed-witness node (ECDSA + PQ), pick the path whose address
+    // is currently in the active schedule — otherwise the receiver
+    // rejects on the "not a schedule witness" check in checkHelloMessage.
+    List<ByteString> active = witnessScheduleStore.getActiveWitnesses();
+    boolean useEcdsa = keySize > 0 && ecdsaWitnessAddress != null
+        && active.contains(ecdsaWitnessAddress);
+    ByteString announceAddress = useEcdsa ? ecdsaWitnessAddress : pqWitnessAddress;
+    Protocol.HelloMessage.Builder builder = message.getHelloMessage().toBuilder()
+        .setAddress(announceAddress);
+    if (useEcdsa) {
+      SignInterface cryptoEngine = SignUtils.fromPrivate(
+          ByteArray.fromHexString(Args.getLocalWitnesses().getPrivateKey()),
+          Args.getInstance().isECKeyCryptoEngine());
+      ByteString sig = ByteString.copyFrom(
+          cryptoEngine.Base64toBytes(cryptoEngine.signHash(digest)));
+      builder.setSignature(sig).clearPqAuthSig();
+    } else {
+      // isAnyLocalWitnessActive() guarantees at least one of ECDSA/PQ is active;
+      // since useEcdsa is false here, the PQ identity must be the active one.
+      // Guard the keypair list anyway so a stale/mutated config fails loud
+      // instead of with IOOB.
+      LocalWitnesses lw = Args.getLocalWitnesses();
+      if (lw.getPqKeypairs().isEmpty()) {
+        logger.warn("HelloMessage fill skipped: no PQ keypair available");
         return;
       }
-      byte[] digest = Sha256Hash.of(CommonParameter.getInstance()
-          .isECKeyCryptoEngine(), ByteArray.fromLong(message.getTimestamp()))
-          .getBytes();
-      // In a mixed-witness node (ECDSA + PQ), pick the path whose address
-      // is currently in the active schedule — otherwise the receiver
-      // rejects on the "not a schedule witness" check in checkHelloMessage.
-      List<ByteString> active = witnessScheduleStore.getActiveWitnesses();
-      boolean useEcdsa = keySize > 0 && ecdsaWitnessAddress != null
-          && active.contains(ecdsaWitnessAddress);
-      ByteString announceAddress = useEcdsa ? ecdsaWitnessAddress : pqWitnessAddress;
-      Protocol.HelloMessage.Builder builder = message.getHelloMessage().toBuilder()
-          .setAddress(announceAddress);
-      if (useEcdsa) {
-        SignInterface cryptoEngine = SignUtils.fromPrivate(
-            ByteArray.fromHexString(Args.getLocalWitnesses().getPrivateKey()),
-            Args.getInstance().isECKeyCryptoEngine());
-        ByteString sig = ByteString.copyFrom(
-            cryptoEngine.Base64toBytes(cryptoEngine.signHash(digest)));
-        builder.setSignature(sig).clearPqAuthSig();
-      } else {
-        // scheduledHere() guarantees at least one of ECDSA/PQ is active;
-        // since useEcdsa is false here, the PQ identity must be the active one.
-        // Guard the keypair list anyway so a stale/mutated config fails loud
-        // instead of with IOOB.
-        LocalWitnesses lw = Args.getLocalWitnesses();
-        if (lw.getPqKeypairs().isEmpty()) {
-          logger.warn("HelloMessage fill skipped: no PQ keypair available");
-          return;
-        }
-        PqKeypair kp = lw.getPqKeypairs().get(0);
-        PQScheme scheme = kp.getScheme();
-        byte[] privKey = ByteArray.fromHexString(kp.getPrivateKey());
-        byte[] pubKey = ByteArray.fromHexString(kp.getPublicKey());
-        byte[] sig = PQSchemeRegistry.sign(scheme, privKey, digest);
-        builder.setPqAuthSig(PQAuthSig.newBuilder()
-            .setScheme(scheme)
-            .setPublicKey(ByteString.copyFrom(pubKey))
-            .setSignature(ByteString.copyFrom(sig)))
-            .clearSignature();
-      }
-      message.setHelloMessage(builder.build());
-    });
+      PqKeypair kp = lw.getPqKeypairs().get(0);
+      PQScheme scheme = kp.getScheme();
+      byte[] privKey = ByteArray.fromHexString(kp.getPrivateKey());
+      byte[] pubKey = ByteArray.fromHexString(kp.getPublicKey());
+      byte[] sig = PQSchemeRegistry.sign(scheme, privKey, digest);
+      builder.setPqAuthSig(PQAuthSig.newBuilder()
+          .setScheme(scheme)
+          .setPublicKey(ByteString.copyFrom(pubKey))
+          .setSignature(ByteString.copyFrom(sig)))
+          .clearSignature();
+    }
+    message.setHelloMessage(builder.build());
   }
 
   public boolean checkHelloMessage(HelloMessage message, Channel channel) {
@@ -193,124 +186,130 @@ public class RelayService {
     }
 
     Protocol.HelloMessage msg = message.getHelloMessage();
+    InetAddress remoteAddress = channel.getInetAddress();
 
-    if (msg.getAddress() == null || msg.getAddress().isEmpty()) {
-      logger.info("HelloMessage from {}, address is empty.", channel.getInetAddress());
+    if (msg.getAddress().isEmpty()) {
+      logger.info("HelloMessage from {}, address is empty.", remoteAddress);
       return false;
     }
 
     if (!witnessScheduleStore.getActiveWitnesses().contains(msg.getAddress())) {
       logger.warn("HelloMessage from {}, {} is not a schedule witness.",
-          channel.getInetAddress(),
-          ByteArray.toHexString(msg.getAddress().toByteArray()));
+          remoteAddress, ByteArray.toHexString(msg.getAddress().toByteArray()));
       return false;
     }
 
     if (getPeerCountByAddress(msg.getAddress()) > MAX_PEER_COUNT_PER_ADDRESS) {
       logger.warn("HelloMessage from {}, the number of peers of {} exceeds {}.",
-          channel.getInetAddress(),
-          ByteArray.toHexString(msg.getAddress().toByteArray()),
+          remoteAddress, ByteArray.toHexString(msg.getAddress().toByteArray()),
           MAX_PEER_COUNT_PER_ADDRESS);
       return false;
     }
 
     boolean hasLegacy = !msg.getSignature().isEmpty();
     boolean hasPq = msg.hasPqAuthSig();
-    if (hasLegacy == hasPq) {
-      logger.warn("HelloMessage from {}, signature/pq_auth_sig must be set exclusively.",
-          channel.getInetAddress());
+    if (hasLegacy && hasPq) {
+      logger.warn("HelloMessage from {}, signature and pq_auth_sig must not be set "
+          + "at the same time.", remoteAddress);
+      return false;
+    }
+    if (!hasLegacy && !hasPq) {
+      logger.warn("HelloMessage from {}, neither signature nor pq_auth_sig found.", remoteAddress);
       return false;
     }
 
     if (hasLegacy && !SignUtils.isValidLength(msg.getSignature().size())) {
       logger.warn("HelloMessage from {}, signature size is {}.",
-          channel.getInetAddress(), msg.getSignature().size());
+          remoteAddress, msg.getSignature().size());
       return false;
     }
 
-    boolean flag;
+    boolean isVerified;
     try {
       byte[] digest = Sha256Hash.of(CommonParameter.getInstance().isECKeyCryptoEngine(),
           ByteArray.fromLong(msg.getTimestamp())).getBytes();
       if (hasPq) {
-        flag = verifyPqAuthSig(digest, msg.getPqAuthSig(), msg.getAddress(), channel);
+        isVerified = verifyPqAuthSig(digest, msg.getPqAuthSig(), msg.getAddress(), remoteAddress);
       } else {
-        flag = verifyLegacySignature(digest, msg.getSignature(), msg.getAddress());
+        isVerified =
+            verifyEcdsaSignature(digest, msg.getSignature(), msg.getAddress(), remoteAddress);
       }
-      if (flag) {
-        TronNetService.getP2pConfig().getTrustNodes().add(channel.getInetAddress());
-        DesensitizedConverter.addSensitive(channel.getInetAddress().toString().substring(1),
+      if (isVerified) {
+        TronNetService.getP2pConfig().getTrustNodes().add(remoteAddress);
+        DesensitizedConverter.addSensitive(remoteAddress.toString().substring(1),
             ByteArray.toHexString(msg.getAddress().toByteArray()));
       }
-      return flag;
+      return isVerified;
     } catch (Exception e) {
-      logger.error("Check hello message failed, msg: {}, {}", message, channel.getInetAddress(), e);
+      logger.error("Check hello message failed, msg: {}, {}", message, remoteAddress, e);
       return false;
     }
   }
 
-  private boolean verifyLegacySignature(byte[] digest, ByteString signature,
-      ByteString witnessAddr) throws java.security.SignatureException {
+  private boolean verifyEcdsaSignature(byte[] digest, ByteString signature,
+      ByteString witnessAddr, InetAddress remoteAddress) throws SignatureException {
     String sig = TransactionCapsule.getBase64FromByteString(signature);
     byte[] sigAddress = SignUtils.signatureToAddress(digest, sig,
         Args.getInstance().isECKeyCryptoEngine());
-    if (manager.getDynamicPropertiesStore().getAllowMultiSign() != 1) {
-      return Arrays.equals(sigAddress, witnessAddr.toByteArray());
-    }
-    AccountCapsule account = manager.getAccountStore().get(witnessAddr.toByteArray());
-    if (account == null) {
-      logger.warn("HelloMessage witness account {} not found in accountStore.",
-          ByteArray.toHexString(witnessAddr.toByteArray()));
-      return false;
-    }
-    return Arrays.equals(sigAddress, account.getWitnessPermissionAddress());
+    byte[] expected = resolveExpectedSignerAddress(witnessAddr, remoteAddress);
+    return expected != null && Arrays.equals(sigAddress, expected);
   }
 
   private boolean verifyPqAuthSig(byte[] digest, PQAuthSig pqAuthSig,
-      ByteString witnessAddr, Channel channel) {
+      ByteString witnessAddr, InetAddress remoteAddress) {
     PQScheme scheme = pqAuthSig.getScheme();
     if (!PQSchemeRegistry.contains(scheme)) {
-      logger.warn("HelloMessage from {}, pq_auth_sig scheme {} is not registered.",
-          channel.getInetAddress(), scheme);
+      logger.warn("HelloMessage from {}, pq_auth_sig scheme {} is not registered.", remoteAddress,
+          scheme);
       return false;
     }
     if (!manager.getDynamicPropertiesStore().isPqSchemeAllowed(scheme)) {
       logger.warn("HelloMessage from {}, pq_auth_sig scheme {} is not activated on chain.",
-          channel.getInetAddress(), scheme);
+          remoteAddress, scheme);
       return false;
     }
     byte[] publicKey = pqAuthSig.getPublicKey().toByteArray();
     if (publicKey.length != PQSchemeRegistry.getPublicKeyLength(scheme)) {
       logger.warn("HelloMessage from {}, pq_auth_sig public key length mismatch for {}.",
-          channel.getInetAddress(), scheme);
+          remoteAddress, scheme);
       return false;
     }
     byte[] signature = pqAuthSig.getSignature().toByteArray();
     if (!PQSchemeRegistry.isValidSignatureLength(scheme, signature.length)) {
       logger.warn("HelloMessage from {}, pq_auth_sig signature length mismatch for {}.",
-          channel.getInetAddress(), scheme);
+          remoteAddress, scheme);
       return false;
     }
 
-    byte[] derivedAddr = PQSchemeRegistry.computeAddress(scheme, publicKey);
-    byte[] expected;
-    if (manager.getDynamicPropertiesStore().getAllowMultiSign() != 1) {
-      expected = witnessAddr.toByteArray();
-    } else {
-      AccountCapsule account = manager.getAccountStore().get(witnessAddr.toByteArray());
-      if (account == null) {
-        logger.warn("HelloMessage from {}, witness account {} not found in accountStore.",
-            channel.getInetAddress(), ByteArray.toHexString(witnessAddr.toByteArray()));
-        return false;
-      }
-      expected = account.getWitnessPermissionAddress();
+    byte[] expected = resolveExpectedSignerAddress(witnessAddr, remoteAddress);
+    if (expected == null) {
+      return false;
     }
+    byte[] derivedAddr = PQSchemeRegistry.computeAddress(scheme, publicKey);
     if (!Arrays.equals(derivedAddr, expected)) {
       logger.warn("HelloMessage from {}, pq_auth_sig public key does not bind witness {}.",
-          channel.getInetAddress(), ByteArray.toHexString(witnessAddr.toByteArray()));
+          remoteAddress, ByteArray.toHexString(witnessAddr.toByteArray()));
       return false;
     }
     return PQSchemeRegistry.verify(scheme, publicKey, digest, signature);
+  }
+
+  /**
+   * Resolve the address the signer must match: the witness address itself, or its
+   * configured witness-permission address when multi-sign is enabled. Returns null
+   * (and logs) when multi-sign is on but the witness account is missing.
+   */
+  private byte[] resolveExpectedSignerAddress(ByteString witnessAddr, InetAddress remoteAddress) {
+    if (manager.getDynamicPropertiesStore().getAllowMultiSign() != 1) {
+      return witnessAddr.toByteArray();
+    }
+    AccountCapsule account = manager.getAccountStore().get(witnessAddr.toByteArray());
+    if (account == null) {
+      logger.warn("HelloMessage from {}, witness account {} not found in accountStore.",
+          remoteAddress, ByteArray.toHexString(witnessAddr.toByteArray()));
+      return null;
+    }
+    return account.getWitnessPermissionAddress();
   }
 
   private long getPeerCountByAddress(ByteString address) {
@@ -322,13 +321,13 @@ public class RelayService {
   private boolean isActiveWitness() {
     return parameter.isWitness()
         && (keySize > 0 || pqKeySize > 0)
-        && fastForwardNodes.size() > 0
-        && scheduledHere()
+        && !fastForwardNodes.isEmpty()
+        && isAnyLocalWitnessActive()
         && backupManager.getStatus().equals(BackupStatusEnum.MASTER);
   }
 
   // True iff either of this node's witness identities is in the active schedule.
-  private boolean scheduledHere() {
+  private boolean isAnyLocalWitnessActive() {
     List<ByteString> active = witnessScheduleStore.getActiveWitnesses();
     return (ecdsaWitnessAddress != null && active.contains(ecdsaWitnessAddress))
         || (pqWitnessAddress != null && active.contains(pqWitnessAddress));
