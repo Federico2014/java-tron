@@ -8,7 +8,7 @@ import lombok.Setter;
 import org.tron.core.exception.TronError;
 
 /**
- * Auto-bound shape of the {@code localwitness_pq} section. Bound via
+ * Auto-bound shape of the {@code localPqWitness} section. Bound via
  * {@link com.typesafe.config.ConfigBeanFactory}, which recurses into the
  * {@link PqEntryConfig} list members. All fields are {@link Optional} so the
  * section may appear with no {@code accountAddress} and/or no entries
@@ -21,8 +21,7 @@ public class LocalWitnessPqConfig {
   /**
    * Counterpart to {@code localWitnessAccountAddress} for the PQ witness path:
    * overrides the on-chain witness account address for the single-PQ-witness
-   * case. Independent of the ECDSA address, but the two overrides are mutually
-   * exclusive — setting both is rejected in {@link LocalWitnessConfig#fromConfig}.
+   * case. Independent of the ECDSA address.
    * Validated in {@link Args} / WitnessInitializer.
    */
   @Optional

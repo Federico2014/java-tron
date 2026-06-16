@@ -16,14 +16,14 @@ import org.tron.core.exception.TronError;
 /**
  * Local witness configuration bean.
  * Reads top-level config keys: localwitness, localWitnessAccountAddress,
- * localwitnesskeystore, and the localwitness_pq section. These top-level keys
+ * localwitnesskeystore, and the localPqWitness section. These top-level keys
  * are not under a sub-section — they are at the root of config.conf. The
- * localwitness_pq section is auto-bound through
+ * localPqWitness section is auto-bound through
  * {@link com.typesafe.config.ConfigBeanFactory} into {@link LocalWitnessPqConfig}
  * (which carries the PQ witness account address plus the {@link PqEntryConfig}
  * list) instead of being read field-by-field. ECDSA and PQ witness accounts use
  * independent account-address keys (localWitnessAccountAddress vs
- * localwitness_pq.accountAddress) so the two consensus paths do not interfere.
+ * localPqWitness.accountAddress) so the two consensus paths do not interfere.
  */
 @Slf4j
 @Getter
@@ -32,12 +32,12 @@ public class LocalWitnessConfig {
   /**
    * Root path of the PQ witness section within config.conf.
    */
-  public static final String PQ_SECTION_PATH = "localwitness_pq";
+  public static final String PQ_SECTION_PATH = "localPqWitness";
 
   /**
    * Path of the PQ witness key list; used for entry-level error messages.
    */
-  public static final String PQ_KEYS_PATH = "localwitness_pq.keys";
+  public static final String PQ_KEYS_PATH = "localPqWitness.keys";
 
   private List<String> privateKeys = new ArrayList<>();
   private String accountAddress = null;

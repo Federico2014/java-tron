@@ -141,15 +141,15 @@ public class WitnessInitializer {
     if (StringUtils.isNotBlank(pqWitnessAccountAddress)) {
       if (pqKeypairs.size() != 1) {
         throw new TronError(
-            "localwitness_pq.accountAddress can only be set when there is only one PQ keypair",
+            "localPqWitness.accountAddress can only be set when there is only one PQ keypair",
             TronError.ErrCode.WITNESS_INIT);
       }
       accountAddress = Commons.decodeFromBase58Check(pqWitnessAccountAddress);
       if (accountAddress == null) {
-        throw new TronError("localwitness_pq.accountAddress format is incorrect",
+        throw new TronError("localPqWitness.accountAddress format is incorrect",
             TronError.ErrCode.WITNESS_INIT);
       }
-      logger.debug("Got localwitness_pq.accountAddress from config.conf");
+      logger.debug("Got localPqWitness.accountAddress from config.conf");
     } else {
       logger.debug("Derived PQ-only witness address from public key");
     }

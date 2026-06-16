@@ -123,7 +123,7 @@ public class TronErrorTest {
     Path conf = temporaryFolder.newFile("no-witness.conf").toPath();
     String content = "include classpath(\"" + TestConstants.TEST_CONF + "\")\n"
         + "localwitness = []\n"
-        + "localwitness_pq.keys = []\n";
+        + "localPqWitness.keys = []\n";
     Files.write(conf, content.getBytes());
     TronError thrown = assertThrows(TronError.class, () -> {
       Args.setParam(new String[]{"--witness"}, conf.toString());

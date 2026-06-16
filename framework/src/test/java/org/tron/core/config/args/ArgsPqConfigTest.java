@@ -26,7 +26,7 @@ import org.tron.core.exception.TronError;
 import org.tron.protos.Protocol.PQScheme;
 
 /**
- * Covers the {@code localwitness_pq.keys} HOCON parsing in
+ * Covers the {@code localPqWitness.keys} HOCON parsing in
  * {@link Args#setParam} — specifically the {@code key} vs {@code seed} entry
  * shape and the per-scheme guard that rejects {@code seed} for schemes whose
  * keygen is not reproducible across platforms (Falcon-512).
@@ -167,7 +167,7 @@ public class ArgsPqConfigTest {
     Path conf = tmp.newFile("pqc-args-test.conf").toPath();
     String body = "include classpath(\"" + TestConstants.TEST_CONF + "\")\n"
         + "localwitness = []\n"
-        + "localwitness_pq = {\n"
+        + "localPqWitness = {\n"
         + "  keys = [\n"
         + "    " + entry + "\n"
         + "  ]\n"

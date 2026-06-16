@@ -35,22 +35,20 @@ public class LocalWitnessConfigTest {
 
   @Test
   public void testWithPqAccountAddress() {
-    Config config = withRef("localwitness_pq.accountAddress = \"TPqAddr\"");
+    Config config = withRef("localPqWitness.accountAddress = \"TPqAddr\"");
     LocalWitnessConfig lw = LocalWitnessConfig.fromConfig(config);
     assertNull(lw.getAccountAddress());
     assertEquals("TPqAddr", lw.getPqAccountAddress());
   }
 
   @Test
-  public void testEcdsaAndPqAccountAddressBothSetRejected() {
+  public void testEcdsaAndPqAccountAddressCanCoexist() {
     Config config = withRef(
         "localWitnessAccountAddress = \"TEcdsaAddr\"\n"
-            + "localwitness_pq.accountAddress = \"TPqAddr\"");
-    TronError err = assertThrows(TronError.class,
-        () -> LocalWitnessConfig.fromConfig(config));
-    assertEquals(TronError.ErrCode.PARAMETER_INIT, err.getErrCode());
-    assertTrue(err.getMessage(),
-        err.getMessage().contains("should not exist at the same time"));
+            + "localPqWitness.accountAddress = \"TPqAddr\"");
+    LocalWitnessConfig lw = LocalWitnessConfig.fromConfig(config);
+    assertEquals("TEcdsaAddr", lw.getAccountAddress());
+    assertEquals("TPqAddr", lw.getPqAccountAddress());
   }
 
   @Test
@@ -75,7 +73,7 @@ public class LocalWitnessConfigTest {
   @Test
   public void testWithPqEntries() {
     Config config = withRef(
-        "localwitness_pq.keys = [\n"
+        "localPqWitness.keys = [\n"
             + "  { scheme = \"FN_DSA_512\", key = \"deadbeef\" },\n"
             + "  { scheme = \"ML_DSA_44\", seed = \"cafebabe\" }\n"
             + "]");
@@ -99,7 +97,7 @@ public class LocalWitnessConfigTest {
 
   @Test
   public void testPqEntryMissingSchemeRejected() {
-    Config config = withRef("localwitness_pq.keys = [ { key = \"deadbeef\" } ]");
+    Config config = withRef("localPqWitness.keys = [ { key = \"deadbeef\" } ]");
     TronError err = assertThrows(TronError.class,
         () -> LocalWitnessConfig.fromConfig(config));
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
@@ -108,7 +106,7 @@ public class LocalWitnessConfigTest {
 
   @Test
   public void testPqEntryMissingKeyAndSeedRejected() {
-    Config config = withRef("localwitness_pq.keys = [ { scheme = \"FN_DSA_512\" } ]");
+    Config config = withRef("localPqWitness.keys = [ { scheme = \"FN_DSA_512\" } ]");
     TronError err = assertThrows(TronError.class,
         () -> LocalWitnessConfig.fromConfig(config));
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
@@ -119,7 +117,7 @@ public class LocalWitnessConfigTest {
   @Test
   public void testPqEntryBothKeyAndSeedRejected() {
     Config config = withRef(
-        "localwitness_pq.keys = [ { scheme = \"FN_DSA_512\", key = \"de\", seed = \"ad\" } ]");
+        "localPqWitness.keys = [ { scheme = \"FN_DSA_512\", key = \"de\", seed = \"ad\" } ]");
     TronError err = assertThrows(TronError.class,
         () -> LocalWitnessConfig.fromConfig(config));
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());

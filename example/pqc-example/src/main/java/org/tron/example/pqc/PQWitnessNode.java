@@ -129,7 +129,7 @@ public class PQWitnessNode {
     dbDir.deleteOnExit();
 
     // Inject the witness keypair via a temp HOCON config that includes
-    // config-test.conf and overrides localwitness_pq.keys with the extended
+    // config-test.conf and overrides localPqWitness.keys with the extended
     // priv‖pub hex derived from WITNESS_SEED (matches what PQClient derives).
     Path conf = writeWitnessConfig(witnessKp);
 
@@ -252,7 +252,7 @@ public class PQWitnessNode {
   private static Path writeWitnessConfig(PQSignature witnessKp) throws java.io.IOException {
     Path conf = Files.createTempFile("pqc-witness-", ".conf");
     conf.toFile().deleteOnExit();
-    // `localwitness_pq.keys` entries carry their own scheme so a single node
+    // `localPqWitness.keys` entries carry their own scheme so a single node
     // can host SRs running different PQ algorithms. For schemes whose expanded
     // sk lets BC recover the pk (ML-DSA-44), persist only the private key;
     // otherwise persist the extended priv ‖ pub (Falcon-512, since BC has no
@@ -269,7 +269,7 @@ public class PQWitnessNode {
       System.arraycopy(pub, 0, keyBytes, priv.length, pub.length);
     }
     String body = "include classpath(\"config-test.conf\")\n"
-        + "localwitness_pq = {\n"
+        + "localPqWitness = {\n"
         + "  keys = [\n"
         + "    { scheme = \"" + PQ_SCHEME.name() + "\","
         + " key = \"" + Hex.toHexString(keyBytes) + "\" }\n"

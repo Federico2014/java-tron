@@ -929,7 +929,7 @@ public class Args extends CommonParameter {
     // Load PQ keypairs independently so a node can host a mix of ECDSA and PQ
     // SRs (e.g. during a rolling migration where some SRs have moved to PQ and
     // others have not yet). The PQ side has its own account-address key
-    // (localwitness_pq.accountAddress) so mixed-mode configs do not have to drop
+    // (localPqWitness.accountAddress) so mixed-mode configs do not have to drop
     // the legacy override for the ECDSA side.
     LocalWitnesses pqWitnesses = null;
     if (hasPqKeys) {
