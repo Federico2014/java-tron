@@ -62,12 +62,6 @@ public class LocalWitnessConfig {
       pq.postProcess();
       lw.pqEntries = pq.getKeys();
       lw.pqAccountAddress = pq.getAccountAddress();
-
-      if (StringUtils.isNotEmpty(lw.accountAddress) && StringUtils.isNotEmpty(
-          lw.pqAccountAddress)) {
-        throw new TronError("localWitnessAccountAddress and localwitness_pq.accountAddress "
-            + "should not exist at the same time", PARAMETER_INIT);
-      }
     }
     return lw;
   }
