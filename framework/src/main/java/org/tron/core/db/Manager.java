@@ -1720,7 +1720,7 @@ public class Manager {
       }
 
       // check the block size
-      long trxPackSize = trx.computeTrxSizeForBlockMessage() + Constant.MAX_RESULT_SIZE_IN_TX;
+      long trxPackSize = trx.computeTrxSizeForBlockMessage();
       if ((currentSize + trxPackSize)
           > ChainConstant.BLOCK_SIZE) {
         postponedTrxCount++;
