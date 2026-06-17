@@ -910,7 +910,7 @@ public class Args extends CommonParameter {
     boolean hasCliPriv = StringUtils.isNotBlank(cmd.privateKey);
     boolean hasCfgPriv = !lwConfig.getPrivateKeys().isEmpty();
     boolean hasKeystore = !lwConfig.getKeystores().isEmpty();
-    boolean hasPqKeys = !lwConfig.getPqEntries().isEmpty();
+    boolean hasPqKeys = !lwConfig.getPqKeyFiles().isEmpty();
 
     // Load the ECDSA source. CLI > config localwitness > keystore — the three
     // legacy sources stay mutually exclusive among themselves.
@@ -934,7 +934,7 @@ public class Args extends CommonParameter {
     LocalWitnesses pqWitnesses = null;
     if (hasPqKeys) {
       pqWitnesses = WitnessInitializer.buildPqWitnesses(
-          lwConfig.getPqEntries(), lwConfig.getPqAccountAddress());
+          lwConfig.getPqKeyFiles(), lwConfig.getPqAccountAddress());
     }
 
     if (ecdsaWitnesses == null && pqWitnesses == null) {

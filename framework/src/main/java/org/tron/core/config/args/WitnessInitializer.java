@@ -1,5 +1,6 @@
 package org.tron.core.config.args;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -14,7 +15,6 @@ import org.tron.common.crypto.pqc.PqKeypair;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Commons;
 import org.tron.common.utils.LocalWitnesses;
-import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 import org.tron.core.exception.CipherException;
 import org.tron.core.exception.TronError;
 import org.tron.keystore.Credentials;
@@ -25,6 +25,8 @@ import org.tron.protos.Protocol.PQScheme;
 public class WitnessInitializer {
 
   private static final String PQ_KEYS_PATH = LocalWitnessConfig.PQ_KEYS_PATH;
+
+  private static final ObjectMapper PQ_KEY_FILE_MAPPER = new ObjectMapper();
 
   /**
    * Init from a single private key (and optional witness address).
@@ -178,30 +180,53 @@ public class WitnessInitializer {
     return address;
   }
 
-  public static LocalWitnesses buildPqWitnesses(List<PqEntryConfig> pqEntries,
+  public static LocalWitnesses buildPqWitnesses(List<String> keyFilePaths,
       String accountAddress) {
-    // Each entry is an object { scheme = "<PQScheme>", key | seed = "<hex>" }
-    // so a single node can host SRs running different PQ algorithms (e.g.
-    // Falcon-512 and ML-DSA-44 side by side). `key` carries the scheme's key hex
-    // — priv-only when the public key is recoverable from it (ML-DSA-44),
-    // otherwise the expanded priv‖pub (Falcon-512). `seed` carries the keygen
-    // seed hex and is accepted for every scheme, but a non-deterministic scheme
-    // (Falcon-512, see PQSchemeRegistry.isSeedDeterministic) logs a drift warning.
-    List<PqKeypair> pqKeypairs = new ArrayList<>(pqEntries.size());
-    for (int i = 0; i < pqEntries.size(); i++) {
-      pqKeypairs.add(buildPqKeypair(i, pqEntries.get(i)));
+    // Each path points to a JSON file holding one PQ witness keypair
+    // ({ scheme, seed | privateKey [+ publicKey] }), so a single node can host
+    // SRs running different PQ algorithms (e.g. Falcon-512 and ML-DSA-44 side by
+    // side).
+    List<PqKeypair> pqKeypairs = new ArrayList<>(keyFilePaths.size());
+    for (int i = 0; i < keyFilePaths.size(); i++) {
+      pqKeypairs.add(buildPqKeypair(i, keyFilePaths.get(i)));
     }
     return initFromPQOnly(pqKeypairs, accountAddress);
   }
 
-  private static PqKeypair buildPqKeypair(int index, PqEntryConfig entry) {
-    // Structural validation (scheme present, exactly one of key/seed) is done
-    // up front in LocalWitnessPqConfig.postProcess(); here the entry is already
-    // known to name a scheme and define exactly one of key or seed.
-    PQScheme scheme = resolveScheme(index, entry.getScheme());
-    return entry.hasKey()
-        ? keypairFromKey(index, scheme, entry.getKey())
-        : keypairFromSeed(index, scheme, entry.getSeed());
+  private static PqKeypair buildPqKeypair(int index, String keyFilePath) {
+    PqKeyFile keyFile = readKeyFile(index, keyFilePath);
+    PQScheme scheme = resolveScheme(index, keyFile.getScheme());
+
+    boolean hasSeed = StringUtils.isNotBlank(keyFile.getSeed());
+    boolean hasPriv = StringUtils.isNotBlank(keyFile.getPrivateKey());
+    if (hasSeed == hasPriv) {
+      throw witnessError("%s[%d] (%s) must define exactly one of `seed` or `privateKey`",
+          PQ_KEYS_PATH, index, keyFilePath);
+    }
+    return hasSeed
+        ? keypairFromSeed(index, scheme, keyFile.getSeed())
+        : keypairFromKey(index, scheme, keyFile.getPrivateKey(), keyFile.getPublicKey());
+  }
+
+  private static PqKeyFile readKeyFile(int index, String keyFilePath) {
+    File file = resolveKeyFile(keyFilePath);
+    if (!file.isFile()) {
+      throw witnessError("%s[%d] key file not found: %s",
+          PQ_KEYS_PATH, index, file.getAbsolutePath());
+    }
+    try {
+      return PQ_KEY_FILE_MAPPER.readValue(file, PqKeyFile.class);
+    } catch (IOException e) {
+      throw witnessError("%s[%d] failed to parse key file %s: %s",
+          PQ_KEYS_PATH, index, file.getAbsolutePath(), e.getMessage());
+    }
+  }
+
+  // Absolute paths are used as-is; relative paths resolve against the working
+  // directory (matching how keystore files are resolved).
+  private static File resolveKeyFile(String keyFilePath) {
+    File file = new File(keyFilePath);
+    return file.isAbsolute() ? file : new File(System.getProperty("user.dir"), keyFilePath);
   }
 
   private static PQScheme resolveScheme(int index, String schemeName) {
@@ -219,52 +244,60 @@ public class WitnessInitializer {
   }
 
   /**
-   * Build a keypair from a `key` entry. The accepted form depends on whether the
-   * scheme's public key can be recovered from the private key:
+   * Build a keypair from the JSON file's {@code privateKey} (and {@code publicKey})
+   * fields. Whether {@code publicKey} is required depends on the scheme:
    * <ul>
-   *   <li>recoverable (ML-DSA-44): priv-only hex — the public key is derived
-   *       from it, so the redundant {@code priv‖pub} form is not accepted;</li>
-   *   <li>non-recoverable (Falcon-512): expanded {@code priv‖pub} hex, with the
-   *       two halves verified to form a keypair via a sign+verify probe.</li>
+   *   <li>recoverable (ML-DSA-44): {@code privateKey} only — the public key is
+   *       derived from it, so {@code publicKey} must be omitted;</li>
+   *   <li>non-recoverable (Falcon-512): both {@code privateKey} and
+   *       {@code publicKey}, verified to form a keypair via a sign+verify probe.</li>
    * </ul>
    */
-  private static PqKeypair keypairFromKey(int index, PQScheme scheme, String rawKey) {
+  private static PqKeypair keypairFromKey(int index, PQScheme scheme, String rawPriv,
+      String rawPub) {
     int privHexLen = PQSchemeRegistry.getPrivateKeyLength(scheme) * 2;
-    int extHexLen = privHexLen + PQSchemeRegistry.getPublicKeyLength(scheme) * 2;
-    String stripped = stripHexPrefix(rawKey);
-    int len = stripped.length();
+    String privHex = stripHexPrefix(rawPriv);
+    if (privHex.length() != privHexLen) {
+      throw witnessError("%s[%d].privateKey must be %d hex chars for %s, actual: %d",
+          PQ_KEYS_PATH, index, privHexLen, scheme, privHex.length());
+    }
+    byte[] privBytes = decodeHex(privHex, index, scheme, "privateKey");
+    boolean hasPub = StringUtils.isNotBlank(rawPub);
 
     if (PQSchemeRegistry.canDerivePublicKey(scheme)) {
       // ML-DSA-44: the private key alone determines the keypair; derive the pub.
-      if (len != privHexLen) {
-        throw witnessError("%s[%d].key must be %d hex chars (priv-only) for %s, actual: %d",
-            PQ_KEYS_PATH, index, privHexLen, scheme, len);
+      // A publicKey field is redundant and must not be set.
+      if (hasPub) {
+        throw witnessError("%s[%d].publicKey must not be set for %s; it is derived "
+            + "from privateKey", PQ_KEYS_PATH, index, scheme);
       }
-      byte[] privBytes = decodeHex(stripped, index, scheme, "key");
       byte[] pubBytes;
       try {
         pubBytes = PQSchemeRegistry.derivePublicKey(scheme, privBytes);
       } catch (RuntimeException e) {
-        throw witnessError("%s[%d].key cannot recover public key for %s: %s",
+        throw witnessError("%s[%d].privateKey cannot recover public key for %s: %s",
             PQ_KEYS_PATH, index, scheme, e.getMessage());
       }
-      return new PqKeypair(scheme, stripped, Hex.toHexString(pubBytes));
+      return new PqKeypair(scheme, privHex, Hex.toHexString(pubBytes));
     }
 
-    // Falcon-512: the public key cannot be recovered from the private key, so the
-    // expanded priv‖pub form is required; verify the two halves form a keypair.
-    if (len != extHexLen) {
-      throw witnessError("%s[%d].key must be %d hex chars (extended priv‖pub) for %s, actual: %d",
-          PQ_KEYS_PATH, index, extHexLen, scheme, len);
+    // Falcon-512: BouncyCastle exposes no API to derive the public key from the
+    // private key, so publicKey is required; verify the two halves form a keypair.
+    if (!hasPub) {
+      throw witnessError("%s[%d].publicKey is required for %s (BouncyCastle provides no "
+          + "API to derive it from the private key)", PQ_KEYS_PATH, index, scheme);
     }
-    String privHex = stripped.substring(0, privHexLen);
-    String pubHex = stripped.substring(privHexLen);
-    byte[] privBytes = decodeHex(privHex, index, scheme, "key");
-    byte[] pubBytes = decodeHex(pubHex, index, scheme, "key");
+    int pubHexLen = PQSchemeRegistry.getPublicKeyLength(scheme) * 2;
+    String pubHex = stripHexPrefix(rawPub);
+    if (pubHex.length() != pubHexLen) {
+      throw witnessError("%s[%d].publicKey must be %d hex chars for %s, actual: %d",
+          PQ_KEYS_PATH, index, pubHexLen, scheme, pubHex.length());
+    }
+    byte[] pubBytes = decodeHex(pubHex, index, scheme, "publicKey");
     try {
       PQSchemeRegistry.fromKeypair(scheme, privBytes, pubBytes);
     } catch (RuntimeException e) {
-      throw witnessError("%s[%d].key private/public key mismatch for %s: %s",
+      throw witnessError("%s[%d] private/public key mismatch for %s: %s",
           PQ_KEYS_PATH, index, scheme, e.getMessage());
     }
     return new PqKeypair(scheme, privHex, pubHex);
@@ -277,11 +310,11 @@ public class WitnessInitializer {
     if (!PQSchemeRegistry.isSeedDeterministic(scheme)) {
       // Falcon's FFT-based keygen is architecture- and JVM-dependent: the same seed may produce a
       // different keypair on a different machine. Warn loudly so the operator knows their witness
-      // key may drift if the node is ever migrated; using `key` (expanded priv‖pub) is strongly
-      // recommended for production.
+      // key may drift if the node is ever migrated; providing privateKey + publicKey directly is
+      // strongly recommended for production.
       logger.warn("{} scheme {} uses non-deterministic keygen; the same seed may produce different "
-              + "keys on a different JVM or architecture. Consider using `key` with the extended "
-              + "priv‖pub hex instead.",
+              + "keys on a different JVM or architecture. Consider providing privateKey and "
+              + "publicKey directly instead.",
           PQ_KEYS_PATH, scheme);
     }
     int seedHexLen = PQSchemeRegistry.getSeedLength(scheme) * 2;

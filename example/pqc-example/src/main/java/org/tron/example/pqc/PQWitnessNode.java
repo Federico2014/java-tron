@@ -128,10 +128,9 @@ public class PQWitnessNode {
     File dbDir = Files.createTempDirectory("pqc-node-").toFile();
     dbDir.deleteOnExit();
 
-    // Inject the witness keypair via a temp HOCON config that includes
-    // config-test.conf and overrides localPqWitness.keys with the per-scheme
-    // `key` hex derived from WITNESS_SEED (priv-only for ML-DSA-44, priv‖pub for
-    // Falcon-512; matches what PQClient derives).
+    // Inject the witness keypair via a temp JSON key file (derived from
+    // WITNESS_SEED, matching what PQClient derives) referenced from a temp HOCON
+    // config that includes config-test.conf.
     Path conf = writeWitnessConfig(witnessKp);
 
     Args.setParam(new String[]{"--output-directory", dbDir.getAbsolutePath(), "-w"},
@@ -251,29 +250,31 @@ public class PQWitnessNode {
   }
 
   private static Path writeWitnessConfig(PQSignature witnessKp) throws java.io.IOException {
+    // Write the keypair to a JSON key file, then reference its path from the node
+    // config. For schemes whose expanded sk lets BC recover the pk (ML-DSA-44),
+    // emit privateKey only; otherwise emit privateKey + publicKey (Falcon-512,
+    // since BC has no public path from (f, g) to h — see bcgit/bc-java#2297).
+    Path keyFile = Files.createTempFile("pqc-witness-key-", ".json");
+    keyFile.toFile().deleteOnExit();
+    StringBuilder json = new StringBuilder()
+        .append("{\n")
+        .append("  \"scheme\": \"").append(PQ_SCHEME.name()).append("\",\n")
+        .append("  \"privateKey\": \"").append(Hex.toHexString(witnessKp.getPrivateKey()))
+        .append("\"");
+    if (!PQSchemeRegistry.canDerivePublicKey(PQ_SCHEME)) {
+      json.append(",\n  \"publicKey\": \"")
+          .append(Hex.toHexString(witnessKp.getPublicKey())).append("\"");
+    }
+    json.append("\n}\n");
+    Files.write(keyFile, json.toString().getBytes(StandardCharsets.UTF_8));
+
     Path conf = Files.createTempFile("pqc-witness-", ".conf");
     conf.toFile().deleteOnExit();
-    // `localPqWitness.keys` entries carry their own scheme so a single node
-    // can host SRs running different PQ algorithms. For schemes whose expanded
-    // sk lets BC recover the pk (ML-DSA-44), persist only the private key;
-    // otherwise persist the extended priv ‖ pub (Falcon-512, since BC has no
-    // public path from (f, g) to h — see bcgit/bc-java#2297). The witness-config
-    // parser accepts exactly the one form required by each scheme.
-    byte[] priv = witnessKp.getPrivateKey();
-    byte[] keyBytes;
-    if (PQSchemeRegistry.canDerivePublicKey(PQ_SCHEME)) {
-      keyBytes = priv;
-    } else {
-      byte[] pub = witnessKp.getPublicKey();
-      keyBytes = new byte[priv.length + pub.length];
-      System.arraycopy(priv, 0, keyBytes, 0, priv.length);
-      System.arraycopy(pub, 0, keyBytes, priv.length, pub.length);
-    }
+    String keyPath = keyFile.toAbsolutePath().toString().replace("\\", "\\\\");
     String body = "include classpath(\"config-test.conf\")\n"
         + "localPqWitness = {\n"
         + "  keys = [\n"
-        + "    { scheme = \"" + PQ_SCHEME.name() + "\","
-        + " key = \"" + Hex.toHexString(keyBytes) + "\" }\n"
+        + "    \"" + keyPath + "\"\n"
         + "  ]\n"
         + "}\n";
     Files.write(conf, body.getBytes(StandardCharsets.UTF_8));

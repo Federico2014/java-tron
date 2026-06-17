@@ -1,7 +1,6 @@
 package org.tron.core.config.args;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -9,7 +8,6 @@ import static org.junit.Assert.assertTrue;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import org.junit.Test;
-import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 import org.tron.core.exception.TronError;
 
 public class LocalWitnessConfigTest {
@@ -30,7 +28,7 @@ public class LocalWitnessConfigTest {
     assertNull(lw.getAccountAddress());
     assertNull(lw.getPqAccountAddress());
     assertTrue(lw.getKeystores().isEmpty());
-    assertTrue(lw.getPqEntries().isEmpty());
+    assertTrue(lw.getPqKeyFiles().isEmpty());
   }
 
   @Test
@@ -71,57 +69,24 @@ public class LocalWitnessConfigTest {
   }
 
   @Test
-  public void testWithPqEntries() {
+  public void testWithPqKeyFiles() {
     Config config = withRef(
-        "localPqWitness.keys = [\n"
-            + "  { scheme = \"FN_DSA_512\", key = \"deadbeef\" },\n"
-            + "  { scheme = \"ML_DSA_44\", seed = \"cafebabe\" }\n"
-            + "]");
+        "localPqWitness.keys = [ \"keys/sr1.json\", \"keys/sr2.json\" ]");
     LocalWitnessConfig lw = LocalWitnessConfig.fromConfig(config);
-    assertEquals(2, lw.getPqEntries().size());
-
-    PqEntryConfig first = lw.getPqEntries().get(0);
-    assertEquals("FN_DSA_512", first.getScheme());
-    assertEquals("deadbeef", first.getKey());
-    assertNull(first.getSeed());
-    assertTrue(first.hasKey());
-    assertFalse(first.hasSeed());
-
-    PqEntryConfig second = lw.getPqEntries().get(1);
-    assertEquals("ML_DSA_44", second.getScheme());
-    assertNull(second.getKey());
-    assertEquals("cafebabe", second.getSeed());
-    // Scheme validity and key material (hex length, public-key recovery) are
-    // still left to WitnessInitializer; fromConfig only checks entry shape.
+    assertEquals(2, lw.getPqKeyFiles().size());
+    assertEquals("keys/sr1.json", lw.getPqKeyFiles().get(0));
+    assertEquals("keys/sr2.json", lw.getPqKeyFiles().get(1));
+    // Scheme validity and key material (file contents, hex length, public-key
+    // recovery) are left to WitnessInitializer; fromConfig only checks that the
+    // paths are non-blank.
   }
 
   @Test
-  public void testPqEntryMissingSchemeRejected() {
-    Config config = withRef("localPqWitness.keys = [ { key = \"deadbeef\" } ]");
+  public void testBlankPqKeyFilePathRejected() {
+    Config config = withRef("localPqWitness.keys = [ \"\" ]");
     TronError err = assertThrows(TronError.class,
         () -> LocalWitnessConfig.fromConfig(config));
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("must define `scheme`"));
-  }
-
-  @Test
-  public void testPqEntryMissingKeyAndSeedRejected() {
-    Config config = withRef("localPqWitness.keys = [ { scheme = \"FN_DSA_512\" } ]");
-    TronError err = assertThrows(TronError.class,
-        () -> LocalWitnessConfig.fromConfig(config));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(),
-        err.getMessage().contains("exactly one of `key` or `seed`, but neither is set"));
-  }
-
-  @Test
-  public void testPqEntryBothKeyAndSeedRejected() {
-    Config config = withRef(
-        "localPqWitness.keys = [ { scheme = \"FN_DSA_512\", key = \"de\", seed = \"ad\" } ]");
-    TronError err = assertThrows(TronError.class,
-        () -> LocalWitnessConfig.fromConfig(config));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(),
-        err.getMessage().contains("exactly one of `key` or `seed`, but both are set"));
+    assertTrue(err.getMessage(), err.getMessage().contains("non-blank JSON key file path"));
   }
 }

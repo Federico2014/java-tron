@@ -10,7 +10,6 @@ import java.util.List;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.tron.core.config.args.LocalWitnessPqConfig.PqEntryConfig;
 import org.tron.core.exception.TronError;
 
 /**
@@ -20,8 +19,8 @@ import org.tron.core.exception.TronError;
  * are not under a sub-section — they are at the root of config.conf. The
  * localPqWitness section is auto-bound through
  * {@link com.typesafe.config.ConfigBeanFactory} into {@link LocalWitnessPqConfig}
- * (which carries the PQ witness account address plus the {@link PqEntryConfig}
- * list) instead of being read field-by-field. ECDSA and PQ witness accounts use
+ * (which carries the PQ witness account address plus the list of JSON key-file
+ * paths) instead of being read field-by-field. ECDSA and PQ witness accounts use
  * independent account-address keys (localWitnessAccountAddress vs
  * localPqWitness.accountAddress) so the two consensus paths do not interfere.
  */
@@ -43,7 +42,7 @@ public class LocalWitnessConfig {
   private String accountAddress = null;
   private String pqAccountAddress = null;
   private List<String> keystores = new ArrayList<>();
-  private List<PqEntryConfig> pqEntries = Collections.emptyList();
+  private List<String> pqKeyFiles = Collections.emptyList();
 
   public static LocalWitnessConfig fromConfig(Config config) {
     LocalWitnessConfig lw = new LocalWitnessConfig();
@@ -60,7 +59,7 @@ public class LocalWitnessConfig {
       LocalWitnessPqConfig pq = ConfigBeanFactory.create(
           config.getConfig(PQ_SECTION_PATH), LocalWitnessPqConfig.class);
       pq.postProcess();
-      lw.pqEntries = pq.getKeys();
+      lw.pqKeyFiles = pq.getKeys();
       lw.pqAccountAddress = pq.getAccountAddress();
     }
     return lw;

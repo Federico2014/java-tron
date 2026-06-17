@@ -25,10 +25,12 @@ import org.tron.core.exception.TronError;
 import org.tron.protos.Protocol.PQScheme;
 
 /**
- * Covers the {@code localPqWitness.keys} HOCON parsing in
- * {@link Args#setParam} — specifically the {@code key} vs {@code seed} entry
- * shape and the per-scheme guard that rejects {@code seed} for schemes whose
- * keygen is not reproducible across platforms (Falcon-512).
+ * Covers the {@code localPqWitness.keys} parsing in {@link Args#setParam}:
+ * {@code keys} is a list of JSON key-file paths, each file carrying one keypair
+ * as {@code scheme} plus either {@code seed} or {@code privateKey} (and, for
+ * FN_DSA_512, {@code publicKey}). Exercises the per-scheme rules — ML_DSA_44
+ * takes {@code privateKey} only (derives the public key), FN_DSA_512 requires
+ * both halves — and the seed/key exclusivity and length guards.
  */
 public class ArgsPqConfigTest {
 
@@ -41,10 +43,10 @@ public class ArgsPqConfigTest {
   }
 
   @Test
-  public void mlDsa44SeedEntryDerivesKeypair() throws IOException {
+  public void mlDsa44SeedDerivesKeypair() throws IOException {
     byte[] seed = filled(MLDSA44.SEED_LENGTH, (byte) 0x07);
-    Path conf = writeConfWithEntry(
-        "{ scheme = \"ML_DSA_44\", seed = \"" + Hex.toHexString(seed) + "\" }");
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\", \"seed\": \"" + Hex.toHexString(seed) + "\" }"));
 
     Args.setParam(new String[]{"--witness"}, conf.toString());
 
@@ -61,58 +63,18 @@ public class ArgsPqConfigTest {
   @Test
   public void mlDsa44SeedAcceptsZeroXPrefix() throws IOException {
     byte[] seed = filled(MLDSA44.SEED_LENGTH, (byte) 0x09);
-    Path conf = writeConfWithEntry(
-        "{ scheme = \"ML_DSA_44\", seed = \"0x" + Hex.toHexString(seed) + "\" }");
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\", \"seed\": \"0x" + Hex.toHexString(seed) + "\" }"));
     Args.setParam(new String[]{"--witness"}, conf.toString());
     assertEquals(1, Args.getLocalWitnesses().getPqKeypairs().size());
   }
 
   @Test
-  public void keyAndSeedBothSetRejected() throws IOException {
-    byte[] seed = filled(MLDSA44.SEED_LENGTH, (byte) 0x05);
-    MLDSA44 ml = new MLDSA44(seed);
-    byte[] priv = ml.getPrivateKey();
-    byte[] pub = ml.getPublicKey();
-    byte[] ext = concat(priv, pub);
-
-    Path conf = writeConfWithEntry(
-        "{ scheme = \"ML_DSA_44\","
-            + " key = \"" + Hex.toHexString(ext) + "\","
-            + " seed = \"" + Hex.toHexString(seed) + "\" }");
-
-    TronError err = assertThrows(TronError.class,
-        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("exactly one of `key` or `seed`"));
-  }
-
-  @Test
-  public void neitherKeyNorSeedRejected() throws IOException {
-    Path conf = writeConfWithEntry("{ scheme = \"ML_DSA_44\" }");
-
-    TronError err = assertThrows(TronError.class,
-        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("exactly one of `key` or `seed`"));
-  }
-
-  @Test
-  public void mlDsa44SeedWrongLengthRejected() throws IOException {
-    String shortSeed = Hex.toHexString(filled(MLDSA44.SEED_LENGTH - 1, (byte) 0x02));
-    Path conf = writeConfWithEntry("{ scheme = \"ML_DSA_44\", seed = \"" + shortSeed + "\" }");
-
-    TronError err = assertThrows(TronError.class,
-        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("seed must be"));
-  }
-
-  @Test
-  public void mlDsa44PrivOnlyKeyDerivesPublicKey() throws IOException {
+  public void mlDsa44PrivateKeyDerivesPublicKey() throws IOException {
     MLDSA44 ml = new MLDSA44(filled(MLDSA44.SEED_LENGTH, (byte) 0x0C));
     byte[] priv = ml.getPrivateKey();
-    Path conf = writeConfWithEntry(
-        "{ scheme = \"ML_DSA_44\", key = \"" + Hex.toHexString(priv) + "\" }");
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\", \"privateKey\": \"" + Hex.toHexString(priv) + "\" }"));
 
     Args.setParam(new String[]{"--witness"}, conf.toString());
 
@@ -124,51 +86,171 @@ public class ArgsPqConfigTest {
   }
 
   @Test
-  public void mlDsa44KeyWrongLengthRejected() throws IOException {
+  public void fnDsa512PrivateKeyAndPublicKeyAccepted() throws IOException {
+    FNDSA512 fn = new FNDSA512(filled(FNDSA512.SEED_LENGTH, (byte) 0x11));
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"FN_DSA_512\","
+            + " \"privateKey\": \"" + Hex.toHexString(fn.getPrivateKey()) + "\","
+            + " \"publicKey\": \"" + Hex.toHexString(fn.getPublicKey()) + "\" }"));
+
+    Args.setParam(new String[]{"--witness"}, conf.toString());
+
+    LocalWitnesses lw = Args.getLocalWitnesses();
+    assertEquals(1, lw.getPqKeypairs().size());
+    PqKeypair kp = lw.getPqKeypairs().get(0);
+    assertEquals(PQScheme.FN_DSA_512, kp.getScheme());
+    assertEquals(Hex.toHexString(fn.getPrivateKey()), kp.getPrivateKey());
+    assertEquals(Hex.toHexString(fn.getPublicKey()), kp.getPublicKey());
+  }
+
+  @Test
+  public void multipleKeyFilesAccepted() throws IOException {
+    String mlFile = writeKeyFile("{ \"scheme\": \"ML_DSA_44\", \"privateKey\": \""
+        + Hex.toHexString(new MLDSA44(filled(MLDSA44.SEED_LENGTH, (byte) 0x21)).getPrivateKey())
+        + "\" }");
+    FNDSA512 fn = new FNDSA512(filled(FNDSA512.SEED_LENGTH, (byte) 0x22));
+    String fnFile = writeKeyFile("{ \"scheme\": \"FN_DSA_512\", \"privateKey\": \""
+        + Hex.toHexString(fn.getPrivateKey()) + "\", \"publicKey\": \""
+        + Hex.toHexString(fn.getPublicKey()) + "\" }");
+
+    Args.setParam(new String[]{"--witness"}, writeConf(mlFile, fnFile).toString());
+    assertEquals(2, Args.getLocalWitnesses().getPqKeypairs().size());
+  }
+
+  @Test
+  public void keyAndSeedBothSetRejected() throws IOException {
+    MLDSA44 ml = new MLDSA44(filled(MLDSA44.SEED_LENGTH, (byte) 0x05));
+    String seed = Hex.toHexString(filled(MLDSA44.SEED_LENGTH, (byte) 0x05));
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\","
+            + " \"privateKey\": \"" + Hex.toHexString(ml.getPrivateKey()) + "\","
+            + " \"seed\": \"" + seed + "\" }"));
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(),
+        err.getMessage().contains("exactly one of `seed` or `privateKey`"));
+  }
+
+  @Test
+  public void neitherKeyNorSeedRejected() throws IOException {
+    Path conf = writeConf(writeKeyFile("{ \"scheme\": \"ML_DSA_44\" }"));
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(),
+        err.getMessage().contains("exactly one of `seed` or `privateKey`"));
+  }
+
+  @Test
+  public void mlDsa44SeedWrongLengthRejected() throws IOException {
+    String shortSeed = Hex.toHexString(filled(MLDSA44.SEED_LENGTH - 1, (byte) 0x02));
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\", \"seed\": \"" + shortSeed + "\" }"));
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(), err.getMessage().contains("seed must be"));
+  }
+
+  @Test
+  public void mlDsa44PrivateKeyWrongLengthRejected() throws IOException {
     String shortKey = Hex.toHexString(filled(MLDSA44.PRIVATE_KEY_LENGTH - 1, (byte) 0x0D));
-    Path conf = writeConfWithEntry("{ scheme = \"ML_DSA_44\", key = \"" + shortKey + "\" }");
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\", \"privateKey\": \"" + shortKey + "\" }"));
 
     TronError err = assertThrows(TronError.class,
         () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("priv-only"));
+    assertTrue(err.getMessage(), err.getMessage().contains("privateKey must be"));
   }
 
   @Test
-  public void fnDsa512PrivOnlyKeyRejected() throws IOException {
-    String privOnly = Hex.toHexString(filled(FNDSA512.PRIVATE_KEY_LENGTH, (byte) 0x0E));
-    Path conf = writeConfWithEntry("{ scheme = \"FN_DSA_512\", key = \"" + privOnly + "\" }");
-
-    TronError err = assertThrows(TronError.class,
-        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
-    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("extended priv‖pub"));
-    assertTrue(err.getMessage(), !err.getMessage().contains("priv-only"));
-  }
-
-  @Test
-  public void mlDsa44ExtendedKeyRejected() throws IOException {
-    // ML-DSA-44's public key is recoverable from the private key, so the
-    // extended priv‖pub form is redundant and no longer accepted — only the
-    // priv-only `key` form is valid.
+  public void mlDsa44PublicKeySetRejected() throws IOException {
+    // ML-DSA-44's public key is derived from the private key, so an explicit
+    // publicKey is redundant and rejected.
     MLDSA44 ml = new MLDSA44(filled(MLDSA44.SEED_LENGTH, (byte) 0x0B));
-    byte[] ext = concat(ml.getPrivateKey(), ml.getPublicKey());
-    Path conf = writeConfWithEntry(
-        "{ scheme = \"ML_DSA_44\", key = \"" + Hex.toHexString(ext) + "\" }");
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"ML_DSA_44\","
+            + " \"privateKey\": \"" + Hex.toHexString(ml.getPrivateKey()) + "\","
+            + " \"publicKey\": \"" + Hex.toHexString(ml.getPublicKey()) + "\" }"));
 
     TronError err = assertThrows(TronError.class,
         () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
     assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
-    assertTrue(err.getMessage(), err.getMessage().contains("priv-only"));
+    assertTrue(err.getMessage(), err.getMessage().contains("publicKey must not be set"));
   }
 
-  private Path writeConfWithEntry(String entry) throws IOException {
-    Path conf = tmp.newFile("pqc-args-test.conf").toPath();
+  @Test
+  public void fnDsa512MissingPublicKeyRejected() throws IOException {
+    FNDSA512 fn = new FNDSA512(filled(FNDSA512.SEED_LENGTH, (byte) 0x0E));
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"FN_DSA_512\", \"privateKey\": \""
+            + Hex.toHexString(fn.getPrivateKey()) + "\" }"));
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(), err.getMessage().contains("publicKey is required"));
+  }
+
+  @Test
+  public void fnDsa512PublicKeyMismatchRejected() throws IOException {
+    FNDSA512 fn = new FNDSA512(filled(FNDSA512.SEED_LENGTH, (byte) 0x31));
+    FNDSA512 other = new FNDSA512(filled(FNDSA512.SEED_LENGTH, (byte) 0x32));
+    Path conf = writeConf(writeKeyFile(
+        "{ \"scheme\": \"FN_DSA_512\","
+            + " \"privateKey\": \"" + Hex.toHexString(fn.getPrivateKey()) + "\","
+            + " \"publicKey\": \"" + Hex.toHexString(other.getPublicKey()) + "\" }"));
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(), err.getMessage().contains("mismatch"));
+  }
+
+  @Test
+  public void keyFileNotFoundRejected() throws IOException {
+    Path conf = writeConf(tmp.getRoot().toPath().resolve("missing.json").toString());
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(), err.getMessage().contains("key file not found"));
+  }
+
+  @Test
+  public void malformedKeyFileRejected() throws IOException {
+    Path conf = writeConf(writeKeyFile("{ not valid json"));
+
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(), err.getMessage().contains("failed to parse key file"));
+  }
+
+  /** Write a JSON key-file with the given body and return its absolute path. */
+  private String writeKeyFile(String jsonBody) throws IOException {
+    Path keyFile = Files.createTempFile(tmp.getRoot().toPath(), "pq-key-", ".json");
+    Files.write(keyFile, jsonBody.getBytes(StandardCharsets.UTF_8));
+    return keyFile.toAbsolutePath().toString();
+  }
+
+  /** Write a node config whose localPqWitness.keys references the given file paths. */
+  private Path writeConf(String... keyFilePaths) throws IOException {
+    Path conf = Files.createTempFile(tmp.getRoot().toPath(), "pqc-args-", ".conf");
+    StringBuilder keys = new StringBuilder();
+    for (String p : keyFilePaths) {
+      keys.append("    \"").append(p.replace("\\", "\\\\")).append("\",\n");
+    }
     String body = "include classpath(\"" + TestConstants.TEST_CONF + "\")\n"
         + "localwitness = []\n"
         + "localPqWitness = {\n"
         + "  keys = [\n"
-        + "    " + entry + "\n"
+        + keys
         + "  ]\n"
         + "}\n";
     Files.write(conf, body.getBytes(StandardCharsets.UTF_8));
@@ -178,13 +260,6 @@ public class ArgsPqConfigTest {
   private static byte[] filled(int len, byte value) {
     byte[] out = new byte[len];
     Arrays.fill(out, value);
-    return out;
-  }
-
-  private static byte[] concat(byte[] a, byte[] b) {
-    byte[] out = new byte[a.length + b.length];
-    System.arraycopy(a, 0, out, 0, a.length);
-    System.arraycopy(b, 0, out, a.length, b.length);
     return out;
   }
 }
