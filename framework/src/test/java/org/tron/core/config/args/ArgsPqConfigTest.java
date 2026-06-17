@@ -1,7 +1,6 @@
 package org.tron.core.config.args;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -148,19 +147,19 @@ public class ArgsPqConfigTest {
   }
 
   @Test
-  public void mlDsa44KeyEntryStillAccepted() throws IOException {
-    // Regression: adding the `seed` path must not break the existing `key`
-    // path for the same scheme.
+  public void mlDsa44ExtendedKeyRejected() throws IOException {
+    // ML-DSA-44's public key is recoverable from the private key, so the
+    // extended priv‖pub form is redundant and no longer accepted — only the
+    // priv-only `key` form is valid.
     MLDSA44 ml = new MLDSA44(filled(MLDSA44.SEED_LENGTH, (byte) 0x0B));
     byte[] ext = concat(ml.getPrivateKey(), ml.getPublicKey());
     Path conf = writeConfWithEntry(
         "{ scheme = \"ML_DSA_44\", key = \"" + Hex.toHexString(ext) + "\" }");
 
-    Args.setParam(new String[]{"--witness"}, conf.toString());
-    LocalWitnesses lw = Args.getLocalWitnesses();
-    assertNotNull(lw);
-    assertEquals(1, lw.getPqKeypairs().size());
-    assertEquals(PQScheme.ML_DSA_44, lw.getPqKeypairs().get(0).getScheme());
+    TronError err = assertThrows(TronError.class,
+        () -> Args.setParam(new String[]{"--witness"}, conf.toString()));
+    assertEquals(TronError.ErrCode.WITNESS_INIT, err.getErrCode());
+    assertTrue(err.getMessage(), err.getMessage().contains("priv-only"));
   }
 
   private Path writeConfWithEntry(String entry) throws IOException {

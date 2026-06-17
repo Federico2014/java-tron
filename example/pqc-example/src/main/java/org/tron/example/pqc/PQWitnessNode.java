@@ -129,8 +129,9 @@ public class PQWitnessNode {
     dbDir.deleteOnExit();
 
     // Inject the witness keypair via a temp HOCON config that includes
-    // config-test.conf and overrides localPqWitness.keys with the extended
-    // priv‖pub hex derived from WITNESS_SEED (matches what PQClient derives).
+    // config-test.conf and overrides localPqWitness.keys with the per-scheme
+    // `key` hex derived from WITNESS_SEED (priv-only for ML-DSA-44, priv‖pub for
+    // Falcon-512; matches what PQClient derives).
     Path conf = writeWitnessConfig(witnessKp);
 
     Args.setParam(new String[]{"--output-directory", dbDir.getAbsolutePath(), "-w"},
@@ -256,8 +257,8 @@ public class PQWitnessNode {
     // can host SRs running different PQ algorithms. For schemes whose expanded
     // sk lets BC recover the pk (ML-DSA-44), persist only the private key;
     // otherwise persist the extended priv ‖ pub (Falcon-512, since BC has no
-    // public path from (f, g) to h — see bcgit/bc-java#2297). Both forms are
-    // accepted by the witness-config parser.
+    // public path from (f, g) to h — see bcgit/bc-java#2297). The witness-config
+    // parser accepts exactly the one form required by each scheme.
     byte[] priv = witnessKp.getPrivateKey();
     byte[] keyBytes;
     if (PQSchemeRegistry.canDerivePublicKey(PQ_SCHEME)) {

@@ -663,8 +663,9 @@ message HelloMessage {
   int64 lowestBlockNum = 10;
   bytes codeVersion = 11;
   // Post-quantum auth signature over Sha256Hash(timestamp). Set instead of
-  // `signature` when the local witness is PQ-only. Verifier only accepts
-  // this field after ALLOW_FN_DSA_512 is activated on chain.
+  // `signature` when the local witness is PQ-only. Verifier only accepts this
+  // field after the proposal for the entry's scheme is activated on chain
+  // (ALLOW_FN_DSA_512 for FN_DSA_512, ALLOW_ML_DSA_44 for ML_DSA_44).
   PQAuthSig pq_auth_sig = 12;
 }
 

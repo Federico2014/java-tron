@@ -182,9 +182,11 @@ public class WitnessInitializer {
       String accountAddress) {
     // Each entry is an object { scheme = "<PQScheme>", key | seed = "<hex>" }
     // so a single node can host SRs running different PQ algorithms (e.g.
-    // Falcon-512 and ML-DSA-44 side by side). `key` carries the expanded
-    // priv‖pub hex (any scheme); `seed` carries the keygen seed hex and is
-    // accepted only when PQSchemeRegistry.isSeedDeterministic(scheme) is true.
+    // Falcon-512 and ML-DSA-44 side by side). `key` carries the scheme's key hex
+    // — priv-only when the public key is recoverable from it (ML-DSA-44),
+    // otherwise the expanded priv‖pub (Falcon-512). `seed` carries the keygen
+    // seed hex and is accepted for every scheme, but a non-deterministic scheme
+    // (Falcon-512, see PQSchemeRegistry.isSeedDeterministic) logs a drift warning.
     List<PqKeypair> pqKeypairs = new ArrayList<>(pqEntries.size());
     for (int i = 0; i < pqEntries.size(); i++) {
       pqKeypairs.add(buildPqKeypair(i, pqEntries.get(i)));
@@ -217,36 +219,55 @@ public class WitnessInitializer {
   }
 
   /**
-   * Build a keypair from a `key` entry: the expanded {@code priv‖pub} hex, or —
-   * for schemes whose public key can be recovered — the priv-only hex.
+   * Build a keypair from a `key` entry. The accepted form depends on whether the
+   * scheme's public key can be recovered from the private key:
+   * <ul>
+   *   <li>recoverable (ML-DSA-44): priv-only hex — the public key is derived
+   *       from it, so the redundant {@code priv‖pub} form is not accepted;</li>
+   *   <li>non-recoverable (Falcon-512): expanded {@code priv‖pub} hex, with the
+   *       two halves verified to form a keypair via a sign+verify probe.</li>
+   * </ul>
    */
   private static PqKeypair keypairFromKey(int index, PQScheme scheme, String rawKey) {
     int privHexLen = PQSchemeRegistry.getPrivateKeyLength(scheme) * 2;
     int extHexLen = privHexLen + PQSchemeRegistry.getPublicKeyLength(scheme) * 2;
-    boolean canRecoverPk = PQSchemeRegistry.canDerivePublicKey(scheme);
     String stripped = stripHexPrefix(rawKey);
     int len = stripped.length();
-    boolean shortForm = canRecoverPk && len == privHexLen;
-    if (len != extHexLen && !shortForm) {
-      String expected = canRecoverPk
-          ? String.format("%d (priv-only) or %d (extended priv‖pub)", privHexLen, extHexLen)
-          : String.format("%d (extended priv‖pub)", extHexLen);
-      throw witnessError("%s[%d].key must be %s hex chars for %s, actual: %d",
-          PQ_KEYS_PATH, index, expected, scheme, len);
+
+    if (PQSchemeRegistry.canDerivePublicKey(scheme)) {
+      // ML-DSA-44: the private key alone determines the keypair; derive the pub.
+      if (len != privHexLen) {
+        throw witnessError("%s[%d].key must be %d hex chars (priv-only) for %s, actual: %d",
+            PQ_KEYS_PATH, index, privHexLen, scheme, len);
+      }
+      byte[] privBytes = decodeHex(stripped, index, scheme, "key");
+      byte[] pubBytes;
+      try {
+        pubBytes = PQSchemeRegistry.derivePublicKey(scheme, privBytes);
+      } catch (RuntimeException e) {
+        throw witnessError("%s[%d].key cannot recover public key for %s: %s",
+            PQ_KEYS_PATH, index, scheme, e.getMessage());
+      }
+      return new PqKeypair(scheme, stripped, Hex.toHexString(pubBytes));
+    }
+
+    // Falcon-512: the public key cannot be recovered from the private key, so the
+    // expanded priv‖pub form is required; verify the two halves form a keypair.
+    if (len != extHexLen) {
+      throw witnessError("%s[%d].key must be %d hex chars (extended priv‖pub) for %s, actual: %d",
+          PQ_KEYS_PATH, index, extHexLen, scheme, len);
     }
     String privHex = stripped.substring(0, privHexLen);
-    if (!shortForm) {
-      return new PqKeypair(scheme, privHex, stripped.substring(privHexLen));
-    }
+    String pubHex = stripped.substring(privHexLen);
     byte[] privBytes = decodeHex(privHex, index, scheme, "key");
-    byte[] pubBytes;
+    byte[] pubBytes = decodeHex(pubHex, index, scheme, "key");
     try {
-      pubBytes = PQSchemeRegistry.derivePublicKey(scheme, privBytes);
+      PQSchemeRegistry.fromKeypair(scheme, privBytes, pubBytes);
     } catch (RuntimeException e) {
-      throw witnessError("%s[%d].key cannot recover public key for %s: %s",
+      throw witnessError("%s[%d].key private/public key mismatch for %s: %s",
           PQ_KEYS_PATH, index, scheme, e.getMessage());
     }
-    return new PqKeypair(scheme, privHex, Hex.toHexString(pubBytes));
+    return new PqKeypair(scheme, privHex, pubHex);
   }
 
   /**

@@ -48,8 +48,8 @@ import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.protos.Protocol.Block;
 import org.tron.protos.Protocol.BlockHeader;
-import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.PQAuthSig;
+import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.Transaction;
 
 @Slf4j(topic = "capsule")

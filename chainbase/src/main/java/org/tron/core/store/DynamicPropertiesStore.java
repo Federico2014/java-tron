@@ -22,10 +22,10 @@ import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.capsule.BytesCapsule;
 import org.tron.core.config.Parameter.ChainConstant;
-import org.tron.protos.Protocol.PQScheme;
 import org.tron.core.db.TronStoreWithRevoking;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ItemNotFoundException;
+import org.tron.protos.Protocol.PQScheme;
 
 @Slf4j(topic = "DB")
 @Component

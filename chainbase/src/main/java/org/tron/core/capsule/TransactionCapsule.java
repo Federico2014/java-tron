@@ -71,8 +71,8 @@ import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.protos.Protocol.Key;
-import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.PQAuthSig;
+import org.tron.protos.Protocol.PQScheme;
 import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Permission.PermissionType;
 import org.tron.protos.Protocol.Transaction;
@@ -501,7 +501,7 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     List<ByteString> approveList = new ArrayList<>();
     long weight = checkWeight(permission, transaction.getSignatureList(), hash, approveList);
 
-    if (dynamicPropertiesStore.isAnyPqSchemeAllowed() && transaction.getPqAuthSigCount() > 0) {
+    if (transaction.getPqAuthSigCount() > 0 && dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
       try {
         weight = StrictMathWrapper.addExact(weight,
             validatePQSignatureGetWeight(transaction, permission, dynamicPropertiesStore,
@@ -672,12 +672,13 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
     if (!isVerified) {
       int signatureCount = this.transaction.getSignatureCount();
       int pqCount = this.transaction.getPqAuthSigCount();
-
-      if (dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
-        signatureCount += pqCount;
-      } else if (pqCount > 0) {
-        throw new ValidateSignatureException(
-            "pq_auth_sig not allowed: no post-quantum scheme is activated");
+      if (pqCount > 0) {
+        if (dynamicPropertiesStore.isAnyPqSchemeAllowed()) {
+          signatureCount += pqCount;
+        } else {
+          throw new ValidateSignatureException(
+              "pq_auth_sig not allowed: no post-quantum scheme is activated");
+        }
       }
 
       if (signatureCount == 0 || this.transaction.getRawData().getContractCount() <= 0) {
