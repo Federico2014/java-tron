@@ -9,7 +9,7 @@ import org.tron.core.Constant;
 
 /**
  * Miscellaneous small config domains that don't warrant their own bean class.
- * Covers: storage (partial), trx, energy, crypto, seed.
+ * Covers: storage (partial), trx, energy, seed, and legacy crypto validation.
  *
  * <p>These use manual reads because they span multiple unrelated config.conf
  * top-level sections and some have non-standard key naming (e.g. "enery" typo).
@@ -18,12 +18,14 @@ import org.tron.core.Constant;
 @Getter
 public class MiscConfig {
 
+  private static final String LEGACY_CRYPTO_ENGINE_KEY = "crypto.engine";
+  private static final String SUPPORTED_CRYPTO_ENGINE = "eckey";
+
   private boolean needToUpdateAsset = true;
   private boolean historyBalanceLookup = false;
   private String trxReferenceBlock = "solid";
   private long trxExpirationTimeInMilliseconds = Constant.TRANSACTION_DEFAULT_EXPIRATION_TIME;
   private long blockNumForEnergyLimit = 4727890L;
-  private String cryptoEngine = Constant.ECKey_ENGINE;
   private List<String> seedNodeIpList = new ArrayList<>();
 
   public static MiscConfig fromConfig(Config config) {
@@ -48,14 +50,27 @@ public class MiscConfig {
     mc.blockNumForEnergyLimit = config.hasPath("enery.limit.block.num")
         ? config.getInt("enery.limit.block.num") : 4727890L;
 
-    // crypto
-    mc.cryptoEngine = config.hasPath("crypto.engine")
-        ? config.getString("crypto.engine") : Constant.ECKey_ENGINE;
+    // Reject removed crypto engines before consensus services initialize.
+    validateLegacyCryptoEngine(config);
 
     // seed node
     mc.seedNodeIpList = config.hasPath("seed.node.ip.list")
         ? config.getStringList("seed.node.ip.list") : new ArrayList<>();
 
     return mc;
+  }
+
+  private static void validateLegacyCryptoEngine(Config config) {
+    if (!config.hasPath(LEGACY_CRYPTO_ENGINE_KEY)) {
+      return;
+    }
+
+    String cryptoEngine = config.getString(LEGACY_CRYPTO_ENGINE_KEY);
+    if (!SUPPORTED_CRYPTO_ENGINE.equalsIgnoreCase(cryptoEngine)) {
+      throw new IllegalArgumentException(
+          "crypto.engine no longer supports non-ECKey values; remove the setting or use eckey");
+    }
+
+    logger.warn("crypto.engine is deprecated and ignored; ECKey and SHA-256 are always used");
   }
 }

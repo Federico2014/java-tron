@@ -233,7 +233,6 @@ Not all parameters support hot-reload. Parameters that affect node identity, gen
 
 | Parameter | Reason |
 |-----------|--------|
-| `crypto.engine` | Changing the key-derivation algorithm will fork the node |
 | `genesis.block.*` | Must be identical on every node in the network |
 | `committee.*` | Controlled by on-chain governance proposals; manual overrides are for private chains only |
 | `node.p2p.version` | Must match the network (11111 for mainnet) |
