@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.tron.common.crypto.ECKey;
+import org.tron.common.crypto.SignUtils;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
@@ -173,8 +173,8 @@ public class PbftDataSyncHandler implements TronMsgHandler, Closeable {
     @Override
     public Boolean call() throws Exception {
       try {
-        byte[] srAddress = ECKey.signatureToAddress(dataHash,
-            TransactionCapsule.getBase64FromByteString(sign));
+        byte[] srAddress = SignUtils.signatureToAddress(dataHash,
+            TransactionCapsule.getBase64FromByteString(sign), true);
         if (!srSet.contains(ByteString.copyFrom(srAddress))) {
           logger.error("valid sr signature fail,error sr address:{}",
               ByteArray.toHexString(srAddress));

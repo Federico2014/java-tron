@@ -5,11 +5,26 @@ import static org.tron.core.Constant.PER_SIGN_LENGTH;
 
 import java.security.SecureRandom;
 import java.security.SignatureException;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.sm2.SM2;
 import org.tron.common.crypto.sm2.SM2.SM2Signature;
 
+@Slf4j(topic = "crypto")
 public class SignUtils {
+
+  @Getter
+  private static volatile boolean useNativeSecp256k1;
+
+  public static void setUseNativeSecp256k1(boolean enabled) {
+    if (enabled && !NativeSecp256k1.isAvailable()) {
+      logger.warn("Native secp256k1 was requested but is unavailable; using ECKey");
+      useNativeSecp256k1 = false;
+      return;
+    }
+    useNativeSecp256k1 = enabled;
+  }
 
   /**
    * Strict signature-length check for admission entry-points (RPC broadcast,
@@ -46,6 +61,9 @@ public class SignUtils {
       throws SignatureException {
     try {
       if (isECKeyCryptoEngine) {
+        if (useNativeSecp256k1) {
+          return NativeSecp256k1.signatureToAddress(messageHash, signatureBase64);
+        }
         return ECKey.signatureToAddress(messageHash, signatureBase64);
       }
       return SM2.signatureToAddress(messageHash, signatureBase64);
@@ -66,6 +84,10 @@ public class SignUtils {
       byte[] messageHash, SignatureInterface signatureInterface, boolean isECKeyCryptoEngine)
       throws SignatureException {
     if (isECKeyCryptoEngine) {
+      if (useNativeSecp256k1) {
+        return NativeSecp256k1.signatureToAddress(
+            messageHash, (ECDSASignature) signatureInterface);
+      }
       return ECKey.signatureToAddress(messageHash, (ECDSASignature) signatureInterface);
     }
     return SM2.signatureToAddress(messageHash, (SM2Signature) signatureInterface);
