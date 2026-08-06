@@ -572,7 +572,16 @@ public class Wallet {
         throw new ContractValidateException(ActuatorConstant.CONTRACT_NOT_EXIST);
       }
       trx.checkExpiration(chainBaseManager.getNextBlockSlotTime());
-      dbManager.pushTransaction(trx);
+      if (!dbManager.pushTransaction(trx)) {
+        if (trxCacheEnable) {
+          dbManager.getTransactionIdCache().invalidate(txID);
+        }
+        logger.info("Broadcast transaction {} has failed, Shielded pending pool is full.", txID);
+        return builder.setResult(false).setCode(response_code.SERVER_BUSY)
+            .setMessage(ByteString.copyFromUtf8(
+                "Shielded transaction pending pool is full."))
+            .build();
+      }
       TransactionMessage message = new TransactionMessage(trx.getInstance().toByteArray());
       int num = tronNetService.fastBroadcastTransaction(message);
       if (num == 0 && minEffectiveConnection != 0) {
