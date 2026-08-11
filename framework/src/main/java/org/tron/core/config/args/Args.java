@@ -300,15 +300,16 @@ public class Args extends CommonParameter {
    */
   private static void applyCryptoConfig(MiscConfig mc) {
     PARAMETER.cryptoEngine = mc.getCryptoEngine();
-    PARAMETER.useNativeSecp256k1 = mc.isUseNativeSecp256k1();
-    SignUtils.setUseNativeSecp256k1(
-        PARAMETER.isECKeyCryptoEngine() && PARAMETER.useNativeSecp256k1);
-    if (PARAMETER.isECKeyCryptoEngine() && PARAMETER.useNativeSecp256k1
-        && !SignUtils.isUseNativeSecp256k1()) {
-      throw new TronError(
-          "crypto.useNativeSecp256k1 is enabled but the native secp256k1 library"
-              + " failed to load", TronError.ErrCode.NATIVE_CRYPTO_INIT);
-    }
+    boolean nativeRequested = mc.isUseNativeSecp256k1();
+    SignUtils.setUseNativeSecp256k1(PARAMETER.isECKeyCryptoEngine() && nativeRequested);
+    PARAMETER.useNativeSecp256k1 = SignUtils.isUseNativeSecp256k1();
+
+    String implementation = PARAMETER.isECKeyCryptoEngine()
+        ? (PARAMETER.useNativeSecp256k1 ? "NativeSecp256k1" : "ECKey")
+        : "SM2";
+    logger.info("Crypto signature verification: engine={}, nativeRequested={}, "
+            + "nativeActive={}, implementation={}",
+        PARAMETER.cryptoEngine, nativeRequested, PARAMETER.useNativeSecp256k1, implementation);
   }
 
   /**

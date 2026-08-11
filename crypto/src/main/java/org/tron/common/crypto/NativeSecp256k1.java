@@ -31,8 +31,7 @@ public final class NativeSecp256k1 extends ECKey {
   private static final int BASE64_SIGNATURE_LENGTH = 65;
   private static final int UNCOMPRESSED_PUBLIC_KEY_LENGTH = 65;
   private static final boolean AVAILABLE = loadNativeLibrary();
-  private final LibSecp256k1.secp256k1_pubkey publicKey =
-      new LibSecp256k1.secp256k1_pubkey();
+  private final LibSecp256k1.secp256k1_pubkey publicKey = new LibSecp256k1.secp256k1_pubkey();
 
   /**
    * Generates a new secp256k1 key pair using the default source of randomness.
@@ -69,8 +68,7 @@ public final class NativeSecp256k1 extends ECKey {
   @Override
   public byte[] getPubKey() {
     ByteBuffer serialized = ByteBuffer.allocate(UNCOMPRESSED_PUBLIC_KEY_LENGTH);
-    LongByReference serializedLength =
-        new LongByReference(UNCOMPRESSED_PUBLIC_KEY_LENGTH);
+    LongByReference serializedLength = new LongByReference(UNCOMPRESSED_PUBLIC_KEY_LENGTH);
     if (LibSecp256k1.secp256k1_ec_pubkey_serialize(
         LibSecp256k1.CONTEXT,
         serialized,
@@ -129,18 +127,15 @@ public final class NativeSecp256k1 extends ECKey {
    * Creates a recoverable ECDSA signature for a 32-byte message hash.
    *
    * @param messageHash 32-byte message hash
-   * @param privateKey 32-byte secp256k1 private key
+   * @param privateKey unsigned secp256k1 private key using 1 to 32 bytes, or a 33-byte Java
+   *     {@link BigInteger} encoding with a leading zero sign byte
    * @return canonical recoverable signature compatible with {@link ECKey}
    */
   public static ECDSASignature sign(byte[] messageHash, byte[] privateKey)
       throws SignatureException {
     ensureAvailable();
     validateMessageHash(messageHash);
-    if (privateKey == null || privateKey.length != HASH_LENGTH) {
-      throw new IllegalArgumentException("privateKey argument must be 32 bytes");
-    }
-
-    byte[] nativePrivateKey = Arrays.copyOf(privateKey, privateKey.length);
+    byte[] nativePrivateKey = validateAndNormalizePrivateKey(privateKey);
     try {
       LibSecp256k1.secp256k1_ecdsa_recoverable_signature nativeSignature =
           new LibSecp256k1.secp256k1_ecdsa_recoverable_signature();
@@ -236,14 +231,13 @@ public final class NativeSecp256k1 extends ECKey {
       throw new SignatureException("Signature components must be unsigned 32-byte integers");
     }
 
-    int header = signature.v;
-    if (header < 27 || header > 34) {
-      throw new SignatureException("Header byte out of range: " + header);
+    int recoveryId = getRecoveryId(signature.v);
+
+    if (!hasNativeCompatibleScalars(signature)) {
+      // ECKey historically accepts some non-canonical scalar combinations. Route those directly
+      // to the legacy implementation instead of paying for a native operation that cannot match.
+      return ECKey.signatureToKeyBytes(messageHash, signature);
     }
-    if (header >= 31) {
-      header -= 4;
-    }
-    int recoveryId = header - 27;
 
     byte[] compactSignature = ByteUtil.merge(
         ByteUtil.bigIntegerToBytes(signature.r, HASH_LENGTH),
@@ -262,7 +256,9 @@ public final class NativeSecp256k1 extends ECKey {
     LibSecp256k1.secp256k1_pubkey publicKey = new LibSecp256k1.secp256k1_pubkey();
     if (LibSecp256k1.secp256k1_ecdsa_recover(
         LibSecp256k1.CONTEXT, publicKey, nativeSignature, messageHash) == 0) {
-      throw new SignatureException("Could not recover public key from signature");
+      // ECKey may also encode the point at infinity for legacy inputs. Preserve that consensus
+      // behaviour only when native recovery cannot produce a public key.
+      return ECKey.signatureToKeyBytes(messageHash, signature);
     }
 
     ByteBuffer serialized = ByteBuffer.allocate(UNCOMPRESSED_PUBLIC_KEY_LENGTH);
@@ -278,6 +274,25 @@ public final class NativeSecp256k1 extends ECKey {
       throw new SignatureException("Could not serialize recovered public key");
     }
     return serialized.array();
+  }
+
+  private static int getRecoveryId(byte value) throws SignatureException {
+    int header = value;
+    if (header < 27 || header > 34) {
+      throw new SignatureException("Header byte out of range: " + header);
+    }
+    if (header >= 31) {
+      header -= 4;
+    }
+    return header - 27;
+  }
+
+  private static boolean hasNativeCompatibleScalars(ECDSASignature signature) {
+    BigInteger curveOrder = ECKey.CURVE.getN();
+    return signature.r.signum() > 0
+        && signature.s.signum() > 0
+        && signature.r.compareTo(curveOrder) < 0
+        && signature.s.compareTo(curveOrder) < 0;
   }
 
   private static void ensureAvailable() throws SignatureException {
@@ -297,6 +312,29 @@ public final class NativeSecp256k1 extends ECKey {
       throw new IllegalArgumentException("secureRandom argument must not be null");
     }
     return secureRandom;
+  }
+
+  /**
+   * Validates a variable-length private-key encoding and left-pads it to 32 bytes.
+   *
+   * <p>The native libsecp256k1 signing API accepts a pointer to a 32-byte, big-endian secret key
+   * without a separate length argument. A shorter Java array must therefore never be passed to
+   * the native function directly. The returned temporary array is owned by the caller and must be
+   * cleared after use.
+   */
+  private static byte[] validateAndNormalizePrivateKey(byte[] privateKey) {
+    byte[] validatedPrivateKey = validatePrivateKey(privateKey);
+    try {
+      byte[] normalizedPrivateKey = new byte[MAX_PRIVATE_KEY_LENGTH];
+      System.arraycopy(validatedPrivateKey, 0, normalizedPrivateKey,
+          normalizedPrivateKey.length - validatedPrivateKey.length,
+          validatedPrivateKey.length);
+      return normalizedPrivateKey;
+    } finally {
+      if (validatedPrivateKey != privateKey) {
+        Arrays.fill(validatedPrivateKey, (byte) 0);
+      }
+    }
   }
 
   /**

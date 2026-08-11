@@ -18,8 +18,17 @@ public class SignUtils {
   private static volatile boolean useNativeSecp256k1;
 
   public static void setUseNativeSecp256k1(boolean enabled) {
-    if (enabled && !NativeSecp256k1.isAvailable()) {
-      logger.warn("Native secp256k1 was requested but is unavailable; using ECKey");
+    if (!enabled) {
+      useNativeSecp256k1 = false;
+      return;
+    }
+    setUseNativeSecp256k1(true, NativeSecp256k1.isAvailable());
+  }
+
+  static void setUseNativeSecp256k1(boolean enabled, boolean nativeAvailable) {
+    if (enabled && !nativeAvailable) {
+      logger.warn("crypto.useNativeSecp256k1=true, but native secp256k1 is unavailable; "
+          + "falling back to ECKey");
       useNativeSecp256k1 = false;
       return;
     }

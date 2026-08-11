@@ -50,8 +50,7 @@ public class TronError extends Error {
     SOLID_NODE_INIT(0),
     PARAMETER_INIT(1),
     ACTUATOR_REGISTER(1),
-    JDK_VERSION(1),
-    NATIVE_CRYPTO_INIT(1);
+    JDK_VERSION(1);
 
     private final int code;
 
