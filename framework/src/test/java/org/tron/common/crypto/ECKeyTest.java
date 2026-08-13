@@ -75,7 +75,7 @@ public class ECKeyTest {
   }
 
   @Test
-  public void shouldValidatePrivateKeyRange() {
+  public void testValidatePrivateKey() {
     assertTrue(ECKey.isValidPrivateKey(privateKey));
     assertTrue(ECKey.isValidPrivateKey(Hex.decode(privString)));
     assertFalse(ECKey.isValidPrivateKey((BigInteger) null));
@@ -117,7 +117,7 @@ public class ECKeyTest {
   }
 
   @Test
-  public void shouldRejectInvalidPublicKeys() {
+  public void testRejectInvalidPublicKey() {
     assertTrue(ECKey.isValidPublicKey(pubKey));
     assertTrue(ECKey.isValidPublicKey(compressedPubKey));
     assertFalse(ECKey.isValidPublicKey(null));
@@ -147,7 +147,7 @@ public class ECKeyTest {
   }
 
   @Test
-  public void shouldRejectMismatchedPrivateAndPublicKeys() {
+  public void testRejectMismatchedKeyPair() {
     BigInteger otherPrivateKey = privateKey.add(BigInteger.ONE);
     ECKey otherKey = ECKey.fromPrivate(otherPrivateKey);
 
@@ -156,7 +156,7 @@ public class ECKeyTest {
   }
 
   @Test
-  public void shouldAcceptMatchingPrivateAndPublicKeys() {
+  public void testAcceptMatchingKeyPair() {
     ECKey key = new ECKey(privateKey, ECKey.CURVE.getG().multiply(privateKey));
 
     assertArrayEquals(pubKey, key.getPubKey());
@@ -302,7 +302,7 @@ public class ECKeyTest {
   }
 
   @Test
-  public void shouldReturnDefensiveCopiesOfCachedValues() {
+  public void testDefensiveCopy() {
     ECKey key = ECKey.fromPrivate(privateKey);
     byte[] expectedAddress = Arrays.copyOf(key.getAddress(), key.getAddress().length);
     byte[] returnedAddress = key.getAddress();
