@@ -250,7 +250,8 @@ public final class NativeSecp256k1 extends ECKey {
         new LibSecp256k1.secp256k1_ecdsa_recoverable_signature();
     if (LibSecp256k1.secp256k1_ecdsa_recoverable_signature_parse_compact(
         LibSecp256k1.CONTEXT, nativeSignature, compactSignature, (byte) recoveryId) == 0) {
-      throw new SignatureException("Could not parse signature");
+      // Native acceleration must preserve the legacy ECKey recovery result.
+      return ECKey.signatureToKeyBytes(messageHash, signature);
     }
 
     LibSecp256k1.secp256k1_pubkey publicKey = new LibSecp256k1.secp256k1_pubkey();

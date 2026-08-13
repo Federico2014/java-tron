@@ -5,6 +5,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mockStatic;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -19,6 +20,7 @@ import org.bouncycastle.util.encoders.Base64;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Test;
+import org.mockito.MockedStatic;
 import org.slf4j.LoggerFactory;
 import org.tron.common.crypto.ECKey.ECDSASignature;
 
@@ -34,12 +36,12 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldKeepNativeVerificationDisabledByDefault() {
+  public void testNativeDisabledByDefault() {
     assertFalse(SignUtils.isUseNativeSecp256k1());
   }
 
   @Test
-  public void shouldFallbackAndWarnWhenNativeLibraryIsUnavailable() {
+  public void testUnavailableNativeFallback() {
     Logger logger = (Logger) LoggerFactory.getLogger("crypto");
     ListAppender<ILoggingEvent> appender = new ListAppender<>();
     appender.start();
@@ -59,7 +61,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldRecoverSamePublicKeyAsJava() throws SignatureException {
+  public void testPublicKeyRecovery() throws SignatureException {
     requireNativeLibrary();
     ECDSASignature signature = KEY.sign(MESSAGE_HASH);
 
@@ -69,7 +71,21 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldSignWithShortPrivateKeyEncoding() throws SignatureException {
+  public void testCompressedHeaderRecovery()
+      throws SignatureException {
+    requireNativeLibrary();
+    ECDSASignature signature = KEY.sign(MESSAGE_HASH);
+    ECDSASignature compressedHeaderSignature = ECDSASignature.fromComponents(
+        signature.r.toByteArray(), signature.s.toByteArray(), (byte) (signature.v + 4));
+
+    byte[] javaPublicKey = ECKey.signatureToKeyBytes(MESSAGE_HASH, compressedHeaderSignature);
+    assertEquals(65, javaPublicKey.length);
+    assertArrayEquals(javaPublicKey,
+        NativeSecp256k1.signatureToKeyBytes(MESSAGE_HASH, compressedHeaderSignature));
+  }
+
+  @Test
+  public void testShortPrivateKeySigning() throws SignatureException {
     requireNativeLibrary();
     byte[] privateKey = {(byte) 0x0a};
     byte[] originalPrivateKey = Arrays.copyOf(privateKey, privateKey.length);
@@ -81,7 +97,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldSignWithBigIntegerPrivateKeyEncoding() throws SignatureException {
+  public void testBigIntegerPrivateKeySigning() throws SignatureException {
     requireNativeLibrary();
     BigInteger privateKeyValue = ECKey.CURVE.getN().subtract(BigInteger.ONE);
     byte[] privateKey = privateKeyValue.toByteArray();
@@ -93,7 +109,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldRejectInvalidPrivateKeyWhenSigning() throws SignatureException {
+  public void testInvalidPrivateKeySigning() throws SignatureException {
     requireNativeLibrary();
 
     try {
@@ -105,7 +121,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldConstructFromPrivateKeyAndUseNativeOperations() throws SignatureException {
+  public void testNativeKeyOperations() throws SignatureException {
     requireNativeLibrary();
     NativeSecp256k1 nativeKey = new NativeSecp256k1(KEY.getPrivateKey());
 
@@ -117,14 +133,14 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldGenerateCompatibleKeyPairsWithBothConstructors() throws SignatureException {
+  public void testKeyPairConstructors() throws SignatureException {
     requireNativeLibrary();
     assertCompatibleKeyPair(new NativeSecp256k1());
     assertCompatibleKeyPair(new NativeSecp256k1(new SecureRandom()));
   }
 
   @Test
-  public void shouldRejectInvalidConstructorArguments() throws SignatureException {
+  public void testInvalidConstructorArguments() throws SignatureException {
     requireNativeLibrary();
     assertInvalidPrivateKey(null);
     assertInvalidPrivateKey(new byte[0]);
@@ -141,7 +157,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldCrossVerifyJavaAndNativeSignatures() throws SignatureException {
+  public void testJavaNativeCrossCompatibility() throws SignatureException {
     requireNativeLibrary();
     for (int i = 1; i <= 32; i++) {
       ECKey key = ECKey.fromPrivate(BigInteger.valueOf(i));
@@ -160,7 +176,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldRecoverBase64SignatureWithTrailingBytes() throws SignatureException {
+  public void testBase64TrailingBytesRecovery() throws SignatureException {
     requireNativeLibrary();
     ECDSASignature signature = KEY.sign(MESSAGE_HASH);
     byte[] encoded = Base64.decode(signature.toBase64());
@@ -173,7 +189,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldPreserveHighSSignatureRecovery() throws SignatureException {
+  public void testHighSRecovery() throws SignatureException {
     requireNativeLibrary();
     ECDSASignature signature = KEY.sign(MESSAGE_HASH);
     BigInteger highS = ECKey.CURVE.getN().subtract(signature.s);
@@ -187,7 +203,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldMatchJavaRecoveryAcrossScalarBoundaries() {
+  public void testScalarBoundaryRecovery() {
     requireNativeLibrary();
     BigInteger curveOrder = ECKey.CURVE.getN();
     BigInteger[] boundaryValues = {
@@ -208,7 +224,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldPreserveLegacyInfinityRecovery() throws SignatureException {
+  public void testInfinityRecovery() throws SignatureException {
     requireNativeLibrary();
     byte[] unitHash = new byte[32];
     unitHash[unitHash.length - 1] = 1;
@@ -224,7 +240,30 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldRouteVerificationThroughConfiguredImplementation()
+  public void testConfiguredNativeRouting()
+      throws SignatureException {
+    String signature = KEY.signHash(MESSAGE_HASH);
+    byte[] nativeAddress = {1, 2, 3};
+
+    try (MockedStatic<NativeSecp256k1> nativeSecp256k1 =
+        mockStatic(NativeSecp256k1.class)) {
+      nativeSecp256k1.when(NativeSecp256k1::isAvailable).thenReturn(true);
+      nativeSecp256k1.when(
+          () -> NativeSecp256k1.signatureToAddress(MESSAGE_HASH, signature))
+          .thenReturn(nativeAddress);
+
+      SignUtils.setUseNativeSecp256k1(true);
+
+      assertTrue(SignUtils.isUseNativeSecp256k1());
+      assertArrayEquals(nativeAddress,
+          SignUtils.signatureToAddress(MESSAGE_HASH, signature, true));
+      nativeSecp256k1.verify(
+          () -> NativeSecp256k1.signatureToAddress(MESSAGE_HASH, signature));
+    }
+  }
+
+  @Test
+  public void testConfiguredNativeAddressCompatibility()
       throws SignatureException {
     requireNativeLibrary();
     String signature = KEY.signHash(MESSAGE_HASH);
@@ -238,7 +277,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldRejectInvalidRecoveryHeaders() {
+  public void testInvalidRecoveryHeaders() {
     requireNativeLibrary();
     ECDSASignature valid = KEY.sign(MESSAGE_HASH);
 
@@ -255,7 +294,7 @@ public class NativeSecp256k1Test {
   }
 
   @Test
-  public void shouldRejectOversizedSignatureComponentsWithoutTruncating() {
+  public void testOversizedSignatureComponents() {
     requireNativeLibrary();
     ECDSASignature valid = KEY.sign(MESSAGE_HASH);
     BigInteger oversizedR = BigInteger.ONE.shiftLeft(256).add(valid.r);
@@ -289,6 +328,7 @@ public class NativeSecp256k1Test {
         fail(message + ": Java rejected but native recovered");
         return;
       } catch (Exception nativeFailure) {
+        assertEquals(message, javaFailure.getClass(), nativeFailure.getClass());
         return;
       }
     }
