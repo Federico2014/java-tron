@@ -218,6 +218,8 @@ public class ParameterTest {
     assertNull(parameter.getEventFilter());
     parameter.setCryptoEngine(ECKey_ENGINE);
     assertEquals(ECKey_ENGINE, parameter.getCryptoEngine());
+    parameter.setUseNativeSecp256k1(true);
+    assertTrue(parameter.isUseNativeSecp256k1());
     parameter.setFullNodeHttpEnable(false);
     assertFalse(parameter.isFullNodeHttpEnable());
     parameter.setSolidityNodeHttpEnable(false);

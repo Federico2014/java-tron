@@ -43,6 +43,7 @@ import org.tron.common.args.Account;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.args.Witness;
 import org.tron.common.cron.CronExpression;
+import org.tron.common.crypto.SignUtils;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.logsfilter.FilterQuery;
 import org.tron.common.logsfilter.TriggerConfig;
@@ -295,10 +296,26 @@ public class Args extends CommonParameter {
   }
 
   /**
-   * Bridge MiscConfig bean values to CommonParameter fields.
+   * Bridge crypto config values and initialize the runtime signature verification implementation.
+   */
+  private static void applyCryptoConfig(MiscConfig mc) {
+    PARAMETER.cryptoEngine = mc.getCryptoEngine();
+    boolean nativeRequested = mc.isUseNativeSecp256k1();
+    SignUtils.setUseNativeSecp256k1(PARAMETER.isECKeyCryptoEngine() && nativeRequested);
+    PARAMETER.useNativeSecp256k1 = SignUtils.isUseNativeSecp256k1();
+
+    String implementation = PARAMETER.isECKeyCryptoEngine()
+        ? (PARAMETER.useNativeSecp256k1 ? "NativeSecp256k1" : "ECKey")
+        : "SM2";
+    logger.info("Crypto signature verification: engine={}, nativeRequested={}, "
+            + "nativeActive={}, implementation={}",
+        PARAMETER.cryptoEngine, nativeRequested, PARAMETER.useNativeSecp256k1, implementation);
+  }
+
+  /**
+   * Bridge non-crypto MiscConfig bean values to CommonParameter fields.
    */
   private static void applyMiscConfig(MiscConfig mc) {
-    PARAMETER.cryptoEngine = mc.getCryptoEngine();
     PARAMETER.needToUpdateAsset = mc.isNeedToUpdateAsset();
     PARAMETER.historyBalanceLookup = mc.isHistoryBalanceLookup();
     PARAMETER.trxReferenceBlock = mc.getTrxReferenceBlock();
@@ -730,6 +747,7 @@ public class Args extends CommonParameter {
 
     // Misc config: storage, trx, energy — small domains, read via beans
     miscConfig = MiscConfig.fromConfig(config);
+    applyCryptoConfig(miscConfig);
     applyMiscConfig(miscConfig);
 
     // vm, committee already handled above
@@ -934,6 +952,7 @@ public class Args extends CommonParameter {
   @VisibleForTesting
   public static void clearParam() {
     CommonParameter.reset();
+    SignUtils.setUseNativeSecp256k1(false);
     configFilePath = "";
     localWitnesses = null;
     nodeConfig = null;
@@ -1315,4 +1334,3 @@ public class Args extends CommonParameter {
     return optionGroupMap;
   }
 }
-
