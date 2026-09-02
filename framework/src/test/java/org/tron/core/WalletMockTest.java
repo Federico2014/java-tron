@@ -65,6 +65,7 @@ import org.tron.core.exception.VMIllegalException;
 import org.tron.core.exception.ValidateSignatureException;
 import org.tron.core.exception.ZksnarkException;
 import org.tron.core.net.TronNetDelegate;
+import org.tron.core.net.TronNetService;
 import org.tron.core.net.message.adv.TransactionMessage;
 import org.tron.core.net.peer.PeerConnection;
 import org.tron.core.store.AbiStore;
@@ -310,6 +311,55 @@ public class WalletMockTest {
   }
 
   @Test
+  public void testBroadcastTransactionShieldedPendingPoolFull() throws Exception {
+    long now = System.currentTimeMillis();
+    BalanceContract.TransferContract transferContract =
+        BalanceContract.TransferContract.newBuilder()
+            .setAmount(10)
+            .setOwnerAddress(ByteString.copyFromUtf8("aaa"))
+            .setToAddress(ByteString.copyFromUtf8("bbb"))
+            .build();
+    Protocol.Transaction transaction = Protocol.Transaction.newBuilder()
+        .setRawData(Protocol.Transaction.raw.newBuilder()
+            .setExpiration(now + 60_000)
+            .addContract(Protocol.Transaction.Contract.newBuilder()
+                .setParameter(Any.pack(transferContract))
+                .setType(Protocol.Transaction.Contract.ContractType.TransferContract)))
+        .build();
+    Sha256Hash txId = new TransactionCapsule(transaction).getTransactionId();
+
+    Wallet wallet = new Wallet();
+    TronNetDelegate tronNetDelegate = mock(TronNetDelegate.class);
+    TronNetService tronNetService = mock(TronNetService.class);
+    Manager manager = mock(Manager.class);
+    ChainBaseManager chainBaseManager = mock(ChainBaseManager.class);
+    DynamicPropertiesStore dynamicPropertiesStore = mock(DynamicPropertiesStore.class);
+    Cache<Sha256Hash, Boolean> transactionIdCache = CacheBuilder.newBuilder().build();
+
+    when(tronNetDelegate.isBlockUnsolidified()).thenReturn(false);
+    when(manager.isTooManyPending()).thenReturn(false);
+    when(manager.getTransactionIdCache()).thenReturn(transactionIdCache);
+    when(manager.pushTransaction(any())).thenReturn(false);
+    when(chainBaseManager.getDynamicPropertiesStore()).thenReturn(dynamicPropertiesStore);
+    when(chainBaseManager.getNextBlockSlotTime()).thenReturn(now);
+    when(dynamicPropertiesStore.supportVM()).thenReturn(false);
+
+    setField(wallet, "tronNetDelegate", tronNetDelegate);
+    setField(wallet, "tronNetService", tronNetService);
+    setField(wallet, "dbManager", manager);
+    setField(wallet, "chainBaseManager", chainBaseManager);
+    setField(wallet, "trxCacheEnable", true);
+
+    GrpcAPI.Return result = wallet.broadcastTransaction(transaction);
+
+    assertEquals(GrpcAPI.Return.response_code.SERVER_BUSY, result.getCode());
+    assertEquals("Shielded transaction pending pool is full.",
+        result.getMessage().toStringUtf8());
+    assertNull(transactionIdCache.getIfPresent(txId));
+    Mockito.verify(tronNetService, Mockito.never()).fastBroadcastTransaction(any());
+  }
+
+  @Test
   public void testBroadcastTransactionAlreadyExists() throws Exception {
     Wallet wallet = new Wallet();
     Protocol.Transaction transaction = Protocol.Transaction.newBuilder().build();
@@ -397,6 +447,7 @@ public class WalletMockTest {
         = mock(DynamicPropertiesStore.class);
     when(tronNetDelegateMock.isBlockUnsolidified()).thenReturn(false);
     when(managerMock.isTooManyPending()).thenReturn(false);
+    when(managerMock.pushTransaction(any())).thenReturn(true);
     when(chainBaseManagerMock.getDynamicPropertiesStore())
         .thenReturn(dynamicPropertiesStoreMock);
     when(dynamicPropertiesStoreMock.supportVM()).thenReturn(false);
@@ -443,6 +494,12 @@ public class WalletMockTest {
         .build();
   }
 
+  private void setField(Object target, String fieldName, Object value) throws Exception {
+    Field field = target.getClass().getDeclaredField(fieldName);
+    field.setAccessible(true);
+    field.set(target, value);
+  }
+
   private void mockEnv(Wallet wallet, TronException tronException) throws Exception {
     TronNetDelegate tronNetDelegateMock = mock(TronNetDelegate.class);
     Manager managerMock = mock(Manager.class);
@@ -459,21 +516,10 @@ public class WalletMockTest {
 
     doThrow(tronException).when(managerMock).pushTransaction(any());
 
-    Field field = wallet.getClass().getDeclaredField("tronNetDelegate");
-    field.setAccessible(true);
-    field.set(wallet, tronNetDelegateMock);
-
-    Field field2 = wallet.getClass().getDeclaredField("dbManager");
-    field2.setAccessible(true);
-    field2.set(wallet, managerMock);
-
-    Field field4 = wallet.getClass().getDeclaredField("chainBaseManager");
-    field4.setAccessible(true);
-    field4.set(wallet, chainBaseManagerMock);
-
-    Field field3 = wallet.getClass().getDeclaredField("trxCacheEnable");
-    field3.setAccessible(true);
-    field3.set(wallet, false);
+    setField(wallet, "tronNetDelegate", tronNetDelegateMock);
+    setField(wallet, "dbManager", managerMock);
+    setField(wallet, "chainBaseManager", chainBaseManagerMock);
+    setField(wallet, "trxCacheEnable", false);
   }
 
   @Test
