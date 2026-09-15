@@ -154,7 +154,8 @@ public class ECKeyTest {
   @Test
   public void testToString() {
     ECKey key = ECKey.fromPrivate(BigInteger.TEN); // An example private key.
-    assertEquals("pub:04a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c7893aba42"
+    assertEquals(
+        "pub:04a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c7893aba42"
         + "5419bc27a3b6c7e693a24c696f794c2ed877a1593cbee53b037368d7", key.toString());
   }
 

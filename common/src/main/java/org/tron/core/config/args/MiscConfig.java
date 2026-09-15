@@ -24,6 +24,7 @@ public class MiscConfig {
   private long trxExpirationTimeInMilliseconds = Constant.TRANSACTION_DEFAULT_EXPIRATION_TIME;
   private long blockNumForEnergyLimit = 4727890L;
   private String cryptoEngine = Constant.ECKey_ENGINE;
+  private boolean useNativeSecp256k1 = false;
   private List<String> seedNodeIpList = new ArrayList<>();
 
   public static MiscConfig fromConfig(Config config) {
@@ -51,6 +52,8 @@ public class MiscConfig {
     // crypto
     mc.cryptoEngine = config.hasPath("crypto.engine")
         ? config.getString("crypto.engine") : Constant.ECKey_ENGINE;
+    mc.useNativeSecp256k1 = config.hasPath("crypto.useNativeSecp256k1")
+        && config.getBoolean("crypto.useNativeSecp256k1");
 
     // seed node
     mc.seedNodeIpList = config.hasPath("seed.node.ip.list")

@@ -30,6 +30,7 @@ public class MiscConfigTest {
         mc.getTrxExpirationTimeInMilliseconds());
     // reference.conf has crypto.engine = "eckey" (lowercase)
     assertEquals("eckey", mc.getCryptoEngine());
+    assertFalse(mc.isUseNativeSecp256k1());
     // reference.conf has seed.node.ip.list with actual IPs
     assertFalse(mc.getSeedNodeIpList().isEmpty());
   }
@@ -40,13 +41,14 @@ public class MiscConfigTest {
         "storage { needToUpdateAsset = false,"
             + " balance { history { lookup = true } } }\n"
             + "trx { reference { block = head } }\n"
-            + "crypto { engine = sm2 }\n"
+            + "crypto { engine = sm2, useNativeSecp256k1 = true }\n"
             + "seed.node { ip.list = [\"1.2.3.4:18888\"] }");
     MiscConfig mc = MiscConfig.fromConfig(config);
     assertFalse(mc.isNeedToUpdateAsset());
     assertTrue(mc.isHistoryBalanceLookup());
     assertEquals("head", mc.getTrxReferenceBlock());
     assertEquals("sm2", mc.getCryptoEngine());
+    assertTrue(mc.isUseNativeSecp256k1());
     assertEquals(1, mc.getSeedNodeIpList().size());
   }
 }

@@ -15,6 +15,10 @@
 
 package org.tron.core.config.args;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.google.common.collect.Lists;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
@@ -31,14 +35,16 @@ import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+import org.slf4j.LoggerFactory;
 import org.tron.common.TestConstants;
 import org.tron.common.args.GenesisBlock;
+import org.tron.common.crypto.NativeSecp256k1;
+import org.tron.common.crypto.SignUtils;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.DecodeUtil;
 import org.tron.common.utils.LocalWitnesses;
 import org.tron.common.utils.PublicMethod;
-import org.tron.core.exception.ContractValidateException;
 import org.tron.core.exception.TronError;
 
 @Slf4j
@@ -534,6 +540,57 @@ public class ArgsTest {
       Assert.fail("Expected RuntimeException for maxMessageSize > Integer.MAX_VALUE");
     } catch (RuntimeException e) {
       // ConfigBeanFactory/HOCON throws when binding a long out of int range
+    }
+  }
+
+  @Test
+  public void testUseNativeSecp256k1ConfiguresSignatureVerification() {
+    Map<String, String> configMap = new HashMap<>();
+    configMap.put("storage.db.directory", "database");
+    configMap.put("crypto.useNativeSecp256k1", "true");
+    Config config = ConfigFactory.parseMap(configMap)
+        .withFallback(ConfigFactory.defaultReference());
+    Logger logger = (Logger) LoggerFactory.getLogger("app");
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      Args.applyConfigParams(config);
+
+      boolean expectedActive = NativeSecp256k1.isAvailable();
+      Assert.assertEquals(expectedActive, Args.getInstance().isUseNativeSecp256k1());
+      Assert.assertEquals(expectedActive, SignUtils.isUseNativeSecp256k1());
+      Assert.assertTrue(appender.list.stream().anyMatch(event ->
+          event.getLevel() == Level.INFO
+              && event.getFormattedMessage().contains("Crypto signature verification:")
+              && event.getFormattedMessage().contains("engine=eckey")
+              && event.getFormattedMessage().contains("nativeRequested=true")
+              && event.getFormattedMessage().contains("nativeActive=" + expectedActive)
+              && event.getFormattedMessage().contains(
+                  "implementation=" + (expectedActive ? "NativeSecp256k1" : "ECKey"))));
+    } finally {
+      Args.clearParam();
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+    Assert.assertFalse(SignUtils.isUseNativeSecp256k1());
+  }
+
+  @Test
+  public void testUseNativeSecp256k1IsIgnoredForSm2() {
+    Map<String, String> configMap = new HashMap<>();
+    configMap.put("storage.db.directory", "database");
+    configMap.put("crypto.engine", "sm2");
+    configMap.put("crypto.useNativeSecp256k1", "true");
+    Config config = ConfigFactory.parseMap(configMap)
+        .withFallback(ConfigFactory.defaultReference());
+    try {
+      Args.applyConfigParams(config);
+
+      Assert.assertFalse(Args.getInstance().isUseNativeSecp256k1());
+      Assert.assertFalse(SignUtils.isUseNativeSecp256k1());
+    } finally {
+      Args.clearParam();
     }
   }
 

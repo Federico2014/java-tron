@@ -12,6 +12,8 @@ repositories {
 
 dependencies {
     api project(":common")
+    implementation 'net.java.dev.jna:jna:5.12.1'
+    implementation 'io.github.federico2014:secp256k1:1.3.12'
 }
 
 jacocoTestReport {
