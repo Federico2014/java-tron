@@ -298,7 +298,6 @@ public class Args extends CommonParameter {
    * Bridge MiscConfig bean values to CommonParameter fields.
    */
   private static void applyMiscConfig(MiscConfig mc) {
-    PARAMETER.cryptoEngine = mc.getCryptoEngine();
     PARAMETER.needToUpdateAsset = mc.isNeedToUpdateAsset();
     PARAMETER.historyBalanceLookup = mc.isHistoryBalanceLookup();
     PARAMETER.trxReferenceBlock = mc.getTrxReferenceBlock();
@@ -697,8 +696,6 @@ public class Args extends CommonParameter {
 
     Wallet.setAddressPreFixByte(ADD_PRE_FIX_BYTE_MAINNET);
     Wallet.setAddressPreFixString(Constant.ADD_PRE_FIX_STRING_MAINNET);
-
-    // crypto.engine handled by MiscConfig
 
     // VM config: bind from config.conf "vm" section
     vmConfig = VmConfig.fromConfig(config);
@@ -1315,4 +1312,3 @@ public class Args extends CommonParameter {
     return optionGroupMap;
   }
 }
-
