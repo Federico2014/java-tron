@@ -22,6 +22,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -119,6 +120,7 @@ import org.tron.core.exception.BadBlockException;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.BadNumberBlockException;
 import org.tron.core.exception.BalanceInsufficientException;
+import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractSizeNotEqualToOneException;
 import org.tron.core.exception.ContractValidateException;
@@ -184,8 +186,12 @@ public class Manager {
   private static final String SAVE_BLOCK = "Save block: {}";
   private static final int SLEEP_TIME_OUT = 50;
   private static final int TX_ID_CACHE_SIZE = 100_000;
+  private static final int MAX_DEFERRED_BLOCKS = 128;
+  private static final long DEFERRED_BLOCK_TIMEOUT = TimeUnit.MINUTES.toMillis(10);
   private static final int SLEEP_FOR_WAIT_LOCK = 10;
   private static final int NO_BLOCK_WAITING_LOCK = 0;
+  // Accessed only under the Manager monitor. These blocks have no authenticated parent state yet.
+  private final Map<BlockId, Long> deferredBlocks = new LinkedHashMap<>();
   private final int shieldedTransInPendingMaxCounts =
       Args.getInstance().getShieldedTransInPendingMaxCounts();
   @Getter
@@ -1052,7 +1058,7 @@ public class Manager {
     }
   }
 
-  private void switchFork(BlockCapsule newHead)
+  private List<BlockCapsule> switchFork(BlockCapsule newHead)
       throws ValidateSignatureException, ContractValidateException, ContractExeException,
       ValidateScheduleException, AccountResourceInsufficientException, TaposException,
       TooBigTransactionException, TooBigTransactionResultException, DupTransactionException,
@@ -1102,10 +1108,9 @@ public class Manager {
         Exception exception = null;
         // todo  process the exception carefully later
         try (ISession tmpSession = revokingStore.buildSession()) {
-          if (!item.getBlk().validateSignature(
-              getDynamicPropertiesStore(), getAccountStore())) {
-            throw new ValidateSignatureException(
-                "switch fork: block " + item.getBlk().getNum() + " signature invalid");
+          validateBlockSignature(item.getBlk());
+          if (!item.getBlk().generatedByMyself) {
+            consensus.receiveBlock(item.getBlk());
           }
           // The new branch is applied on a rewound, diverged state where account permissions
           // may have changed, so a cached signature-verification result is no longer
@@ -1172,8 +1177,45 @@ public class Manager {
       }
       // only reached when the whole new branch applied cleanly; a failed switch rethrows above
       reApplyBlockEvents(first);
+      return first.stream().map(KhaosBlock::getBlk).collect(Collectors.toList());
     }
+    return Collections.emptyList();
+  }
 
+  private void validateBlockSignature(BlockCapsule block) throws BlockSignatureException {
+    if (!block.getParentHash().equals(getDynamicPropertiesStore().getLatestBlockHeaderHash())) {
+      throw new IllegalStateException("Block witness validation requires its parent state");
+    }
+    if (getDynamicPropertiesStore().getAllowMultiSign() == 1
+        && getAccountStore().get(block.getWitnessAddress().toByteArray()) == null) {
+      throw new BlockSignatureException(block.getBlockId(), "witness account does not exist");
+    }
+    boolean valid;
+    try {
+      valid = block.validateSignature(getDynamicPropertiesStore(), getAccountStore());
+    } catch (ValidateSignatureException | IllegalArgumentException | IndexOutOfBoundsException e) {
+      throw new BlockSignatureException(block.getBlockId(), e.getMessage());
+    }
+    if (!valid) {
+      throw new BlockSignatureException(block.getBlockId(), "permission mismatch");
+    }
+  }
+
+  private void pruneDeferredBlocks() {
+    deferredBlocks.keySet().removeIf(id -> chainBaseManager.getBlockStore().has(id.getBytes())
+        || !khaosDb.containBlockInMiniStore(id));
+    long cutoff = System.currentTimeMillis() - DEFERRED_BLOCK_TIMEOUT;
+    if (!deferredBlocks.isEmpty()
+        && deferredBlocks.values().stream().allMatch(time -> time < cutoff)) {
+      clearDeferredBlocks();
+    }
+  }
+
+  private void clearDeferredBlocks() {
+    // Drop the whole unverified forest so no descendant retains a removed parent.
+    deferredBlocks.keySet().stream().sorted(Comparator.comparingLong(BlockId::getNum).reversed())
+        .forEach(khaosDb::removeBlk);
+    deferredBlocks.clear();
   }
 
   private boolean isSameSig(TransactionCapsule tx1, TransactionCapsule tx2) {
@@ -1236,7 +1278,7 @@ public class Manager {
   /**
    * save a block.
    */
-  public void pushBlock(final BlockCapsule block)
+  public BlockPushResult pushBlock(final BlockCapsule block)
       throws ValidateSignatureException, ContractValidateException, ContractExeException,
       UnLinkedBlockException, ValidateScheduleException, AccountResourceInsufficientException,
       TaposException, TooBigTransactionException, TooBigTransactionResultException,
@@ -1254,10 +1296,23 @@ public class Manager {
               StringUtil.encode58Check(block.getWitnessAddress().toByteArray()));
         }
         long headerNumber = getDynamicPropertiesStore().getLatestBlockHeaderNumber();
-        if (block.getNum() <= headerNumber && khaosDb.containBlockInMiniStore(block.getBlockId())) {
-          logger.info("Block {} is already exist.", block.getBlockId().getString());
-          return;
+        pruneDeferredBlocks();
+        if (chainBaseManager.getBlockStore().has(block.getBlockId().getBytes())) {
+          return BlockPushResult.alreadyKnown(chainBaseManager.getBlockStore()
+              .getUnchecked(block.getBlockId().getBytes()));
         }
+        boolean deferred = !block.getParentHash().equals(
+            getDynamicPropertiesStore().getLatestBlockHeaderHash());
+        // Reserve enough depth for a competing branch to overtake the reversible chain.
+        long deferredLimit = Long.max(MAX_DEFERRED_BLOCKS,
+            headerNumber - getDynamicPropertiesStore().getLatestSolidifiedBlockNum() + 1);
+        if (deferred && block.getNum() <= headerNumber
+            && !deferredBlocks.containsKey(block.getBlockId())
+            && deferredBlocks.size() >= deferredLimit) {
+          clearDeferredBlocks();
+          return BlockPushResult.of(BlockPushResult.Status.IGNORED);
+        }
+        List<BlockCapsule> appliedBlocks = Collections.emptyList();
         final Histogram.Timer timer = Metrics.histogramStartTimer(
                 MetricKeys.Histogram.BLOCK_PUSH_LATENCY);
         long start = System.currentTimeMillis();
@@ -1277,7 +1332,6 @@ public class Manager {
 
           if (!block.generatedByMyself) {
             block.validateMerkleRoot();
-            consensus.receiveBlock(block);
           }
 
           if (block.getTransactions().stream()
@@ -1290,7 +1344,13 @@ public class Manager {
 
           BlockCapsule newBlock;
           try {
+            if (!khaosDb.containBlockInMiniStore(block.getParentHash())) {
+              throw new UnLinkedBlockException();
+            }
             newBlock = this.khaosDb.push(block);
+            if (deferred) {
+              deferredBlocks.putIfAbsent(block.getBlockId(), System.currentTimeMillis());
+            }
           } catch (UnLinkedBlockException e) {
             logger.error(
                     "LatestBlockHeaderHash: {}, latestBlockHeaderNumber: {}"
@@ -1304,11 +1364,11 @@ public class Manager {
           // DB don't need lower block
           if (getDynamicPropertiesStore().getLatestBlockHeaderHash() == null) {
             if (newBlock.getNum() != 0) {
-              return;
+              return BlockPushResult.of(BlockPushResult.Status.IGNORED);
             }
           } else {
             if (newBlock.getNum() <= headerNumber) {
-              return;
+              return BlockPushResult.of(BlockPushResult.Status.DEFERRED);
             }
 
             // switch fork
@@ -1330,7 +1390,8 @@ public class Manager {
                   khaosDb.getHead(), khaosDb.getMiniStore().size(),
                   khaosDb.getMiniUnlinkedStore().size());
               synchronized (forkLock) {
-                switchFork(newBlock);
+                appliedBlocks = switchFork(newBlock);
+                pruneDeferredBlocks();
               }
               logger.info(SAVE_BLOCK, newBlock);
 
@@ -1346,10 +1407,14 @@ public class Manager {
                   khaosDb.getHead(), khaosDb.getMiniStore().size(),
                   khaosDb.getMiniUnlinkedStore().size());
 
-              return;
+              return BlockPushResult.applied(appliedBlocks);
             }
             long oldSolidNum = getDynamicPropertiesStore().getLatestSolidifiedBlockNum();
             try (ISession tmpSession = revokingStore.buildSession()) {
+              if (!newBlock.generatedByMyself) {
+                validateBlockSignature(newBlock);
+                consensus.receiveBlock(newBlock);
+              }
               applyBlock(newBlock, txs);
               tmpSession.commit();
             } catch (Throwable throwable) {
@@ -1360,6 +1425,7 @@ public class Manager {
             }
             long newSolidNum = getDynamicPropertiesStore().getLatestSolidifiedBlockNum();
             blockTrigger(newBlock, oldSolidNum, newSolidNum);
+            appliedBlocks = Collections.singletonList(newBlock);
           }
           logger.info(SAVE_BLOCK, newBlock);
         }
@@ -1383,6 +1449,7 @@ public class Manager {
                 block.getNum(), cost, block.getTransactions().size(), cost > 1000);
 
         Metrics.histogramObserve(timer);
+        return BlockPushResult.applied(appliedBlocks);
       }
     } finally {
       setBlockWaitLock(false);

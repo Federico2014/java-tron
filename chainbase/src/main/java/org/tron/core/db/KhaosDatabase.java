@@ -103,6 +103,16 @@ public class KhaosDatabase extends TronDatabase {
    */
   public BlockCapsule push(BlockCapsule blk)
       throws UnLinkedBlockException, BadNumberBlockException {
+    KhaosBlock existing = miniStore.getByHash(blk.getBlockId());
+    if (existing != null) {
+      // Manager excludes already applied blocks. A deferred id is not proof that its
+      // signature is valid; allow a re-fetched variant without breaking child references.
+      existing.blk = blk;
+      if (head == null || existing.num > head.num) {
+        head = existing;
+      }
+      return head.blk;
+    }
     KhaosBlock block = new KhaosBlock(blk);
     if (head != null && block.getParentHash() != Sha256Hash.ZERO_HASH) {
       KhaosBlock kblock = miniStore.getByHash(block.getParentHash());

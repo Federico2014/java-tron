@@ -13,6 +13,8 @@ import org.tron.core.Constant;
 import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.BlockCapsule.BlockId;
 import org.tron.core.config.args.Args;
+import org.tron.core.db.BlockPushResult;
+import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.net.TronNetDelegate;
@@ -149,18 +151,23 @@ public class BlockMsgHandler implements TronMsgHandler {
       return;
     }
 
-    long headNum = tronNetDelegate.getHeadBlockId().getNum();
-    if (block.getNum() < headNum) {
-      logger.warn("Receive a low block {}, head {}", blockId.getString(), headNum);
-      return;
-    }
-
-    broadcast(new BlockMessage(block));
-
     try {
-      tronNetDelegate.processBlock(block, false);
+      BlockPushResult result = tronNetDelegate.processBlock(block, false);
+      if (result.getStatus() == BlockPushResult.Status.IGNORED) {
+        syncService.startSync(peer);
+        return;
+      }
+      if (result.getStatus() != BlockPushResult.Status.APPLIED
+          && result.getStatus() != BlockPushResult.Status.ALREADY_KNOWN) {
+        return;
+      }
+      for (BlockCapsule applied : result.getValidatedBlocks()) {
+        BlockMessage message = new BlockMessage(applied);
+        message.sanitize(); // Also normalize previously stored historical blocks before forwarding.
+        broadcast(message);
+        witnessProductBlockService.validWitnessProductTwoBlock(applied);
+      }
       peer.setBlockRcvTime(System.currentTimeMillis());
-      witnessProductBlockService.validWitnessProductTwoBlock(block);
 
       Item item = new Item(blockId, InventoryType.BLOCK);
       tronNetDelegate.getActivePeer().forEach(p -> {
@@ -168,6 +175,20 @@ public class BlockMsgHandler implements TronMsgHandler {
           p.setBlockBothHave(blockId);
         }
       });
+    } catch (P2pException e) {
+      if (e.getType() == TypeEnum.UNLINK_BLOCK
+          || (e.getCause() instanceof BlockSignatureException
+          && !((BlockSignatureException) e.getCause()).getBlockId().equals(blockId))) {
+        // A missing parent or an invalid ancestor is not evidence against this block's sender.
+        syncService.startSync(peer);
+        return;
+      }
+      if (e.getType() == TypeEnum.BLOCK_SIGN_INVALID
+          || e.getType() == TypeEnum.BLOCK_MERKLE_INVALID) {
+        throw e;
+      }
+      logger.warn("Process adv block {} from peer {} failed. reason: {}",
+          blockId, peer.getInetAddress(), e.getMessage());
     } catch (Exception e) {
       logger.warn("Process adv block {} from peer {} failed. reason: {}",
               blockId, peer.getInetAddress(), e.getMessage());
