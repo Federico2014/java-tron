@@ -161,11 +161,13 @@ public class BlockMsgHandler implements TronMsgHandler {
           && result.getStatus() != BlockPushResult.Status.ALREADY_KNOWN) {
         return;
       }
-      for (BlockCapsule applied : result.getValidatedBlocks()) {
-        BlockMessage message = new BlockMessage(applied);
-        message.sanitize(); // Also normalize previously stored historical blocks before forwarding.
-        broadcast(message);
-        witnessProductBlockService.validWitnessProductTwoBlock(applied);
+      if (result.getStatus() == BlockPushResult.Status.APPLIED) {
+        for (BlockCapsule applied : result.getValidatedBlocks()) {
+          BlockMessage message = new BlockMessage(applied);
+          message.sanitize(); // Normalize stored branch blocks before forwarding.
+          broadcast(message);
+          witnessProductBlockService.validWitnessProductTwoBlock(applied);
+        }
       }
       peer.setBlockRcvTime(System.currentTimeMillis());
 

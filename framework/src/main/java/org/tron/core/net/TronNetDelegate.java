@@ -12,7 +12,6 @@ import javax.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.util.encoders.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.backup.socket.BackupServer;
@@ -256,16 +255,6 @@ public class TronNetDelegate {
     BlockId blockId = block.getBlockId();
     synchronized (blockLock) {
       try {
-        if (block.getNum() <= getHeadBlockId().getNum()) {
-          logger.warn("Receive a fork block {} witness {}, head {}",
-              block.getBlockId().getString(),
-              Hex.toHexString(block.getWitnessAddress().toByteArray()),
-              getHeadBlockId().getString());
-        }
-        if (!isSync) {
-          //record metrics
-          metricsService.applyBlock(block);
-        }
         dbManager.getBlockedTimer().set(Metrics.histogramStartTimer(
             MetricKeys.Histogram.LOCK_ACQUIRE_LATENCY, MetricLabels.BLOCK));
         Histogram.Timer timer = Metrics.histogramStartTimer(
@@ -276,7 +265,14 @@ public class TronNetDelegate {
         } finally {
           Metrics.histogramObserve(timer);
         }
-        logger.info("Process block {}: {}", blockId.getString(), result.getStatus());
+        if (result.getStatus() == BlockPushResult.Status.ALREADY_KNOWN) {
+          logger.debug("Already applied block {}", blockId.getString());
+        } else {
+          logger.info("Process block {}: {}", blockId.getString(), result.getStatus());
+        }
+        if (!isSync && result.getStatus() == BlockPushResult.Status.APPLIED) {
+          result.getValidatedBlocks().forEach(metricsService::applyBlock);
+        }
         if (result.getStatus() == BlockPushResult.Status.APPLIED && !backupServerStartFlag
             && System.currentTimeMillis() - block.getTimeStamp() < BLOCK_PRODUCED_INTERVAL) {
           backupServerStartFlag = true;

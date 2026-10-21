@@ -187,11 +187,13 @@ public class Manager {
   private static final int SLEEP_TIME_OUT = 50;
   private static final int TX_ID_CACHE_SIZE = 100_000;
   private static final int MAX_DEFERRED_BLOCKS = 128;
+  private static final int MAX_DEFERRED_SIGNATURES = 4;
   private static final long DEFERRED_BLOCK_TIMEOUT = TimeUnit.MINUTES.toMillis(10);
   private static final int SLEEP_FOR_WAIT_LOCK = 10;
   private static final int NO_BLOCK_WAITING_LOCK = 0;
   // Accessed only under the Manager monitor. These blocks have no authenticated parent state yet.
   private final Map<BlockId, Long> deferredBlocks = new LinkedHashMap<>();
+  private final Map<BlockId, List<ByteString>> deferredBlockSignatures = new HashMap<>();
   private final int shieldedTransInPendingMaxCounts =
       Args.getInstance().getShieldedTransInPendingMaxCounts();
   @Getter
@@ -1182,7 +1184,36 @@ public class Manager {
     return Collections.emptyList();
   }
 
-  private void validateBlockSignature(BlockCapsule block) throws BlockSignatureException {
+  private BlockCapsule validateBlockSignature(BlockCapsule block) throws BlockSignatureException {
+    try {
+      validateBlockSignatureCandidate(block);
+      khaosDb.replaceBlock(block);
+      return block;
+    } catch (BlockSignatureException firstFailure) {
+      List<ByteString> signatures = deferredBlockSignatures.get(block.getBlockId());
+      if (signatures != null) {
+        for (ByteString signature : signatures) {
+          if (signature.equals(block.getInstance().getBlockHeader().getWitnessSignature())) {
+            continue;
+          }
+          BlockCapsule candidate = new BlockCapsule(block.getInstance().toBuilder()
+              .setBlockHeader(block.getInstance().getBlockHeader().toBuilder()
+                  .setWitnessSignature(signature)).build());
+          try {
+            validateBlockSignatureCandidate(candidate);
+          } catch (BlockSignatureException ignored) {
+            continue;
+          }
+          // Only an authenticated signature may replace the stored block. Keep its graph node.
+          khaosDb.replaceBlock(candidate);
+          return candidate;
+        }
+      }
+      throw firstFailure;
+    }
+  }
+
+  private void validateBlockSignatureCandidate(BlockCapsule block) throws BlockSignatureException {
     if (!block.getParentHash().equals(getDynamicPropertiesStore().getLatestBlockHeaderHash())) {
       throw new IllegalStateException("Block witness validation requires its parent state");
     }
@@ -1204,6 +1235,7 @@ public class Manager {
   private void pruneDeferredBlocks() {
     deferredBlocks.keySet().removeIf(id -> chainBaseManager.getBlockStore().has(id.getBytes())
         || !khaosDb.containBlockInMiniStore(id));
+    deferredBlockSignatures.keySet().retainAll(deferredBlocks.keySet());
     long cutoff = System.currentTimeMillis() - DEFERRED_BLOCK_TIMEOUT;
     if (!deferredBlocks.isEmpty()
         && deferredBlocks.values().stream().allMatch(time -> time < cutoff)) {
@@ -1216,6 +1248,22 @@ public class Manager {
     deferredBlocks.keySet().stream().sorted(Comparator.comparingLong(BlockId::getNum).reversed())
         .forEach(khaosDb::removeBlk);
     deferredBlocks.clear();
+    deferredBlockSignatures.clear();
+  }
+
+  private boolean rememberDeferredSignature(BlockCapsule block) {
+    List<ByteString> signatures = deferredBlockSignatures.computeIfAbsent(block.getBlockId(),
+        id -> new ArrayList<>());
+    ByteString signature = block.getInstance().getBlockHeader().getWitnessSignature();
+    if (signatures.contains(signature)) {
+      return true;
+    }
+    if (signatures.size() >= MAX_DEFERRED_SIGNATURES) {
+      return false;
+    }
+    // Network ingress has normalized the signature; retain no other serialized block payload.
+    signatures.add(ByteString.copyFrom(signature.toByteArray()));
+    return true;
   }
 
   private boolean isSameSig(TransactionCapsule tx1, TransactionCapsule tx2) {
@@ -1290,16 +1338,16 @@ public class Manager {
       synchronized (this) {
         Metrics.histogramObserve(blockedTimer.get());
         blockedTimer.remove();
-        if (Metrics.enabled()) {
-          Metrics.histogramObserve(MetricKeys.Histogram.BLOCK_TRANSACTION_COUNT,
-              block.getTransactions().size(),
-              StringUtil.encode58Check(block.getWitnessAddress().toByteArray()));
-        }
         long headerNumber = getDynamicPropertiesStore().getLatestBlockHeaderNumber();
         pruneDeferredBlocks();
         if (chainBaseManager.getBlockStore().has(block.getBlockId().getBytes())) {
           return BlockPushResult.alreadyKnown(chainBaseManager.getBlockStore()
               .getUnchecked(block.getBlockId().getBytes()));
+        }
+        if (Metrics.enabled()) {
+          Metrics.histogramObserve(MetricKeys.Histogram.BLOCK_TRANSACTION_COUNT,
+              block.getTransactions().size(),
+              StringUtil.encode58Check(block.getWitnessAddress().toByteArray()));
         }
         boolean deferred = !block.getParentHash().equals(
             getDynamicPropertiesStore().getLatestBlockHeaderHash());
@@ -1350,6 +1398,9 @@ public class Manager {
             newBlock = this.khaosDb.push(block);
             if (deferred) {
               deferredBlocks.putIfAbsent(block.getBlockId(), System.currentTimeMillis());
+              if (!rememberDeferredSignature(block)) {
+                return BlockPushResult.of(BlockPushResult.Status.IGNORED);
+              }
             }
           } catch (UnLinkedBlockException e) {
             logger.error(
@@ -1412,7 +1463,12 @@ public class Manager {
             long oldSolidNum = getDynamicPropertiesStore().getLatestSolidifiedBlockNum();
             try (ISession tmpSession = revokingStore.buildSession()) {
               if (!newBlock.generatedByMyself) {
-                validateBlockSignature(newBlock);
+                if (newBlock.getBlockId().equals(block.getBlockId())) {
+                  // The incoming signature can now be checked directly, even if its id was
+                  // previously deferred and the bounded alternatives have filled up.
+                  newBlock = block;
+                }
+                newBlock = validateBlockSignature(newBlock);
                 consensus.receiveBlock(newBlock);
               }
               applyBlock(newBlock, txs);

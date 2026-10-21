@@ -27,7 +27,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.Test;
-import org.mockito.ArgumentCaptor;
 import org.tron.common.BaseMethodTest;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.ECKey.ECDSASignature;
@@ -214,7 +213,7 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
   }
 
   @Test
-  public void knownIdRebroadcastUsesStoredSignatureInsteadOfIncomingVariant() throws Exception {
+  public void knownIdDoesNotRebroadcastOrReplaceStoredSignature() throws Exception {
     BlockCapsule valid = emptyBlock(commonParent.getBlockId(), 2, time + 3000, oldKey);
     ByteString signature = valid.getInstance().getBlockHeader().getWitnessSignature();
     BlockCapsule historical = new BlockCapsule(valid.getInstance().toBuilder().setBlockHeader(
@@ -225,11 +224,9 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
         valid.getInstance().getBlockHeader().toBuilder()
             .setWitnessSignature(ByteString.copyFrom(new byte[65]))).build());
     broadcast(invalid);
-    ArgumentCaptor<BlockMessage> forwarded = ArgumentCaptor.forClass(BlockMessage.class);
-    verify(adv).broadcast(forwarded.capture());
-    for (BlockMessage message : forwarded.getAllValues()) {
-      assertArrayEquals(valid.getData(), message.getData());
-    }
+    verify(adv, never()).broadcast(any());
+    assertArrayEquals(historical.getData(), chainBaseManager.getBlockStore()
+        .getUnchecked(valid.getBlockId().getBytes()).getData());
   }
 
   @Test
@@ -424,6 +421,8 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
     dbManager.pushBlock(a); // Even a duplicate arrival triggers expiry under the Manager lock.
     assertFalse(context.getBean(KhaosDatabase.class).containBlock(b.getBlockId()));
     assertTrue(pending.isEmpty());
+    assertTrue(((Map<?, ?>) ReflectUtils.getFieldObject(dbManager, "deferredBlockSignatures"))
+        .isEmpty());
   }
 
   @Test
@@ -439,12 +438,34 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
     broadcast(overCapacity);
     Map<?, ?> pending = (Map<?, ?>) ReflectUtils.getFieldObject(dbManager, "deferredBlocks");
     assertTrue(pending.isEmpty());
+    assertTrue(((Map<?, ?>) ReflectUtils.getFieldObject(dbManager, "deferredBlockSignatures"))
+        .isEmpty());
     assertEquals(a.getBlockId(), delegate.getHeadBlockId());
     verify(peer, never()).disconnect(ReasonCode.BAD_BLOCK);
   }
 
   @Test
   public void replacingDeferredSignaturePreservesExistingChildLinks() throws Exception {
+    deferredSignatureAlternatives(false, false);
+  }
+
+  @Test
+  public void syncRetainsValidAlternativeAfterInvalidSignatureArrivesFirst() throws Exception {
+    deferredSignatureAlternatives(true, false);
+  }
+
+  @Test
+  public void invalidSignatureCannotReplaceValidDeferredBroadcastBlock() throws Exception {
+    deferredSignatureAlternatives(false, true);
+  }
+
+  @Test
+  public void invalidSignatureCannotReplaceValidDeferredSyncBlock() throws Exception {
+    deferredSignatureAlternatives(true, true);
+  }
+
+  private void deferredSignatureAlternatives(boolean synchronization, boolean validFirst)
+      throws Exception {
     BlockCapsule a = rotationParent(witnessAt(time + 3000));
     BlockCapsule invalid = emptyBlock(commonParent.getBlockId(), 2, time + 3000, newKey);
     BlockCapsule b1 = emptyBlock(commonParent.getBlockId(), 2, time + 3000, oldKey);
@@ -452,14 +473,71 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
     BlockCapsule a2 = emptyBlock(a.getBlockId(), 3, time + 6000, oldKey);
     BlockCapsule b2 = emptyBlock(b1.getBlockId(), 3, time + 6000, oldKey);
     broadcast(a2);
-    broadcast(invalid);
-    broadcast(b2);
-    broadcast(b1);
+    if (synchronization) {
+      synchronize(validFirst ? b1 : invalid);
+      synchronize(b2);
+      synchronize(validFirst ? invalid : b1);
+    } else {
+      broadcast(validFirst ? b1 : invalid);
+      broadcast(b2);
+      broadcast(validFirst ? invalid : b1);
+    }
     assertEquals(a2.getBlockId(), delegate.getHeadBlockId());
+    BlockCapsule b3 = emptyBlock(b2.getBlockId(), 4, time + 9000, oldKey);
+    if (synchronization) {
+      synchronize(b3);
+    } else {
+      broadcast(b3);
+    }
+    assertEquals(b3.getBlockId(), delegate.getHeadBlockId());
+    assertArrayEquals(b1.getData(), chainBaseManager.getBlockStore()
+        .getUnchecked(b1.getBlockId().getBytes()).getData());
+    verify(peer, never()).disconnect(ReasonCode.BAD_BLOCK);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void excessSignatureAlternativesCannotEvictValidDeferredBlock() throws Exception {
+    BlockCapsule a = rotationParent(witnessAt(time + 3000));
+    broadcast(a);
+    BlockCapsule b1 = emptyBlock(commonParent.getBlockId(), 2, time + 3000, oldKey);
+    broadcast(emptyBlock(a.getBlockId(), 3, time + 6000, oldKey));
+    broadcast(b1);
+    for (int i = 0; i < 8; i++) {
+      byte[] signature = new byte[65];
+      signature[0] = (byte) i;
+      BlockCapsule invalid = new BlockCapsule(b1.getInstance().toBuilder().setBlockHeader(
+          b1.getInstance().getBlockHeader().toBuilder()
+              .setWitnessSignature(ByteString.copyFrom(signature))).build());
+      broadcast(invalid);
+    }
+    Map<BlockId, List<ByteString>> alternatives = (Map<BlockId, List<ByteString>>)
+        ReflectUtils.getFieldObject(dbManager, "deferredBlockSignatures");
+    assertEquals(4, alternatives.get(b1.getBlockId()).size());
+    BlockCapsule b2 = emptyBlock(b1.getBlockId(), 3, time + 6000, oldKey);
+    broadcast(b2);
     BlockCapsule b3 = emptyBlock(b2.getBlockId(), 4, time + 9000, oldKey);
     broadcast(b3);
     assertEquals(b3.getBlockId(), delegate.getHeadBlockId());
+    assertTrue(alternatives.isEmpty());
     verify(peer, never()).disconnect(ReasonCode.BAD_BLOCK);
+  }
+
+  @Test
+  public void signedUnscheduledWitnessIsRejectedOnBothIngressPaths() throws Exception {
+    long timestamp = time + 3000;
+    ByteString unscheduled = witnesses.stream().filter(w -> !w.equals(witnessAt(timestamp)))
+        .findFirst().get();
+    BlockCapsule block = new BlockCapsule(2, commonParent.getBlockId(), timestamp, unscheduled);
+    block.setMerkleRoot();
+    block.sign(oldKey.getPrivKeyBytes());
+    assertTrue(block.validateSignature(dbManager.getDynamicPropertiesStore(),
+        dbManager.getAccountStore()));
+    broadcast(block);
+    synchronize(block);
+    assertEquals(commonParent.getBlockId(), delegate.getHeadBlockId());
+    assertFalse(chainBaseManager.getBlockStore().has(block.getBlockId().getBytes()));
+    verify(adv, never()).broadcast(any());
   }
 
   private BlockCapsule rotationParent(ByteString target) throws Exception {

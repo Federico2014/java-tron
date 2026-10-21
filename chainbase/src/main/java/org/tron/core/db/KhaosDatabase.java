@@ -105,9 +105,8 @@ public class KhaosDatabase extends TronDatabase {
       throws UnLinkedBlockException, BadNumberBlockException {
     KhaosBlock existing = miniStore.getByHash(blk.getBlockId());
     if (existing != null) {
-      // Manager excludes already applied blocks. A deferred id is not proof that its
-      // signature is valid; allow a re-fetched variant without breaking child references.
-      existing.blk = blk;
+      // Manager retains signature alternatives until the candidate-parent state is available.
+      // An unverified arrival must not replace this block or break its child references.
       if (head == null || existing.num > head.num) {
         head = existing;
       }
@@ -140,6 +139,14 @@ public class KhaosDatabase extends TronDatabase {
       head = block;
     }
     return head.blk;
+  }
+
+  void replaceBlock(BlockCapsule block) {
+    KhaosBlock existing = miniStore.getByHash(block.getBlockId());
+    if (existing == null) {
+      throw new IllegalStateException("Cannot replace a block outside KhaosDB");
+    }
+    existing.blk = block;
   }
 
   public BlockCapsule getHead() {
