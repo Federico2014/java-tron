@@ -23,6 +23,8 @@ import org.tron.common.utils.Pair;
 import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.BlockCapsule.BlockId;
 import org.tron.core.config.args.Args;
+import org.tron.core.db.BlockPushResult;
+import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.net.TronNetDelegate;
@@ -338,18 +340,39 @@ public class SyncService {
     }
   }
 
+  private void restartSync(PeerConnection peer) {
+    requestBlockIds.asMap().entrySet().removeIf(entry -> entry.getValue() == peer);
+    peer.getSyncBlockRequested().clear();
+    peer.getSyncBlockInProcess().clear();
+    fetchFlag = true;
+    peer.setTronState(TronState.INIT);
+    peer.setSyncChainRequested(null);
+    startSync(peer);
+  }
+
   private void processSyncBlock(BlockCapsule block, PeerConnection peerConnection) {
     boolean flag = true;
     boolean attackFlag = false;
     BlockId blockId = block.getBlockId();
     try {
-      tronNetDelegate.validSignature(block);
-      tronNetDelegate.processBlock(block, true);
+      BlockPushResult result = tronNetDelegate.processBlock(block, true);
+      if (result.getStatus() == BlockPushResult.Status.IGNORED) {
+        restartSync(peerConnection);
+        return;
+      }
       peerConnection.setBlockRcvTime(System.currentTimeMillis());
-      pbftDataSyncHandler.processPBFTCommitData(block);
+      for (BlockCapsule applied : result.getValidatedBlocks()) {
+        pbftDataSyncHandler.processPBFTCommitData(applied);
+      }
     } catch (P2pException p2pException) {
       logger.error("Process sync block {} failed, type: {}",
               blockId.getString(), p2pException.getType());
+      if (p2pException.getType() == TypeEnum.UNLINK_BLOCK
+          || (p2pException.getCause() instanceof BlockSignatureException
+          && !((BlockSignatureException) p2pException.getCause()).getBlockId().equals(blockId))) {
+        restartSync(peerConnection);
+        return;
+      }
       attackFlag = p2pException.getType().equals(TypeEnum.BLOCK_SIGN_INVALID)
               || p2pException.getType().equals(TypeEnum.BLOCK_MERKLE_INVALID);
       flag = false;
@@ -358,8 +381,10 @@ public class SyncService {
       flag = false;
     }
 
-    if (attackFlag) {
+    if (!flag) {
       invalid(blockId, peerConnection);
+    }
+    if (attackFlag) {
       peerConnection.disconnect(ReasonCode.BAD_BLOCK);
       return;
     }

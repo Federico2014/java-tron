@@ -3,19 +3,15 @@ package org.tron.core.net;
 import static org.tron.core.config.Parameter.ChainConstant.BLOCK_PRODUCED_INTERVAL;
 import static org.tron.core.exception.BadBlockException.TypeEnum.CALC_MERKLE_ROOT_FAILED;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import io.prometheus.client.Histogram;
 import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.util.encoders.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.backup.socket.BackupServer;
@@ -30,11 +26,13 @@ import org.tron.core.capsule.BlockCapsule.BlockId;
 import org.tron.core.capsule.PbftSignCapsule;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.config.args.Args;
+import org.tron.core.db.BlockPushResult;
 import org.tron.core.db.Manager;
 import org.tron.core.exception.AccountResourceInsufficientException;
 import org.tron.core.exception.BadBlockException;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.BadNumberBlockException;
+import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.ContractExeException;
 import org.tron.core.exception.ContractSizeNotEqualToOneException;
 import org.tron.core.exception.ContractValidateException;
@@ -60,7 +58,6 @@ import org.tron.core.net.message.MessageTypes;
 import org.tron.core.net.message.adv.BlockMessage;
 import org.tron.core.net.message.adv.TransactionMessage;
 import org.tron.core.net.peer.PeerConnection;
-import org.tron.core.store.WitnessScheduleStore;
 import org.tron.protos.Protocol.Inventory.InventoryType;
 
 @Slf4j(topic = "net")
@@ -73,9 +70,6 @@ public class TronNetDelegate {
   @Autowired
   private ChainBaseManager chainBaseManager;
 
-  @Autowired
-  private WitnessScheduleStore witnessScheduleStore;
-
   @Getter
   private Object blockLock = new Object();
 
@@ -86,8 +80,6 @@ public class TronNetDelegate {
   private MetricsService metricsService;
 
   private volatile boolean backupServerStartFlag;
-
-  private int blockIdCacheSize = 100;
 
   private long timeout = 1000;
 
@@ -103,10 +95,6 @@ public class TronNetDelegate {
 
   private boolean unsolidifiedBlockCheck
       = Args.getInstance().isUnsolidifiedBlockCheck();
-
-  private Cache<BlockId, Long> freshBlockId = CacheBuilder.newBuilder()
-          .maximumSize(blockIdCacheSize).expireAfterWrite(1, TimeUnit.HOURS)
-          .recordStats().build();
 
   @PostConstruct
   public void init() {
@@ -248,7 +236,7 @@ public class TronNetDelegate {
     }
   }
 
-  public void processBlock(BlockCapsule block, boolean isSync) throws P2pException {
+  public BlockPushResult processBlock(BlockCapsule block, boolean isSync) throws P2pException {
     if (!hitDown && dbManager.getLatestSolidityNumShutDown() > 0
         && dbManager.getLatestSolidityNumShutDown() == dbManager.getDynamicPropertiesStore()
         .getLatestBlockHeaderNumberFromDB()) {
@@ -259,39 +247,38 @@ public class TronNetDelegate {
           dbManager.getDynamicPropertiesStore().getLatestSolidifiedBlockNum());
       hitDown = true;
       LockSupport.unpark(hitThread);
-      return;
+      return BlockPushResult.of(BlockPushResult.Status.IGNORED);
     }
     if (hitDown) {
-      return;
+      return BlockPushResult.of(BlockPushResult.Status.IGNORED);
     }
     BlockId blockId = block.getBlockId();
     synchronized (blockLock) {
       try {
-        if (freshBlockId.getIfPresent(blockId) == null) {
-          if (block.getNum() <= getHeadBlockId().getNum()) {
-            logger.warn("Receive a fork block {} witness {}, head {}",
-                block.getBlockId().getString(),
-                Hex.toHexString(block.getWitnessAddress().toByteArray()),
-                getHeadBlockId().getString());
-          }
-          if (!isSync) {
-            //record metrics
-            metricsService.applyBlock(block);
-          }
-          dbManager.getBlockedTimer().set(Metrics.histogramStartTimer(
-              MetricKeys.Histogram.LOCK_ACQUIRE_LATENCY, MetricLabels.BLOCK));
-          Histogram.Timer timer = Metrics.histogramStartTimer(
-              MetricKeys.Histogram.BLOCK_PROCESS_LATENCY, String.valueOf(isSync));
-          dbManager.pushBlock(block);
+        dbManager.getBlockedTimer().set(Metrics.histogramStartTimer(
+            MetricKeys.Histogram.LOCK_ACQUIRE_LATENCY, MetricLabels.BLOCK));
+        Histogram.Timer timer = Metrics.histogramStartTimer(
+            MetricKeys.Histogram.BLOCK_PROCESS_LATENCY, String.valueOf(isSync));
+        BlockPushResult result;
+        try {
+          result = dbManager.pushBlock(block);
+        } finally {
           Metrics.histogramObserve(timer);
-          freshBlockId.put(blockId, System.currentTimeMillis());
-          logger.info("Success process block {}", blockId.getString());
-          if (!backupServerStartFlag
-              && System.currentTimeMillis() - block.getTimeStamp() < BLOCK_PRODUCED_INTERVAL) {
-            backupServerStartFlag = true;
-            backupServer.initServer();
-          }
         }
+        if (result.getStatus() == BlockPushResult.Status.ALREADY_KNOWN) {
+          logger.debug("Already applied block {}", blockId.getString());
+        } else {
+          logger.info("Process block {}: {}", blockId.getString(), result.getStatus());
+        }
+        if (!isSync && result.getStatus() == BlockPushResult.Status.APPLIED) {
+          result.getValidatedBlocks().forEach(metricsService::applyBlock);
+        }
+        if (result.getStatus() == BlockPushResult.Status.APPLIED && !backupServerStartFlag
+            && System.currentTimeMillis() - block.getTimeStamp() < BLOCK_PRODUCED_INTERVAL) {
+          backupServerStartFlag = true;
+          backupServer.initServer();
+        }
+        return result;
       } catch (ValidateSignatureException
           | ContractValidateException
           | ContractExeException
@@ -312,7 +299,11 @@ public class TronNetDelegate {
           | EventBloomException e) {
         metricsService.failProcessBlock(block.getNum(), e.getMessage());
         logger.error("Process block failed, {}, reason: {}", blockId.getString(), e.getMessage());
-        if (e instanceof BadBlockException
+        if (e instanceof BlockSignatureException) {
+          throw new P2pException(TypeEnum.BLOCK_SIGN_INVALID, e);
+        } else if (e instanceof UnLinkedBlockException) {
+          throw new P2pException(TypeEnum.UNLINK_BLOCK, e);
+        } else if (e instanceof BadBlockException
                 && ((BadBlockException) e).getType().equals(CALC_MERKLE_ROOT_FAILED)) {
           throw new P2pException(TypeEnum.BLOCK_MERKLE_INVALID, e);
         } else {
@@ -343,19 +334,6 @@ public class TronNetDelegate {
     }
   }
 
-  public void validSignature(BlockCapsule block) throws P2pException {
-    boolean flag;
-    try {
-      flag = block.validateSignature(dbManager.getDynamicPropertiesStore(),
-              dbManager.getAccountStore());
-    } catch (Exception e) {
-      throw new P2pException(TypeEnum.BLOCK_SIGN_INVALID, e);
-    }
-    if (!flag) {
-      throw new P2pException(TypeEnum.BLOCK_SIGN_INVALID, "valid signature failed.");
-    }
-  }
-
   public boolean validBlock(BlockCapsule block) throws P2pException {
     long time = System.currentTimeMillis();
     if (block.getTimeStamp() - time > timeout) {
@@ -367,8 +345,9 @@ public class TronNetDelegate {
     } catch (BadBlockException e) {
       throw new P2pException(TypeEnum.BLOCK_MERKLE_INVALID, e.getMessage());
     }
-    validSignature(block);
-    return witnessScheduleStore.getActiveWitnesses().contains(block.getWitnessAddress());
+    // Witness permissions, recovery rules and schedules belong to the candidate-parent state.
+    // Manager checks them after selecting that state, before executing the block.
+    return true;
   }
 
   public PbftSignCapsule getBlockPbftCommitData(long blockNum) {
