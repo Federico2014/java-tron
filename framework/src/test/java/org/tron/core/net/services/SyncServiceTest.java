@@ -3,6 +3,7 @@ package org.tron.core.net.services;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.cache.Cache;
+import com.google.protobuf.ByteString;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
@@ -20,6 +21,9 @@ import org.tron.common.overlay.message.Message;
 import org.tron.common.utils.ReflectUtils;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.capsule.BlockCapsule;
+import org.tron.core.db.BlockPushResult;
+import org.tron.core.exception.P2pException;
+import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.net.P2pEventHandlerImpl;
 import org.tron.core.net.TronNetDelegate;
 import org.tron.core.net.message.adv.BlockMessage;
@@ -268,6 +272,74 @@ public class SyncServiceTest extends BaseMethodTest {
     fetch.invoke(sync);
     Assert.assertEquals(Collections.singleton(next), syncingPeer.getSyncBlockRequested().keySet());
     sync.close();
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testRestartSyncClearsOnlyRestartingPeerPendingBlocks() throws Exception {
+    SyncService sync = new SyncService();
+    TronNetDelegate delegate = mock(TronNetDelegate.class);
+    ReflectUtils.setFieldValue(sync, "tronNetDelegate", delegate);
+    PeerConnection restarting = Mockito.spy(new PeerConnection());
+    PeerConnection other = new PeerConnection();
+    Channel channel = mock(Channel.class);
+    Mockito.when(channel.getInetSocketAddress()).thenReturn(inetSocketAddress);
+    Mockito.when(channel.getInetAddress()).thenReturn(inetSocketAddress.getAddress());
+    restarting.setChannel(channel);
+    Mockito.when(delegate.getForkLock()).thenReturn(new Object());
+    BlockCapsule.BlockId genesis = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 0);
+    Mockito.when(delegate.getGenesisBlockId()).thenReturn(genesis);
+    Mockito.when(delegate.getHeadBlockId()).thenReturn(genesis);
+    Mockito.when(delegate.getKhaosDbHeadBlockId()).thenReturn(genesis);
+
+    Map<UnparsedBlock, PeerConnection> waiting = (Map<UnparsedBlock, PeerConnection>)
+        ReflectUtils.getFieldObject(sync, "blockWaitToProcess");
+    Map<UnparsedBlock, PeerConnection> received = (Map<UnparsedBlock, PeerConnection>)
+        ReflectUtils.getFieldObject(sync, "blockJustReceived");
+    Cache<BlockCapsule.BlockId, PeerConnection> requests =
+        (Cache<BlockCapsule.BlockId, PeerConnection>)
+            ReflectUtils.getFieldObject(sync, "requestBlockIds");
+    BlockCapsule block = new BlockCapsule(1, genesis, 1234, ByteString.EMPTY);
+    BlockCapsule.BlockId pending = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 2);
+    BlockCapsule.BlockId survivor = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 3);
+    Method process = SyncService.class.getDeclaredMethod(
+        "processSyncBlock", BlockCapsule.class, PeerConnection.class);
+    process.setAccessible(true);
+    try {
+      for (boolean ignored : new boolean[]{true, false}) {
+        restarting.getSyncBlockToFetch().add(block.getBlockId());
+        restarting.getSyncBlockToFetch().add(pending);
+        restarting.getSyncBlockRequested().put(pending, 0L);
+        restarting.getSyncBlockInProcess().add(pending);
+        requests.put(pending, restarting);
+        requests.put(survivor, other);
+        waiting.put(new UnparsedBlock(pending, new byte[0]), restarting);
+        waiting.put(new UnparsedBlock(survivor, new byte[0]), other);
+        received.put(new UnparsedBlock(pending, new byte[0]), restarting);
+        received.put(new UnparsedBlock(survivor, new byte[0]), other);
+        if (ignored) {
+          Mockito.doReturn(BlockPushResult.of(BlockPushResult.Status.IGNORED))
+              .when(delegate).processBlock(block, true);
+        } else {
+          Mockito.doThrow(new P2pException(TypeEnum.UNLINK_BLOCK, "missing parent"))
+              .when(delegate).processBlock(block, true);
+        }
+        process.invoke(sync, block, restarting);
+        Assert.assertEquals(Collections.singletonList(other), new ArrayList<>(waiting.values()));
+        Assert.assertEquals(Collections.singletonList(other), new ArrayList<>(received.values()));
+        Assert.assertNull(requests.getIfPresent(pending));
+        Assert.assertSame(other, requests.getIfPresent(survivor));
+        Assert.assertTrue(restarting.getSyncBlockToFetch().isEmpty());
+        Assert.assertTrue(restarting.getSyncBlockRequested().isEmpty());
+        Assert.assertTrue(restarting.getSyncBlockInProcess().isEmpty());
+        Assert.assertEquals(TronState.SYNCING, restarting.getTronState());
+        Assert.assertNotNull(restarting.getSyncChainRequested());
+        Assert.assertTrue((boolean) ReflectUtils.getFieldObject(sync, "fetchFlag"));
+        Mockito.verify(restarting, Mockito.never()).disconnect(Mockito.any());
+      }
+    } finally {
+      sync.close();
+    }
   }
 
   @Test

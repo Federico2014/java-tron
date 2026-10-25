@@ -268,7 +268,9 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
     if (synchronization) {
       synchronize(b1);
     } else {
+      peer.setBlockRcvTime(0);
       broadcast(b1);
+      assertTrue(peer.getBlockRcvTime() > 0);
     }
     assertEquals(a.getBlockId(), delegate.getHeadBlockId());
     assertFalse(chainBaseManager.getBlockStore().has(b1.getBlockId().getBytes()));
@@ -529,6 +531,82 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
   }
 
   @Test
+  public void signatureOverflowPreservesOriginalForDirectApplicationAfterRollback()
+      throws Exception {
+    BlockCapsule a = rotationParent(witnessAt(time + 3000));
+    broadcast(a);
+    BlockCapsule b = emptyBlock(commonParent.getBlockId(), 2, time + 3000, oldKey);
+    broadcast(b);
+    BlockCapsule invalid = null;
+    for (int i = 0; i < 8; i++) {
+      invalid = new BlockCapsule(b.getInstance());
+      invalid.sign(ECKey.fromPrivate(BigInteger.valueOf(20 + i)).getPrivKeyBytes());
+      broadcast(invalid);
+    }
+    dbManager.eraseBlock();
+    assertEquals(commonParent.getBlockId(), delegate.getHeadBlockId());
+    broadcast(invalid);
+    assertEquals(b.getBlockId(), delegate.getHeadBlockId());
+    assertArrayEquals(b.getData(), chainBaseManager.getBlockStore()
+        .getUnchecked(b.getBlockId().getBytes()).getData());
+    verify(peer, never()).disconnect(ReasonCode.BAD_BLOCK);
+  }
+
+  @Test
+  public void broadcastRetainsFifthSignatureForDeferredAncestor() throws Exception {
+    fifthDeferredSignature(false);
+  }
+
+  @Test
+  public void synchronizationRetainsFifthSignatureForDeferredAncestor() throws Exception {
+    fifthDeferredSignature(true);
+  }
+
+  @SuppressWarnings("unchecked")
+  private void fifthDeferredSignature(boolean synchronization) throws Exception {
+    BlockCapsule a = rotationParent(witnessAt(time + 3000));
+    broadcast(a);
+    BlockCapsule b1 = emptyBlock(commonParent.getBlockId(), 2, time + 3000, oldKey);
+    BlockCapsule a2 = emptyBlock(a.getBlockId(), 3, time + 6000, oldKey);
+    broadcast(a2);
+    for (int i = 0; i < 4; i++) {
+      ECKey invalidKey = ECKey.fromPrivate(BigInteger.valueOf(20 + i));
+      BlockCapsule invalid = new BlockCapsule(b1.getInstance());
+      invalid.sign(invalidKey.getPrivKeyBytes());
+      assertEquals(b1.getBlockId(), invalid.getBlockId());
+      if (synchronization) {
+        synchronize(invalid);
+      } else {
+        broadcast(invalid);
+      }
+    }
+    BlockCapsule b2 = emptyBlock(b1.getBlockId(), 3, time + 6000, oldKey);
+    if (synchronization) {
+      synchronize(b2);
+      synchronize(b1);
+    } else {
+      broadcast(b2);
+      broadcast(b1);
+    }
+    assertEquals(a2.getBlockId(), delegate.getHeadBlockId());
+    assertFalse(chainBaseManager.getBlockStore().has(b1.getBlockId().getBytes()));
+    Map<BlockId, List<ByteString>> alternatives = (Map<BlockId, List<ByteString>>)
+        ReflectUtils.getFieldObject(dbManager, "deferredBlockSignatures");
+    assertEquals(4, alternatives.get(b1.getBlockId()).size());
+    BlockCapsule b3 = emptyBlock(b2.getBlockId(), 4, time + 9000, oldKey);
+    if (synchronization) {
+      synchronize(b3);
+    } else {
+      broadcast(b3);
+    }
+    assertEquals(b3.getBlockId(), delegate.getHeadBlockId());
+    assertArrayEquals(b1.getData(), chainBaseManager.getBlockStore()
+        .getUnchecked(b1.getBlockId().getBytes()).getData());
+    assertTrue(alternatives.isEmpty());
+    verify(peer, never()).disconnect(ReasonCode.BAD_BLOCK);
+  }
+
+  @Test
   public void signedUnscheduledWitnessIsRejectedOnBothIngressPaths() throws Exception {
     long timestamp = time + 3000;
     ByteString unscheduled = witnesses.stream().filter(w -> !w.equals(witnessAt(timestamp)))
@@ -543,6 +621,7 @@ public class BlockWitnessParentStateTest extends BaseMethodTest {
     assertEquals(commonParent.getBlockId(), delegate.getHeadBlockId());
     assertFalse(chainBaseManager.getBlockStore().has(block.getBlockId().getBytes()));
     verify(adv, never()).broadcast(any());
+    verify(peer).disconnect(ReasonCode.BAD_BLOCK);
   }
 
   private BlockCapsule rotationParent(ByteString target) throws Exception {

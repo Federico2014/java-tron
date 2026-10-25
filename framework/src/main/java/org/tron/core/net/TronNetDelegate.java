@@ -313,6 +313,12 @@ public class TronNetDelegate {
     }
   }
 
+  public static boolean isMissingParentOrInvalidAncestor(P2pException exception, BlockId blockId) {
+    return exception.getType() == TypeEnum.UNLINK_BLOCK
+        || (exception.getCause() instanceof BlockSignatureException
+        && !((BlockSignatureException) exception.getCause()).getBlockId().equals(blockId));
+  }
+
   public boolean pushTransaction(TransactionCapsule trx) throws P2pException {
     try {
       trx.setTime(System.currentTimeMillis());

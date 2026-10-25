@@ -1234,19 +1234,20 @@ public class Manager {
     deferredBlockSignatures.clear();
   }
 
-  private boolean rememberDeferredSignature(BlockCapsule block) {
+  private void rememberDeferredSignature(BlockCapsule block) {
     List<ByteString> signatures = deferredBlockSignatures.computeIfAbsent(block.getBlockId(),
         id -> new ArrayList<>());
     ByteString signature = block.getInstance().getBlockHeader().getWitnessSignature();
     if (signatures.contains(signature)) {
-      return true;
+      return;
     }
     if (signatures.size() >= MAX_DEFERRED_SIGNATURES) {
-      return false;
+      // Preserve the original signature for direct application after a rollback, and roll
+      // the remaining alternatives so invalid arrivals cannot lock out a later valid signature.
+      signatures.remove(1);
     }
     // Network ingress has normalized the signature; retain no other serialized block payload.
     signatures.add(ByteString.copyFrom(signature.toByteArray()));
-    return true;
   }
 
   private boolean isSameSig(TransactionCapsule tx1, TransactionCapsule tx2) {
@@ -1381,9 +1382,7 @@ public class Manager {
             newBlock = this.khaosDb.push(block);
             if (deferred) {
               deferredBlocks.putIfAbsent(block.getBlockId(), System.currentTimeMillis());
-              if (!rememberDeferredSignature(block)) {
-                return BlockPushResult.of(BlockPushResult.Status.IGNORED);
-              }
+              rememberDeferredSignature(block);
             }
           } catch (UnLinkedBlockException e) {
             logger.error(

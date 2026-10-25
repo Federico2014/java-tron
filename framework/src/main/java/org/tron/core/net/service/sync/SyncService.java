@@ -24,7 +24,6 @@ import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.BlockCapsule.BlockId;
 import org.tron.core.config.args.Args;
 import org.tron.core.db.BlockPushResult;
-import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.net.TronNetDelegate;
@@ -344,6 +343,10 @@ public class SyncService {
     requestBlockIds.asMap().entrySet().removeIf(entry -> entry.getValue() == peer);
     peer.getSyncBlockRequested().clear();
     peer.getSyncBlockInProcess().clear();
+    synchronized (blockJustReceived) {
+      blockJustReceived.entrySet().removeIf(entry -> entry.getValue() == peer);
+      blockWaitToProcess.entrySet().removeIf(entry -> entry.getValue() == peer);
+    }
     fetchFlag = true;
     peer.setTronState(TronState.INIT);
     peer.setSyncChainRequested(null);
@@ -367,9 +370,7 @@ public class SyncService {
     } catch (P2pException p2pException) {
       logger.error("Process sync block {} failed, type: {}",
               blockId.getString(), p2pException.getType());
-      if (p2pException.getType() == TypeEnum.UNLINK_BLOCK
-          || (p2pException.getCause() instanceof BlockSignatureException
-          && !((BlockSignatureException) p2pException.getCause()).getBlockId().equals(blockId))) {
+      if (TronNetDelegate.isMissingParentOrInvalidAncestor(p2pException, blockId)) {
         restartSync(peerConnection);
         return;
       }

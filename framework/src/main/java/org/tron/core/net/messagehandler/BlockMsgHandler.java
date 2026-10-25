@@ -14,7 +14,6 @@ import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.BlockCapsule.BlockId;
 import org.tron.core.config.args.Args;
 import org.tron.core.db.BlockPushResult;
-import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.net.TronNetDelegate;
@@ -159,6 +158,9 @@ public class BlockMsgHandler implements TronMsgHandler {
       }
       if (result.getStatus() != BlockPushResult.Status.APPLIED
           && result.getStatus() != BlockPushResult.Status.ALREADY_KNOWN) {
+        if (result.getStatus() == BlockPushResult.Status.DEFERRED) {
+          peer.setBlockRcvTime(System.currentTimeMillis());
+        }
         return;
       }
       if (result.getStatus() == BlockPushResult.Status.APPLIED) {
@@ -178,9 +180,7 @@ public class BlockMsgHandler implements TronMsgHandler {
         }
       });
     } catch (P2pException e) {
-      if (e.getType() == TypeEnum.UNLINK_BLOCK
-          || (e.getCause() instanceof BlockSignatureException
-          && !((BlockSignatureException) e.getCause()).getBlockId().equals(blockId))) {
+      if (TronNetDelegate.isMissingParentOrInvalidAncestor(e, blockId)) {
         // A missing parent or an invalid ancestor is not evidence against this block's sender.
         syncService.startSync(peer);
         return;

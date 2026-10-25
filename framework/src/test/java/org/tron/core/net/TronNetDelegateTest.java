@@ -18,6 +18,7 @@ import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.db.BlockPushResult;
 import org.tron.core.db.Manager;
+import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.metrics.MetricsService;
@@ -26,6 +27,24 @@ import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 public class TronNetDelegateTest {
+
+  @Test
+  public void testMissingParentOrInvalidAncestorClassification() {
+    BlockCapsule.BlockId current = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 2);
+    BlockCapsule.BlockId ancestor = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 1);
+    Assert.assertTrue(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.UNLINK_BLOCK, "missing parent"), current));
+    Assert.assertTrue(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_SIGN_INVALID,
+            new BlockSignatureException(ancestor, "invalid ancestor")), current));
+    Assert.assertFalse(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_SIGN_INVALID,
+            new BlockSignatureException(current, "invalid current block")), current));
+    Assert.assertFalse(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_SIGN_INVALID, "invalid signature"), current));
+    Assert.assertFalse(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_MERKLE_INVALID, "invalid merkle root"), current));
+  }
 
   @Test
   public void test() throws Exception {
