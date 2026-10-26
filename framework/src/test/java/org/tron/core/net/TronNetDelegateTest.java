@@ -16,14 +16,35 @@ import org.tron.core.Wallet;
 import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.config.args.Args;
+import org.tron.core.db.BlockPushResult;
 import org.tron.core.db.Manager;
+import org.tron.core.exception.BlockSignatureException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
+import org.tron.core.metrics.MetricsService;
 import org.tron.core.store.DynamicPropertiesStore;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 public class TronNetDelegateTest {
+
+  @Test
+  public void testMissingParentOrInvalidAncestorClassification() {
+    BlockCapsule.BlockId current = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 2);
+    BlockCapsule.BlockId ancestor = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 1);
+    Assert.assertTrue(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.UNLINK_BLOCK, "missing parent"), current));
+    Assert.assertTrue(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_SIGN_INVALID,
+            new BlockSignatureException(ancestor, "invalid ancestor")), current));
+    Assert.assertFalse(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_SIGN_INVALID,
+            new BlockSignatureException(current, "invalid current block")), current));
+    Assert.assertFalse(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_SIGN_INVALID, "invalid signature"), current));
+    Assert.assertFalse(TronNetDelegate.isMissingParentOrInvalidAncestor(
+        new P2pException(TypeEnum.BLOCK_MERKLE_INVALID, "invalid merkle root"), current));
+  }
 
   @Test
   public void test() throws Exception {
@@ -128,6 +149,8 @@ public class TronNetDelegateTest {
     setField(tronNetDelegate, "chainBaseManager", chainBaseManager);
 
     BlockCapsule block = new BlockCapsule(1, Sha256Hash.ZERO_HASH, 0L, ByteString.EMPTY);
+    Mockito.when(dbManager.pushBlock(block))
+        .thenReturn(BlockPushResult.applied(java.util.Collections.singletonList(block)));
     tronNetDelegate.pushVerifiedBlock(block);
 
     Assert.assertTrue(block.generatedByMyself);
@@ -152,6 +175,27 @@ public class TronNetDelegateTest {
     Field f = obj.getClass().getDeclaredField(name);
     f.setAccessible(true);
     f.set(obj, value);
+  }
+
+  @Test
+  public void testAlreadyAppliedBlockDoesNotRepeatApplicationMetrics() throws Exception {
+    Args.setParam(new String[] {}, TestConstants.TEST_CONF);
+    TronNetDelegate delegate = new TronNetDelegate();
+    Manager manager = mock(Manager.class);
+    MetricsService metrics = mock(MetricsService.class);
+    Mockito.when(manager.getBlockedTimer()).thenReturn(new ThreadLocal<>());
+    setField(delegate, "dbManager", manager);
+    setField(delegate, "metricsService", metrics);
+    BlockCapsule block = new BlockCapsule(1, Sha256Hash.ZERO_HASH, 0L, ByteString.EMPTY);
+    Mockito.when(manager.pushBlock(block)).thenReturn(
+        BlockPushResult.applied(java.util.Collections.singletonList(block)),
+        BlockPushResult.alreadyKnown(block));
+
+    Assert.assertEquals(BlockPushResult.Status.APPLIED, delegate.processBlock(block, false)
+        .getStatus());
+    Assert.assertEquals(BlockPushResult.Status.ALREADY_KNOWN, delegate.processBlock(block, false)
+        .getStatus());
+    Mockito.verify(metrics, Mockito.times(1)).applyBlock(block);
   }
 
   @Test

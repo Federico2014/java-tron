@@ -34,6 +34,7 @@ import org.tron.core.capsule.BlockCapsule.BlockId;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.config.Parameter;
 import org.tron.core.config.args.Args;
+import org.tron.core.db.BlockPushResult;
 import org.tron.core.db.Manager;
 import org.tron.core.exception.P2pException;
 import org.tron.core.net.TronNetDelegate;
@@ -46,7 +47,6 @@ import org.tron.core.net.service.sync.SyncService;
 import org.tron.core.services.WitnessProductBlockService;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.DynamicPropertiesStore;
-import org.tron.core.store.WitnessScheduleStore;
 import org.tron.p2p.connection.Channel;
 import org.tron.protos.Protocol.Inventory.InventoryType;
 import org.tron.protos.Protocol.Transaction;
@@ -170,7 +170,8 @@ public class BlockMsgHandlerTest extends BaseTest {
       Mockito.doReturn(true).when(tronNetDelegate).validBlock(any(BlockCapsule.class));
       Mockito.doReturn(true).when(tronNetDelegate).containBlock(any(BlockId.class));
       Mockito.doReturn(blockCapsule0.getBlockId()).when(tronNetDelegate).getHeadBlockId();
-      Mockito.doNothing().when(tronNetDelegate).processBlock(any(BlockCapsule.class), anyBoolean());
+      Mockito.doReturn(BlockPushResult.applied(Collections.singletonList(blockCapsule0)))
+          .when(tronNetDelegate).processBlock(any(BlockCapsule.class), anyBoolean());
       List<PeerConnection> peers = new ArrayList<>();
       peers.add(peer);
       Mockito.doReturn(peers).when(tronNetDelegate).getActivePeer();
@@ -229,8 +230,7 @@ public class BlockMsgHandlerTest extends BaseTest {
             () -> ingress.processMessage(sender, message));
 
         Assert.assertEquals(P2pException.TypeEnum.BLOCK_SIGN_INVALID, error.getType());
-        Mockito.verify(delegate, Mockito.never()).processBlock(any(BlockCapsule.class),
-            anyBoolean());
+        Mockito.verify(delegate).processBlock(any(BlockCapsule.class), anyBoolean());
         Mockito.verify(adv, Mockito.never()).broadcast(any());
       }
     }
@@ -285,15 +285,22 @@ public class BlockMsgHandlerTest extends BaseTest {
     Manager manager = Mockito.mock(Manager.class);
     Mockito.when(manager.getDynamicPropertiesStore()).thenReturn(properties);
     Mockito.when(manager.getAccountStore()).thenReturn(Mockito.mock(AccountStore.class));
-    WitnessScheduleStore schedule = Mockito.mock(WitnessScheduleStore.class);
-    Mockito.when(schedule.getActiveWitnesses()).thenReturn(Collections.singletonList(witness));
     TronNetDelegate delegate = Mockito.spy(new TronNetDelegate());
     ReflectUtils.setFieldValue(delegate, "dbManager", manager);
-    ReflectUtils.setFieldValue(delegate, "witnessScheduleStore", schedule);
     Mockito.doReturn(true).when(delegate).containBlock(any(BlockId.class));
     Mockito.doReturn(new BlockId(Sha256Hash.ZERO_HASH, 0)).when(delegate).getHeadBlockId();
     Mockito.doReturn(Collections.emptyList()).when(delegate).getActivePeer();
-    Mockito.doNothing().when(delegate).processBlock(any(BlockCapsule.class), anyBoolean());
+    Mockito.doAnswer(invocation -> {
+      BlockCapsule candidate = invocation.getArgument(0);
+      try {
+        if (!candidate.validateSignature(properties, manager.getAccountStore())) {
+          throw new P2pException(P2pException.TypeEnum.BLOCK_SIGN_INVALID, "invalid witness");
+        }
+      } catch (org.tron.core.exception.ValidateSignatureException | RuntimeException e) {
+        throw new P2pException(P2pException.TypeEnum.BLOCK_SIGN_INVALID, e);
+      }
+      return BlockPushResult.applied(Collections.singletonList(candidate));
+    }).when(delegate).processBlock(any(BlockCapsule.class), anyBoolean());
     return delegate;
   }
 

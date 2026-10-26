@@ -68,6 +68,15 @@ public class KhaosDatabase {
    */
   public BlockCapsule push(BlockCapsule blk)
       throws UnLinkedBlockException, BadNumberBlockException {
+    KhaosBlock existing = miniStore.getByHash(blk.getBlockId());
+    if (existing != null) {
+      // Manager retains signature alternatives until the candidate-parent state is available.
+      // An unverified arrival must not replace this block or break its child references.
+      if (head == null || existing.num > head.num) {
+        head = existing;
+      }
+      return head.getBlk();
+    }
     KhaosBlock block = new KhaosBlock(blk);
     if (head != null && block.getParentHash() != Sha256Hash.ZERO_HASH) {
       KhaosBlock kblock = miniStore.getByHash(block.getParentHash());
