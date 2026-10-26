@@ -6,7 +6,6 @@ import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,6 +21,7 @@ import org.tron.common.utils.ReflectUtils;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.BlockCapsule.BlockId;
+import org.tron.core.db.BlockPushResult;
 import org.tron.core.exception.P2pException;
 import org.tron.core.net.TronNetDelegate;
 import org.tron.core.net.message.adv.BlockMessage;
@@ -92,6 +92,8 @@ public class BlockAlreadyKnownCounterTest {
     when(delegate.containBlock(any(BlockId.class))).thenReturn(true);
     when(delegate.validBlock(any(BlockCapsule.class))).thenReturn(true);
     when(delegate.getHeadBlockId()).thenReturn(new BlockId(Sha256Hash.ZERO_HASH, HEAD_NUM));
+    when(delegate.processBlock(any(BlockCapsule.class), anyBoolean()))
+        .thenReturn(BlockPushResult.of(BlockPushResult.Status.DEFERRED));
 
     BlockMessage msg = newBlockMessage(1);
     double before = sample();
@@ -109,15 +111,16 @@ public class BlockAlreadyKnownCounterTest {
   @Test
   public void testMatchedRequestUnknownForkBelowHeadNotIncremented() throws P2pException {
     // An unknown fork below head must not count. Only the block's own id is stubbed
-    // "unknown" while its parent is "known", so processing passes the unlink guard and
-    // reaches the low-height branch (num < head) without ever delegating: under the old
-    // height-based implementation that branch counted, so this test fails on it.
+    // "unknown" while its parent is "known", so processing reaches Manager for branch
+    // validation. Merely being below Head must not increment the duplicate counter.
     BlockMessage msg = newBlockMessage(1);
     assertNotEquals(msg.getBlockId(), msg.getBlockCapsule().getParentBlockId());
     when(delegate.containBlock(msg.getBlockId())).thenReturn(false);
     when(delegate.containBlock(msg.getBlockCapsule().getParentBlockId())).thenReturn(true);
     when(delegate.validBlock(any(BlockCapsule.class))).thenReturn(true);
     when(delegate.getHeadBlockId()).thenReturn(new BlockId(Sha256Hash.ZERO_HASH, HEAD_NUM));
+    when(delegate.processBlock(any(BlockCapsule.class), anyBoolean()))
+        .thenReturn(BlockPushResult.of(BlockPushResult.Status.DEFERRED));
 
     double before = sample();
     request(msg);
@@ -125,10 +128,10 @@ public class BlockAlreadyKnownCounterTest {
     assertEquals(before, sample(), 0.0);
     // the response-time exact-id sample ran and found the block unknown
     verify(delegate).containBlock(msg.getBlockId());
-    // the unlink guard really did check the parent before the low-height branch ...
+    // The unlink guard checked the parent before handing the lower branch to Manager.
     verify(delegate).containBlock(msg.getBlockCapsule().getParentBlockId());
-    // ... which returned without delegating to block processing
-    verify(delegate, never()).processBlock(any(BlockCapsule.class), anyBoolean());
+    // Lower branches must now reach Manager to establish their own parent state.
+    verify(delegate).processBlock(any(BlockCapsule.class), anyBoolean());
   }
 
   @Test
@@ -152,6 +155,8 @@ public class BlockAlreadyKnownCounterTest {
     when(delegate.containBlock(any(BlockId.class))).thenReturn(true);
     when(delegate.validBlock(any(BlockCapsule.class))).thenReturn(true);
     when(delegate.getHeadBlockId()).thenReturn(new BlockId(Sha256Hash.ZERO_HASH, HEAD_NUM));
+    when(delegate.processBlock(any(BlockCapsule.class), anyBoolean()))
+        .thenReturn(BlockPushResult.of(BlockPushResult.Status.DEFERRED));
     when(delegate.getActivePeer()).thenReturn(Collections.emptyList());
 
     BlockMessage msg = newBlockMessage(HEAD_NUM);
