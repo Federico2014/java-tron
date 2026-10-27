@@ -74,28 +74,6 @@ public class Bn128PrecompileTest {
     return result;
   }
 
-  static byte[][] additionInputs() {
-    byte[][] result = new byte[16][];
-    BN128<Fp>[] points = points();
-    for (int i = 0; i < result.length; i++) {
-      BN128<Fp> first = points[i];
-      BN128<Fp> second = points[(i + 1) % points.length];
-      result[i] = words(value(first.x()), value(first.y()), value(second.x()), value(second.y()));
-    }
-    return result;
-  }
-
-  static byte[][] multiplicationInputs() {
-    byte[][] result = new byte[16][];
-    BN128<Fp>[] points = points();
-    Random random = new Random(381L);
-    for (int i = 0; i < result.length; i++) {
-      BigInteger scalar = new BigInteger(256, random).setBit(255);
-      result[i] = words(value(points[i].x()), value(points[i].y()), scalar);
-    }
-    return result;
-  }
-
   static byte[][] pairingInputs(int count) {
     byte[][] result = new byte[8][192 * count];
     BN128<Fp>[] points = points();
