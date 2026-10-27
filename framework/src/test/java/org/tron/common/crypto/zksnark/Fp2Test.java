@@ -8,6 +8,13 @@ import org.junit.Test;
 public class Fp2Test {
 
   @Test
+  public void testToStringUsesRealThenImaginaryCoefficient() {
+    Assert.assertEquals("1 + 0i", Fp2._1.toString());
+    Assert.assertEquals("0 + 1i", new Fp2(BigInteger.ZERO, BigInteger.ONE).toString());
+    Assert.assertEquals("9 + 1i", Fp2.NON_RESIDUE.toString());
+  }
+
+  @Test
   public void testOperationsAgainstDirectFormulaForBoundaryValues() {
     BigInteger[] values = {BigInteger.ZERO, BigInteger.ONE, BigInteger.valueOf(2),
         Params.P.subtract(BigInteger.valueOf(2)), Params.P.subtract(BigInteger.ONE)};

@@ -23,7 +23,7 @@ import java.math.BigInteger;
  * Arithmetic in F_p2 <br/> <br/>
  *
  * "p" equals 21888242871839275222246405745257275088696311157297823662689037894645226208583,
- * elements of F_p2 are represented as a polynomials "a * i + b" modulo "i^2 + 1" from the ring
+ * elements of F_p2 are represented as polynomials "a + b * i" modulo "i^2 + 1" from the ring
  * F_p[i] <br/> <br/>
  *
  * Field arithmetic is ported from <a href="https://github.com/scipr-lab/libff/blob/master/libff/algebra/fields/fp2.tcc">libff</a>
@@ -182,6 +182,6 @@ class Fp2 implements Field<Fp2> {
 
   @Override
   public String toString() {
-    return String.format("%si + %s", a.toString(), b.toString());
+    return String.format("%s + %si", a.toString(), b.toString());
   }
 }
