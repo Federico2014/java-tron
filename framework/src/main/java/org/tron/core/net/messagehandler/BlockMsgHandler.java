@@ -9,9 +9,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.prometheus.MetricKeys;
 import org.tron.common.prometheus.Metrics;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.Constant;
 import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.capsule.BlockCapsule.BlockId;
+import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
@@ -73,6 +75,15 @@ public class BlockMsgHandler implements TronMsgHandler {
     }
     if (!fastForward && !peer.isRelayPeer()) {
       check(peer, blockMessage);
+    }
+
+    for (TransactionCapsule transaction : blockCapsule.getTransactions()) {
+      // A 64-byte leaf can also be interpreted as two concatenated Merkle child hashes.
+      // Valid transparent signatures alone exceed this size, as do shielded proofs.
+      // Reject before consuming requests so disconnect cleanup can retry the genuine block.
+      if (transaction.getInstance().getSerializedSize() == 2 * Sha256Hash.LENGTH) {
+        throw new P2pException(TypeEnum.BAD_BLOCK, "64-byte transaction in block");
+      }
     }
 
     blockMessage.sanitize();
