@@ -34,7 +34,6 @@ class Fp6 implements Field<Fp6> {
 
   static final Fp6 ZERO = new Fp6(Fp2.ZERO, Fp2.ZERO, Fp2.ZERO);
   static final Fp6 _1 = new Fp6(Fp2._1, Fp2.ZERO, Fp2.ZERO);
-  static final Fp2 NON_RESIDUE = new Fp2(BigInteger.valueOf(9), BigInteger.ONE);
   static final Fp2[] FROBENIUS_COEFFS_B = {
 
       new Fp2(BigInteger.ONE,
@@ -148,9 +147,10 @@ class Fp6 implements Field<Fp6> {
     return new Fp6(ra, rb, rc);
   }
 
+  /** Multiplies by v, where v^3 = Fp2.NON_RESIDUE and Fp12 is defined by w^2 = v. */
   Fp6 mulByNonResidue() {
 
-    Fp2 ra = NON_RESIDUE.mul(c);
+    Fp2 ra = c.mulByNonResidue();
     Fp2 rb = a;
     Fp2 rc = b;
 

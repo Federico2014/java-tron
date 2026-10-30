@@ -32,6 +32,7 @@ public class Fp implements Field<Fp> {
 
   static final Fp ZERO = new Fp(BigInteger.ZERO);
   static final Fp _1 = new Fp(BigInteger.ONE);
+  // beta = -1 defines the next extension Fp2, where i^2 = beta.
   static final Fp NON_RESIDUE = new Fp(new BigInteger(
       "21888242871839275222246405745257275088696311157297823662689037894645226208582"));
 
