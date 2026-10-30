@@ -36,6 +36,7 @@ class Fp2 implements Field<Fp2> {
 
   static final Fp2 ZERO = new Fp2(Fp.ZERO, Fp.ZERO);
   static final Fp2 _1 = new Fp2(Fp._1, Fp.ZERO);
+  // xi = 9 + i defines the next extension Fp6, where v^3 = xi.
   static final Fp2 NON_RESIDUE = new Fp2(BigInteger.valueOf(9), BigInteger.ONE);
 
   static final Fp[] FROBENIUS_COEFFS_B = new Fp[]{
@@ -173,6 +174,7 @@ class Fp2 implements Field<Fp2> {
     return new Fp2(ra, rb);
   }
 
+  /** Multiplies this Fp2 element by xi = 9 + i, the defining parameter of Fp6. */
   Fp2 mulByNonResidue() {
     // (a + bi)(9 + i) = (9a - b) + (a + 9b)i
     Fp a9 = a.dbl().dbl().dbl().add(a);

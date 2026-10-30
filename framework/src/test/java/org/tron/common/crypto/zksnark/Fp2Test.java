@@ -56,6 +56,37 @@ public class Fp2Test {
     Assert.assertEquals(Fp12._1, value.mul(value.inverse()));
   }
 
+  @Test
+  public void testFp6MultiplyByVAgainstGenericMultiplication() {
+    Fp6 v = new Fp6(Fp2.ZERO, Fp2._1, Fp2.ZERO);
+    Assert.assertEquals(Fp6.ZERO, Fp6.ZERO.mulByNonResidue());
+    Assert.assertEquals(v, Fp6._1.mulByNonResidue());
+    Assert.assertEquals(new Fp6(Fp2.NON_RESIDUE, Fp2.ZERO, Fp2.ZERO), v.mul(v).mul(v));
+    Random random = new Random(41L);
+    for (int i = 0; i < 32; i++) {
+      Fp6 value = new Fp6(randomElement(random), randomElement(random), randomElement(random));
+      Assert.assertEquals(value.mul(v), value.mulByNonResidue());
+    }
+  }
+
+  @Test
+  public void testFp12SparseMultiplicationAgainstGenericMultiplication() {
+    Random random = new Random(42L);
+    for (int i = 0; i < 32; i++) {
+      Fp12 value = new Fp12(
+          new Fp6(randomElement(random), randomElement(random), randomElement(random)),
+          new Fp6(randomElement(random), randomElement(random), randomElement(random)));
+      Fp2 ell0 = randomElement(random);
+      Fp2 ellVW = randomElement(random);
+      Fp2 ellVV = randomElement(random);
+      Fp12 sparse = new Fp12(new Fp6(ell0, Fp2.ZERO, ellVV),
+          new Fp6(Fp2.ZERO, ellVW, Fp2.ZERO));
+      Assert.assertEquals(value.mul(sparse), value.mulBy024(ell0, ellVW, ellVV));
+      Fp12 cyclotomic = PairingCheck.finalExponentiation(value);
+      Assert.assertEquals(cyclotomic.squared(), cyclotomic.cyclotomicSquared());
+    }
+  }
+
   private static Fp2 randomElement(Random random) {
     return new Fp2(new BigInteger(Params.P.bitLength(), random).mod(Params.P),
         new BigInteger(Params.P.bitLength(), random).mod(Params.P));

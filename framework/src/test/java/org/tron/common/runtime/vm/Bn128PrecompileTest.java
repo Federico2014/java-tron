@@ -6,6 +6,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.junit.Assert;
 import org.junit.Test;
 import org.tron.common.crypto.zksnark.BN128;
+import org.tron.common.crypto.zksnark.BN128Fp2;
 import org.tron.common.crypto.zksnark.BN128G1;
 import org.tron.common.crypto.zksnark.Fp;
 import org.tron.core.vm.PrecompiledContracts;
@@ -66,6 +67,22 @@ public class Bn128PrecompileTest {
     byte[] invalidPair = pairingInputs(1)[0].clone();
     System.arraycopy(words(P), 0, invalidPair, 64, 32);
     assertRejected(pairing.execute(invalidPair));
+  }
+
+  @Test
+  public void testPairingRejectsOnCurvePointOutsideG2() {
+    // Independently obtained square root of x^3 + 3/(9+i) for x = 1 + 2i.
+    BigInteger realY = new BigInteger(
+        "2318417032921752773706234968143028537016473046724237753379416958334661833740");
+    BigInteger imaginaryY = new BigInteger(
+        "12286822439340662745461952989251194370289180628671678316022104244014550321766");
+    Assert.assertNotNull(BN128Fp2.create(new byte[]{1}, new byte[]{2},
+        realY.toByteArray(), imaginaryY.toByteArray()));
+    assertRejected(pairing().execute(words(BigInteger.ONE, BigInteger.valueOf(2),
+        BigInteger.valueOf(2), BigInteger.ONE, imaginaryY, realY)));
+    // A zero G1 input must not allow an invalid G2 point to bypass validation.
+    assertRejected(pairing().execute(words(BigInteger.ZERO, BigInteger.ZERO,
+        BigInteger.valueOf(2), BigInteger.ONE, imaginaryY, realY)));
   }
 
   static PrecompiledContracts.BN128Pairing pairing() {
