@@ -191,13 +191,18 @@ public class Hash {
   }
 
   /**
-   * Computes an address from an uncompressed public key.
+   * Computes an address by skipping the first byte and hashing the remaining bytes.
    *
-   * <p>The input must be 65 bytes: a {@code 0x04} prefix followed by the 32-byte X and Y
-   * coordinates. Compressed public keys must be decompressed before calling this method.
+   * <p>For normal public-key address derivation, the input must be a 65-byte uncompressed
+   * encoding ({@code 0x04 || X || Y}). This method does not validate the length, prefix or point,
+   * and does not decompress compressed public keys. Public-key import callers should validate
+   * and convert their input to uncompressed form before calling this method.
    *
-   * @param pubBytes the uncompressed public key ({@code 0x04 || X || Y})
-   * @return the 21-byte address, including the address prefix
+   * <p>This behavior is used by consensus paths, including legacy signature recovery that can
+   * supply the infinity encoding {@code {0x00}}. Retain this behavior for those callers.
+   *
+   * @param pubBytes the encoded public key
+   * @return the address prefix followed by the rightmost 20 bytes of the Keccak-256 hash
    */
   public static byte[] computeAddress(byte[] pubBytes) {
     return sha3omit12(
