@@ -4,7 +4,6 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
@@ -238,7 +237,10 @@ public class WalletShieldedNoteScanTest {
       assertEquals(3, result.getNoteTxs(1).getIndex());
       assertEquals(42, result.getNoteTxs(0).getNote().getValue());
       assertEquals(84, result.getNoteTxs(1).getNote().getValue());
-      assertTrue(result.getNoteTxs(0).getNote().getRcm().size() > 0);
+      assertEquals(ByteString.copyFrom(notes[0].note.getRcm()),
+          result.getNoteTxs(0).getNote().getRcm());
+      assertEquals(ByteString.copyFrom(notes[3].note.getRcm()),
+          result.getNoteTxs(1).getNote().getRcm());
     }
   }
 }
