@@ -176,10 +176,35 @@ public class Hash {
     }
   }
 
+  /**
+   * Computes an address from the uncompressed encoding of a public point.
+   *
+   * @param pubPoint the public point
+   * @return the address prefix followed by the rightmost 20 bytes of the Keccak-256 hash
+   * @throws IllegalArgumentException if the point is at infinity
+   */
   public static byte[] computeAddress(ECPoint pubPoint) {
+    if (pubPoint.isInfinity()) {
+      throw new IllegalArgumentException("Public point must not be at infinity");
+    }
     return computeAddress(pubPoint.getEncoded(/* uncompressed */ false));
   }
 
+  /**
+   * Computes an address by skipping the first byte and hashing the remaining bytes.
+   *
+   * <p>For normal public-key address derivation, the input must be a 65-byte uncompressed
+   * encoding ({@code 0x04 || X || Y}). This method does not validate the length, prefix or point,
+   * and does not decompress compressed public keys. Public-key import callers should validate
+   * and convert their input to uncompressed form before calling this method.
+   *
+   * <p>This behavior is used by consensus paths, including legacy signature recovery that can
+   * supply the infinity encoding {@code {0x00}}. Adding validation here requires a separate
+   * consensus compatibility assessment; retain the existing behavior for these callers.
+   *
+   * @param pubBytes the encoded public key
+   * @return the address prefix followed by the rightmost 20 bytes of the Keccak-256 hash
+   */
   public static byte[] computeAddress(byte[] pubBytes) {
     return sha3omit12(
         Arrays.copyOfRange(pubBytes, 1, pubBytes.length));
