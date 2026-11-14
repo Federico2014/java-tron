@@ -23,7 +23,7 @@ import java.math.BigInteger;
  * Arithmetic in F_p2 <br/> <br/>
  *
  * "p" equals 21888242871839275222246405745257275088696311157297823662689037894645226208583,
- * elements of F_p2 are represented as a polynomials "a * i + b" modulo "i^2 + 1" from the ring
+ * elements of F_p2 are represented as polynomials "a + b * i" modulo "i^2 + 1" from the ring
  * F_p[i] <br/> <br/>
  *
  * Field arithmetic is ported from <a href="https://github.com/scipr-lab/libff/blob/master/libff/algebra/fields/fp2.tcc">libff</a>
@@ -36,6 +36,7 @@ class Fp2 implements Field<Fp2> {
 
   static final Fp2 ZERO = new Fp2(Fp.ZERO, Fp.ZERO);
   static final Fp2 _1 = new Fp2(Fp._1, Fp.ZERO);
+  // xi = 9 + i defines the next extension Fp6, where v^3 = xi.
   static final Fp2 NON_RESIDUE = new Fp2(BigInteger.valueOf(9), BigInteger.ONE);
 
   static final Fp[] FROBENIUS_COEFFS_B = new Fp[]{
@@ -79,9 +80,7 @@ class Fp2 implements Field<Fp2> {
 
     Fp ab = a.mul(b);
 
-    Fp ra = a.add(b).mul(b.mul(Fp.NON_RESIDUE).add(a))
-        .sub(ab)
-        .sub(ab.mul(Fp.NON_RESIDUE)); // ra = (a + b)(a + NON_RESIDUE * b) - ab - NON_RESIDUE * b
+    Fp ra = a.add(b).mul(a.sub(b)); // i^2 = -1, so ra = a^2 - b^2
     Fp rb = ab.dbl();
 
     return new Fp2(ra, rb);
@@ -93,7 +92,7 @@ class Fp2 implements Field<Fp2> {
     Fp aa = a.mul(o.a);
     Fp bb = b.mul(o.b);
 
-    Fp ra = bb.mul(Fp.NON_RESIDUE).add(aa);    // ra = a1 * a2 + NON_RESIDUE * b1 * b2
+    Fp ra = aa.sub(bb); // ra = a1 * a2 - b1 * b2
     Fp rb = a.add(b).mul(o.a.add(o.b)).sub(aa)
         .sub(bb);     // rb = (a1 + b1)(a2 + b2) - a1 * a2 - b1 * b2
 
@@ -120,7 +119,7 @@ class Fp2 implements Field<Fp2> {
 
     Fp t0 = a.squared();
     Fp t1 = b.squared();
-    Fp t2 = t0.sub(Fp.NON_RESIDUE.mul(t1));
+    Fp t2 = t0.add(t1);
     Fp t3 = t2.inverse();
 
     Fp ra = a.mul(t3);          // ra = a * t3
@@ -175,12 +174,16 @@ class Fp2 implements Field<Fp2> {
     return new Fp2(ra, rb);
   }
 
+  /** Multiplies this Fp2 element by xi = 9 + i, the defining parameter of Fp6. */
   Fp2 mulByNonResidue() {
-    return NON_RESIDUE.mul(this);
+    // (a + bi)(9 + i) = (9a - b) + (a + 9b)i
+    Fp a9 = a.dbl().dbl().dbl().add(a);
+    Fp b9 = b.dbl().dbl().dbl().add(b);
+    return new Fp2(a9.sub(b), a.add(b9));
   }
 
   @Override
   public String toString() {
-    return String.format("%si + %s", a.toString(), b.toString());
+    return String.format("%s + %si", a.toString(), b.toString());
   }
 }
