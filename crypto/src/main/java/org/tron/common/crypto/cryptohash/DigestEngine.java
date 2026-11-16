@@ -227,12 +227,18 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
   /**
    * This function copies the internal buffering state to some other instance of a class extending
    * {@code DigestEngine}. It returns a reference to the copy. This method is intended to be called
-   * by the implementation of the {@link #copy} method.
+   * by the implementation of the {@link #copy} method. The destination must use the same algorithm
+   * and internal block length.
    *
    * @param dest the copy
    * @return the value {@code dest}
+   * @throws IllegalArgumentException if the destination is null or incompatible
    */
   protected Digest copyState(DigestEngine dest) {
+    if (dest == null || blockLen != dest.blockLen
+        || !getAlgorithm().equals(dest.getAlgorithm())) {
+      throw new IllegalArgumentException("Incompatible digest destination");
+    }
     dest.inputLen = inputLen;
     dest.blockCount = blockCount;
     System.arraycopy(inputBuf, 0, dest.inputBuf, 0,

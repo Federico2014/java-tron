@@ -548,8 +548,9 @@ abstract class KeccakCore extends DigestEngine {
     if (!(dst instanceof KeccakCore)) {
       throw new IllegalArgumentException("Destination must be a KeccakCore");
     }
+    super.copyState(dst);
     System.arraycopy(A, 0, ((KeccakCore) dst).A, 0, 25);
-    return super.copyState(dst);
+    return dst;
   }
 
   public String toString() {

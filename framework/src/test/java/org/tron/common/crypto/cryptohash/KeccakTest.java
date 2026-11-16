@@ -372,6 +372,55 @@ public class KeccakTest {
     assertArrayEquals(referenceDigest(input), digest.digest());
   }
 
+  @Test
+  public void testCopyStateRejectsDifferentAlgorithm() throws Exception {
+    DigestEngine digest = (DigestEngine) newDigest();
+    DigestEngine target = bits == 256 ? new Keccak512() : new Keccak256();
+    byte[] input = inputBytes();
+    byte[] targetInput = Arrays.copyOfRange(input, 31, 4099);
+    MessageDigest targetReference = bits == 256 ? new Keccak512() : new Keccak256();
+    byte[] expectedTarget = targetReference.digest(targetInput);
+    digest.update(input, 0, 200);
+    target.update(targetInput, 0, 173);
+
+    assertThrows(IllegalArgumentException.class, () -> digest.copyState(target));
+
+    digest.update(input, 200, input.length - 200);
+    target.update(targetInput, 173, targetInput.length - 173);
+    assertArrayEquals(referenceDigest(input), digest.digest());
+    assertArrayEquals(expectedTarget, target.digest());
+  }
+
+  @Test
+  public void testCopyStateRejectsDifferentBlockLength() throws Exception {
+    DigestEngine digest = (DigestEngine) newDigest();
+    DigestEngine target = bits == 256 ? new Keccak256() {
+      @Override
+      protected int getInternalBlockLength() {
+        return super.getInternalBlockLength() + 8;
+      }
+    } : new Keccak512() {
+      @Override
+      protected int getInternalBlockLength() {
+        return super.getInternalBlockLength() + 8;
+      }
+    };
+    byte[] input = inputBytes();
+    digest.update(input, 0, 200);
+    target.update(input, 0, 17);
+    byte[] targetBuffer = target.getBlockBuffer().clone();
+    long[] targetState = ((long[]) ReflectionTestUtils.getField(target, "A")).clone();
+
+    assertThrows(IllegalArgumentException.class, () -> digest.copyState(target));
+
+    assertArrayEquals(targetBuffer, target.getBlockBuffer());
+    assertArrayEquals(targetState, (long[]) ReflectionTestUtils.getField(target, "A"));
+    assertEquals(17, target.flush());
+    assertEquals(0, target.getBlockCount());
+    digest.update(input, 200, input.length - 200);
+    assertArrayEquals(referenceDigest(input), digest.digest());
+  }
+
   private void assertBuffersCleared(DigestEngine digest) {
     byte[] inputBuffer = digest.getBlockBuffer();
     byte[] outputBuffer = (byte[]) ReflectionTestUtils.getField(digest, "tmpOut");
