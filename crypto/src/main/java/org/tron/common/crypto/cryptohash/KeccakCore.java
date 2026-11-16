@@ -540,8 +540,12 @@ abstract class KeccakCore extends DigestEngine {
     A[20] = 0xFFFFFFFFFFFFFFFFL;
   }
 
-  protected Digest copyState(KeccakCore dst) {
-    System.arraycopy(A, 0, dst.A, 0, 25);
+  @Override
+  protected Digest copyState(DigestEngine dst) {
+    if (!(dst instanceof KeccakCore)) {
+      throw new IllegalArgumentException("Destination must be a KeccakCore");
+    }
+    System.arraycopy(A, 0, ((KeccakCore) dst).A, 0, 25);
     return super.copyState(dst);
   }
 

@@ -2,7 +2,9 @@ package org.tron.common.crypto.cryptohash;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
+import static org.mockito.Mockito.mock;
 
 import java.nio.ByteBuffer;
 import java.security.DigestException;
@@ -298,6 +300,33 @@ public class KeccakTest {
     digest.update(ByteBuffer.wrap(input, 151, input.length - 151));
     assertArrayEquals(referenceDigest(input), digest.digest());
     assertArrayEquals(referenceDigest(Arrays.copyOf(input, 151)), copy.digest());
+  }
+
+  @Test
+  public void testCopyStateWithDigestEngineTarget() throws Exception {
+    DigestEngine digest = (DigestEngine) newDigest();
+    DigestEngine copy = (DigestEngine) newDigest();
+    byte[] input = inputBytes();
+    digest.update(input, 0, 200);
+    copy.update(input);
+
+    assertSame(copy, digest.copyState(copy));
+
+    digest.update(input, 200, input.length - 200);
+    assertArrayEquals(referenceDigest(input), digest.digest());
+    assertArrayEquals(referenceDigest(Arrays.copyOf(input, 200)), copy.digest());
+  }
+
+  @Test
+  public void testCopyStateRejectsInvalidTarget() throws Exception {
+    DigestEngine digest = (DigestEngine) newDigest();
+    byte[] input = inputBytes();
+    digest.update(input);
+    DigestEngine invalidTarget = mock(DigestEngine.class);
+
+    assertThrows(IllegalArgumentException.class, () -> digest.copyState(invalidTarget));
+    assertThrows(IllegalArgumentException.class, () -> digest.copyState(null));
+    assertArrayEquals(referenceDigest(input), digest.digest());
   }
 
   private MessageDigest newDigest() throws Exception {
