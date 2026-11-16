@@ -57,9 +57,7 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
   protected abstract void processBlock(byte[] data);
 
   /**
-   * Perform the final padding and store the result in the provided buffer. This method shall call
-   * {@link #flush} and then {@link #update} with the appropriate padding data in order to getData
-   * the full input data.
+   * Perform the final padding and store the resulting digest in the provided buffer.
    *
    * @param buf the output buffer
    * @param off the output offset
