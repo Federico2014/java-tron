@@ -20,6 +20,7 @@ package org.tron.common.crypto.cryptohash;
 
 import java.security.DigestException;
 import java.security.MessageDigest;
+import java.util.Arrays;
 
 public abstract class DigestEngine extends MessageDigest implements Digest {
 
@@ -45,6 +46,7 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
    * state.
    */
   protected void engineReset() {
+    Arrays.fill(inputBuf, (byte) 0);
     inputLen = 0;
     blockCount = 0;
   }

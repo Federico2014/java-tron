@@ -18,6 +18,8 @@
 
 package org.tron.common.crypto.cryptohash;
 
+import java.util.Arrays;
+
 abstract class KeccakCore extends DigestEngine {
 
   private static final long[] RC = {
@@ -529,6 +531,7 @@ abstract class KeccakCore extends DigestEngine {
   }
 
   private final void doReset() {
+    Arrays.fill(tmpOut, (byte) 0);
     for (int i = 0; i < 25; i++) {
       A[i] = 0;
     }

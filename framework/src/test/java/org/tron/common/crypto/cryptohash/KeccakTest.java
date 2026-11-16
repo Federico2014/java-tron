@@ -15,6 +15,7 @@ import org.bouncycastle.crypto.digests.KeccakDigest;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.tron.common.crypto.jce.TronCastleProvider;
 
 @RunWith(Parameterized.class)
@@ -292,6 +293,48 @@ public class KeccakTest {
   }
 
   @Test
+  public void testResetClearsBuffers() throws Exception {
+    for (boolean spi : new boolean[]{false, true}) {
+      DigestEngine digest = (DigestEngine) newDigest();
+      byte[] input = inputBytes();
+      digest.update(input);
+      byte[] output = new byte[bits / 8];
+      digest.doPadding(output, 0);
+      assertArrayEquals(referenceDigest(input), output);
+      assertArrayEquals(output, (byte[]) ReflectionTestUtils.getField(digest, "tmpOut"));
+
+      if (spi) {
+        digest.engineReset();
+      } else {
+        digest.reset();
+      }
+
+      assertBuffersCleared(digest);
+      assertArrayEquals(referenceDigest(new byte[0]), digest.digest());
+      assertArrayEquals(referenceDigest(input), digest.digest(input));
+    }
+  }
+
+  @Test
+  public void testDigestClearsBuffers() throws Exception {
+    DigestEngine digest = (DigestEngine) newDigest();
+    int blockLength = digest.getBlockLength();
+    for (int length : new int[]{0, 1, blockLength - 1, blockLength, blockLength + 1,
+        2 * blockLength + 3}) {
+      byte[] input = Arrays.copyOf(inputBytes(), length);
+      byte[] expected = referenceDigest(input);
+      assertArrayEquals(expected, digest.digest(input));
+      assertBuffersCleared(digest);
+
+      digest.update(input);
+      byte[] output = new byte[expected.length + 4];
+      assertEquals(expected.length, digest.digest(output, 2, expected.length));
+      assertArrayEquals(expected, Arrays.copyOfRange(output, 2, output.length - 2));
+      assertBuffersCleared(digest);
+    }
+  }
+
+  @Test
   public void testCopy() throws Exception {
     DigestEngine digest = (DigestEngine) newDigest();
     byte[] input = inputBytes();
@@ -327,6 +370,13 @@ public class KeccakTest {
     assertThrows(IllegalArgumentException.class, () -> digest.copyState(invalidTarget));
     assertThrows(IllegalArgumentException.class, () -> digest.copyState(null));
     assertArrayEquals(referenceDigest(input), digest.digest());
+  }
+
+  private void assertBuffersCleared(DigestEngine digest) {
+    byte[] inputBuffer = digest.getBlockBuffer();
+    byte[] outputBuffer = (byte[]) ReflectionTestUtils.getField(digest, "tmpOut");
+    assertArrayEquals(new byte[inputBuffer.length], inputBuffer);
+    assertArrayEquals(new byte[outputBuffer.length], outputBuffer);
   }
 
   private MessageDigest newDigest() throws Exception {
