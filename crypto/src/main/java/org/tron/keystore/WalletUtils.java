@@ -6,10 +6,10 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Console;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
@@ -32,6 +32,7 @@ import java.util.EnumSet;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.tron.common.crypto.SignInterface;
@@ -81,18 +82,14 @@ public class WalletUtils {
    * Directory syncing requires filesystem support. A sync failure after replacement
    * is reported to the caller, but does not roll back the replacement.
    *
-   * <p>On POSIX filesystems, the temp file is created atomically with 0600
-   * permissions via {@link Files#createTempFile(Path, String, String,
-   * java.nio.file.attribute.FileAttribute[])}, avoiding any window where the
-   * file is world-readable.
+   * <p>The temporary file is atomically created with 0600 permissions and written
+   * through the same channel, without reopening its path. Filesystems that cannot
+   * atomically set these permissions are not supported.
    *
-   * <p>On non-POSIX filesystems (e.g. Windows) the fallback uses
-   * {@link File#setReadable(boolean, boolean)} /
-   * {@link File#setWritable(boolean, boolean)} which is best-effort — these
-   * methods manipulate only DOS-style attributes on Windows and may not update
-   * file ACLs. The sensitive keystore JSON is written only after the narrowing
-   * calls, so no confidential data is exposed during the window, but callers
-   * on Windows should not infer strict owner-only ACL enforcement from this.
+   * <p>The destination must be in a trusted directory hierarchy. Keeping the channel
+   * open prevents a replaced temporary path from redirecting the wallet bytes, but
+   * users able to modify directory entries can still replace or remove the file
+   * before or after the move.
    *
    * @param walletFile  the keystore to serialize
    * @param destination the final target file (existing file will be replaced)
@@ -102,26 +99,18 @@ public class WalletUtils {
     Path dir = destination.getAbsoluteFile().getParentFile().toPath();
     Files.createDirectories(dir);
 
-    Path tmp;
-    try {
-      tmp = Files.createTempFile(dir, "keystore-", ".tmp",
-          PosixFilePermissions.asFileAttribute(OWNER_ONLY));
-    } catch (UnsupportedOperationException e) {
-      // Windows / non-POSIX fallback — best-effort narrowing only (see JavaDoc)
-      tmp = Files.createTempFile(dir, "keystore-", ".tmp");
-      File tf = tmp.toFile();
-      tf.setReadable(false, false);
-      tf.setReadable(true, true);
-      tf.setWritable(false, false);
-      tf.setWritable(true, true);
-    }
+    Path tmp = dir.resolve("keystore-" + UUID.randomUUID() + ".tmp");
+    // Open before entering cleanup: a CREATE_NEW collision must not delete an existing file.
+    FileChannel channel = FileChannel.open(tmp,
+        EnumSet.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
+        PosixFilePermissions.asFileAttribute(OWNER_ONLY));
 
     try {
-      try (FileOutputStream output = new FileOutputStream(tmp.toFile())) {
-        // Keep the stream open until all serialized bytes have been synced.
+      try (FileChannel output = channel) {
+        // Keep the creating channel open until all serialized bytes have been synced.
         objectMapper.writer().without(JsonGenerator.Feature.AUTO_CLOSE_TARGET)
-            .writeValue(output, walletFile);
-        output.getChannel().force(true);
+            .writeValue(Channels.newOutputStream(output), walletFile);
+        output.force(true);
       }
       try {
         Files.move(tmp, destination.toPath(),
