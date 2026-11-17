@@ -311,11 +311,9 @@ final class KeystoreCliUtils {
   }
 
   /**
-   * Check if a WalletFile represents a decryptable V3 keystore.
-   * Delegates to {@link Wallet#isValidKeystoreFile(WalletFile)} so the
-   * discovery predicate stays in sync with decryption-time validation —
-   * a JSON stub with empty or unsupported cipher/KDF is rejected here
-   * rather than silently showing up as a "keystore" and failing later.
+   * Checks keystore structure and requires a non-empty, valid address for discovery.
+   * Unlike decryption, discovery excludes missing or empty addresses.
+   * See {@link Wallet#isValidKeystoreFile(WalletFile)}; decryption may still fail.
    */
   static boolean isValidKeystoreFile(WalletFile wf) {
     return org.tron.keystore.Wallet.isValidKeystoreFile(wf);
