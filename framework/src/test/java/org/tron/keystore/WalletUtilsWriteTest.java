@@ -1,22 +1,37 @@
 package org.tron.keystore;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.utils.Utils;
@@ -166,6 +181,88 @@ public class WalletUtilsWriteTest {
         && name.endsWith(".tmp"));
     assertNotNull(tempFiles);
     assertEquals("Temp file must be cleaned up on failure", 0, tempFiles.length);
+  }
+
+  @Test
+  public void testFileSyncFailurePreservesExistingKeystore() throws Exception {
+    File dir = tempFolder.newFolder("file-sync-fail");
+    File destination = new File(dir, "wallet.json");
+    WalletFile original = lightWalletFile("password123");
+    WalletUtils.writeWalletFile(original, destination);
+    byte[] before = Files.readAllBytes(destination.toPath());
+    WalletFile replacement = lightWalletFile("newpassword");
+    FileChannel channel = mock(FileChannel.class);
+    doThrow(new IOException("file sync failed")).when(channel).force(true);
+    AtomicReference<FileOutputStream> walletOutput = new AtomicReference<>();
+
+    try (MockedConstruction<FileOutputStream> outputs = mockConstruction(FileOutputStream.class,
+        (output, context) -> {
+          Object target = context.arguments().get(0);
+          if (target instanceof File && ((File) target).getName().startsWith("keystore-")) {
+            walletOutput.set(output);
+            when(output.getChannel()).thenReturn(channel);
+          }
+        })) {
+      IOException error = assertThrows(IOException.class,
+          () -> WalletUtils.writeWalletFile(replacement, destination));
+      assertEquals("file sync failed", error.getMessage());
+      assertNotNull(walletOutput.get());
+      verify(walletOutput.get()).close();
+    }
+    assertArrayEquals(before, Files.readAllBytes(destination.toPath()));
+    assertEquals("Only the original wallet should remain", 1, dir.list().length);
+  }
+
+  @Test
+  public void testDirectorySyncFailureReportsCompletedReplacement() throws Exception {
+    File dir = tempFolder.newFolder("directory-sync-fail");
+    File destination = new File(dir, "wallet.json");
+    WalletUtils.writeWalletFile(lightWalletFile("oldpassword"), destination);
+    WalletFile replacement = lightWalletFile("newpassword");
+    Path realDir = dir.toPath().toRealPath();
+    FileChannel channel = mock(FileChannel.class);
+    doThrow(new IOException("directory sync failed")).when(channel).force(true);
+
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class)) {
+      channels.when(() -> FileChannel.open(realDir, StandardOpenOption.READ))
+          .thenReturn(channel);
+      IOException error = assertThrows(IOException.class,
+          () -> WalletUtils.writeWalletFile(replacement, destination));
+      assertTrue(error.getMessage().contains("Keystore was replaced"));
+      assertEquals("directory sync failed", error.getCause().getMessage());
+    }
+    verify(channel).close();
+    assertEquals(replacement.getAddress(),
+        WalletUtils.loadCredentials("newpassword", destination).getAddress());
+    assertEquals("No temporary file should remain", 1, dir.list().length);
+  }
+
+  @Test
+  public void testAncestorSyncFailureIsNotIgnored() throws Exception {
+    File base = tempFolder.newFolder("ancestor-sync-fail");
+    File destination = new File(base, "a/b/c/wallet.json");
+    // Match CLI callers which create directories before calling writeWalletFile.
+    Files.createDirectories(destination.toPath().getParent());
+    WalletFile wallet = lightWalletFile("password123");
+    FileChannel directory = mock(FileChannel.class);
+    FileChannel ancestor = mock(FileChannel.class);
+    doThrow(new IOException("ancestor sync failed")).when(ancestor).force(true);
+    Path realDir = destination.toPath().getParent().toRealPath();
+
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class)) {
+      channels.when(() -> FileChannel.open(realDir, StandardOpenOption.READ))
+          .thenReturn(directory);
+      channels.when(() -> FileChannel.open(realDir.getParent(), StandardOpenOption.READ))
+          .thenReturn(ancestor);
+      IOException error = assertThrows(IOException.class,
+          () -> WalletUtils.writeWalletFile(wallet, destination));
+      assertEquals("ancestor sync failed", error.getCause().getMessage());
+    }
+    verify(directory).force(true);
+    verify(directory).close();
+    verify(ancestor).close();
+    assertEquals(wallet.getAddress(),
+        WalletUtils.loadCredentials("password123", destination).getAddress());
   }
 
   // ---------- loadCredentials symlink behavior ----------

@@ -1,13 +1,16 @@
 package org.tron.keystore;
 
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Console;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -72,6 +76,10 @@ public class WalletUtils {
   /**
    * Write a WalletFile to the given destination path with owner-only (0600)
    * permissions, using a temp file + atomic rename.
+   * The temporary file is synced before replacement, then the destination directory
+   * and its ancestors are synced to persist newly created directory entries too.
+   * Directory syncing requires filesystem support. A sync failure after replacement
+   * is reported to the caller, but does not roll back the replacement.
    *
    * <p>On POSIX filesystems, the temp file is created atomically with 0600
    * permissions via {@link Files#createTempFile(Path, String, String,
@@ -109,13 +117,29 @@ public class WalletUtils {
     }
 
     try {
-      objectMapper.writeValue(tmp.toFile(), walletFile);
+      try (FileOutputStream output = new FileOutputStream(tmp.toFile())) {
+        // Keep the stream open until all serialized bytes have been synced.
+        objectMapper.writer().without(JsonGenerator.Feature.AUTO_CLOSE_TARGET)
+            .writeValue(output, walletFile);
+        output.getChannel().force(true);
+      }
       try {
         Files.move(tmp, destination.toPath(),
             StandardCopyOption.REPLACE_EXISTING,
             StandardCopyOption.ATOMIC_MOVE);
       } catch (AtomicMoveNotSupportedException e) {
         Files.move(tmp, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+      }
+      try {
+        // Callers may have just created the directory, so sync the whole ancestor chain.
+        // Resolve symlinks to sync the actual directory hierarchy containing the file.
+        for (Path current = dir.toRealPath(); current != null; current = current.getParent()) {
+          try (FileChannel directory = FileChannel.open(current, StandardOpenOption.READ)) {
+            directory.force(true);
+          }
+        }
+      } catch (IOException e) {
+        throw new IOException("Keystore was replaced, but directory sync failed: " + dir, e);
       }
     } catch (Exception e) {
       try {
