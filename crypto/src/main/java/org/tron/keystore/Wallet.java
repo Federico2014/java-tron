@@ -21,7 +21,9 @@ import org.bouncycastle.crypto.params.KeyParameter;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
+import org.tron.common.utils.Base58;
 import org.tron.common.utils.ByteArray;
+import org.tron.common.utils.DecodeUtil;
 import org.tron.common.utils.StringUtil;
 import org.tron.core.exception.CipherException;
 
@@ -30,20 +32,8 @@ import org.tron.core.exception.CipherException;
  * Web3 Secret Storage Definition</a> or the <a href="https://github.com/ethereum/go-ethereum/blob/master/accounts/key_store_passphrase.go">
  * Go Ethereum client implementation</a>.</p>
  *
- * <p><strong>Note:</strong> the Bouncy Castle Scrypt implementation {@link SCrypt}, fails to
- * comply
- * with the following Ethereum reference <a href="https://github.com/ethereum/wiki/wiki/Web3-Secret-Storage-Definition#scrypt">
- * Scrypt test vector</a>:</p>
- *
- * <pre>
- * {@code
- * // Only value of r that cost (as an int) could be exceeded for is 1
- * if (r == 1 && N_STANDARD > 65536)
- * {
- *     throw new IllegalArgumentException("Cost parameter N_STANDARD must be > 1 and < 65536.");
- * }
- * }
- * </pre>
+ * <p>Scrypt parameters are checked against RFC 7914 and the supported resource limits
+ * before invoking {@link SCrypt}.</p>
  */
 public class Wallet {
 
@@ -155,7 +145,7 @@ public class Wallet {
   }
 
   private static byte[] generateAes128CtrDerivedKey(
-      byte[] password, byte[] salt, int c, String prf) throws CipherException {
+      byte[] password, byte[] salt, int c, String prf, int dklen) throws CipherException {
 
     if (!"hmac-sha256".equals(prf)) {
       throw new CipherException("Unsupported prf:" + prf);
@@ -166,7 +156,7 @@ public class Wallet {
 
     PKCS5S2ParametersGenerator gen = new PKCS5S2ParametersGenerator(new SHA256Digest());
     gen.init(password, salt, c);
-    return ((KeyParameter) gen.generateDerivedParameters(256)).getKey();
+    return ((KeyParameter) gen.generateDerivedParameters(dklen * 8)).getKey();
   }
 
   private static byte[] performCipherOperation(
@@ -235,7 +225,8 @@ public class Wallet {
       byte[] salt = ByteArray.fromHexString(aes128CtrKdfParams.getSalt());
 
       try {
-        derivedKey = generateAes128CtrDerivedKey(password.getBytes(UTF_8), salt, c, prf);
+        derivedKey = generateAes128CtrDerivedKey(password.getBytes(UTF_8), salt, c, prf,
+            aes128CtrKdfParams.getDklen());
       } catch (RuntimeException e) {
         throw new CipherException("Pbkdf2 key derivation failed", e);
       }
@@ -290,8 +281,8 @@ public class Wallet {
   /**
    * Returns a description of the first schema violation found in
    * {@code walletFile}, or {@code null} if the file matches the supported
-   * V3 keystore shape (current version, known cipher, known KDF, and KDF
-   * cost parameters within safe bounds).
+   * V3 keystore shape, including required fields, encodings, lengths, and KDF
+   * parameters within supported bounds. This does not verify the password or MAC.
    *
    * <p>KDF cost bounds are enforced here — the single chokepoint shared by
    * {@link #validate(WalletFile)} (which throws the message) and
@@ -301,8 +292,16 @@ public class Wallet {
    * exhaustion, or engine-level crashes before {@link #decrypt} runs.
    */
   private static String validationError(WalletFile walletFile) {
+    if (walletFile == null) {
+      return "Missing wallet file";
+    }
     if (walletFile.getVersion() != CURRENT_VERSION) {
       return "Wallet version is not supported";
+    }
+    String address = walletFile.getAddress();
+    // An absent address remains supported for imported keystores.
+    if (address != null && !address.isEmpty() && !validAddress(address)) {
+      return "Invalid keystore address";
     }
     WalletFile.Crypto crypto = walletFile.getCrypto();
     if (crypto == null) {
@@ -312,28 +311,85 @@ public class Wallet {
     if (cipher == null || !cipher.equals(CIPHER)) {
       return "Wallet cipher is not supported";
     }
+    if (crypto.getCipherparams() == null) {
+      return "Missing cipherparams";
+    }
+    if (!validHex(crypto.getCipherparams().getIv(), 16)) {
+      return "IV must be 16 bytes of hex";
+    }
+    if (!validHex(crypto.getCiphertext(), 32)) {
+      return "Ciphertext must be 32 bytes of hex";
+    }
+    if (!validHex(crypto.getMac(), 32)) {
+      return "MAC must be 32 bytes of hex";
+    }
     String kdf = crypto.getKdf();
     if (kdf == null || (!kdf.equals(PBKDF2) && !kdf.equals(SCRYPT))) {
       return "KDF type is not supported";
     }
     WalletFile.KdfParams kdfParams = crypto.getKdfparams();
     if (kdfParams == null) {
-      // Structural stubs (e.g. tooling fixtures) may omit kdfparams entirely;
-      // there are no cost parameters to bound. Real keystores always carry them.
-      return null;
+      return "Missing kdfparams";
     }
     if (SCRYPT.equals(kdf)) {
       if (!(kdfParams instanceof WalletFile.ScryptKdfParams)) {
         return "Scrypt KDF params are missing or malformed";
       }
       WalletFile.ScryptKdfParams params = (WalletFile.ScryptKdfParams) kdfParams;
+      if (!validHex(params.getSalt(), -1)) {
+        return "Scrypt salt must be non-empty hex";
+      }
       return scryptKdfParamsError(params.getDklen(), params.getN(), params.getR(), params.getP());
     }
     if (!(kdfParams instanceof WalletFile.Aes128CtrKdfParams)) {
       return "Pbkdf2 KDF params are missing or malformed";
     }
     WalletFile.Aes128CtrKdfParams params = (WalletFile.Aes128CtrKdfParams) kdfParams;
+    if (!validHex(params.getSalt(), -1)) {
+      return "Pbkdf2 salt must be non-empty hex";
+    }
+    if (!"hmac-sha256".equals(params.getPrf())) {
+      return "Unsupported prf: " + params.getPrf();
+    }
     return pbkdf2KdfParamsError(params.getDklen(), params.getC());
+  }
+
+  private static boolean validHex(String value, int byteLength) {
+    if (value == null) {
+      return false;
+    }
+    // Preserve the existing optional 0x prefix, but reject padding and non-ASCII digits.
+    int start = value.startsWith("0x") ? 2 : 0;
+    int length = value.length() - start;
+    if (length == 0 || (length & 1) != 0
+        || (byteLength >= 0 && length != byteLength * 2)) {
+      return false;
+    }
+    for (int i = start; i < value.length(); i++) {
+      char c = value.charAt(i);
+      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+          || (c >= 'A' && c <= 'F'))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean validAddress(String address) {
+    // Bound Base58 decoding before allocating or doing quadratic conversion work.
+    if (address.length() > 34) {
+      return false;
+    }
+    try {
+      byte[] decoded = Base58.decode(address);
+      if (decoded.length != 25) {
+        return false;
+      }
+      byte[] payload = Arrays.copyOf(decoded, 21);
+      return DecodeUtil.addressValid(payload) && StringUtil.encode58Check(payload).equals(address);
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
   }
 
   private static String scryptKdfParamsError(int dklen, int n, int r, int p) {
@@ -349,6 +405,10 @@ public class Wallet {
     if (r < 1 || r > SCRYPT_R_MAX) {
       return "Scrypt r is out of range [1, " + SCRYPT_R_MAX + "]: " + r;
     }
+    // RFC 7914 requires n < 2^(16*r); for r >= 2 the n cap already ensures this.
+    if (r == 1 && n >= (1 << 16)) {
+      return "Scrypt n must be less than 65536 when r is 1";
+    }
     if (p < 1 || p > SCRYPT_P_MAX) {
       return "Scrypt p is out of range [1, " + SCRYPT_P_MAX + "]: " + p;
     }
@@ -362,8 +422,8 @@ public class Wallet {
   }
 
   private static String pbkdf2KdfParamsError(int dklen, int c) {
-    if (dklen < 1 || dklen > KDF_DKLEN_MAX) {
-      return "Pbkdf2 dklen is out of range [1, " + KDF_DKLEN_MAX + "]: " + dklen;
+    if (dklen < 32 || dklen > KDF_DKLEN_MAX) {
+      return "Pbkdf2 dklen is out of range [32, " + KDF_DKLEN_MAX + "]: " + dklen;
     }
     if (c < 1 || c > PBKDF2_C_MAX) {
       return "Pbkdf2 iteration count c is out of range [1, " + PBKDF2_C_MAX + "]: " + c;
@@ -379,15 +439,15 @@ public class Wallet {
   }
 
   /**
-   * Returns {@code true} iff {@code walletFile} has the shape of a
-   * decryptable V3 keystore: non-null address, supported version, non-null
-   * crypto section with a supported cipher and KDF. Intended for
-   * discovery-style filtering (e.g. listing or duplicate detection) where
-   * we want to skip JSON stubs that would later fail {@link #validate}.
+   * Returns {@code true} iff {@code walletFile} has a non-empty address and passes
+   * the same structural checks as {@link #validate}. Intended for discovery-style
+   * filtering (e.g. listing or duplicate detection). Password correctness, MAC
+   * authenticity and address/private-key consistency are checked only by decrypt.
    */
   public static boolean isValidKeystoreFile(WalletFile walletFile) {
     return walletFile != null
         && walletFile.getAddress() != null
+        && !walletFile.getAddress().isEmpty()
         && validationError(walletFile) == null;
   }
 

@@ -48,7 +48,7 @@ public class WalletAddressValidationTest {
     WalletFile walletFile = Wallet.createStandard(password, keyPair);
 
     // Tamper with the address to simulate a spoofed keystore
-    walletFile.setAddress("TTamperedAddressXXXXXXXXXXXXXXXXXX");
+    walletFile.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     byte[] expectedPrivateKey = keyPair.getPrivateKey();
     AtomicReference<byte[]> decryptedPrivateKey = new AtomicReference<>();
 

@@ -619,7 +619,7 @@ public class KeystoreUpdateTest {
     File keystoreFile = new File(dir, fileName);
 
     String realAddress = Credentials.create(keyPair).getAddress();
-    String spoofedAddress = "TSpoofedAddressXXXXXXXXXXXXXXXXXXXX";
+    String spoofedAddress = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
 
     com.fasterxml.jackson.databind.ObjectMapper mapper =
         new com.fasterxml.jackson.databind.ObjectMapper()

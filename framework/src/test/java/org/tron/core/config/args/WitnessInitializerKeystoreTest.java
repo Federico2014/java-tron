@@ -171,7 +171,7 @@ public class WitnessInitializerKeystoreTest {
       ObjectMapper mapper = new ObjectMapper().configure(
           DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
       WalletFile wf = mapper.readValue(keystoreFile, WalletFile.class);
-      String spoofedAddress = "TSpoofedSrAddressXXXXXXXXXXXXXXXXXXX";
+      String spoofedAddress = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
       wf.setAddress(spoofedAddress);
       mapper.writeValue(keystoreFile, wf);
 
