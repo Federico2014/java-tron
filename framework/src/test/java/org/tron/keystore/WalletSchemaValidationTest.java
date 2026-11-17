@@ -126,9 +126,24 @@ public class WalletSchemaValidationTest {
       wallet = validWallet(false);
       wallet.getCrypto().setMac(hex(length));
       assertRejected(wallet);
-      wallet = validWallet(false);
-      wallet.getCrypto().setCiphertext(hex(length));
-      assertRejected(wallet);
+    }
+  }
+
+  @Test
+  public void testCiphertextLengthBounds() throws Exception {
+    for (boolean pbkdf2 : new boolean[] {false, true}) {
+      for (String prefix : new String[] {"", "0x"}) {
+        for (int length : new int[] {0, 34, 35, 64}) {
+          WalletFile wallet = validWallet(pbkdf2);
+          wallet.getCrypto().setCiphertext(prefix + hex(length));
+          assertRejected(wallet);
+        }
+        for (int length : new int[] {1, 31, 32, 33}) {
+          WalletFile wallet = validWallet(pbkdf2);
+          wallet.getCrypto().setCiphertext(prefix + hex(length));
+          Wallet.validate(wallet);
+        }
+      }
     }
   }
 

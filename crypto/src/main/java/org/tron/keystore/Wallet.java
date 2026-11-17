@@ -18,6 +18,7 @@ import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
 import org.bouncycastle.crypto.generators.SCrypt;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.tron.common.crypto.ECKey;
 import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
@@ -68,8 +69,18 @@ public class Wallet {
   private static final int KDF_DKLEN_MAX = 128;
   private static final int PBKDF2_C_MAX = 1 << 20;
 
+  /**
+   * Creates a keystore. The caller must ensure the signing key's address matches its private key.
+   */
   public static WalletFile create(String password, SignInterface sign, int n, int p)
       throws CipherException {
+
+    if (!WalletUtils.passwordValid(password)) {
+      throw new CipherException("Password must be at least 6 characters");
+    }
+    if (sign == null) {
+      throw new CipherException("Missing signing key");
+    }
 
     // Keep create() symmetric with validate()/decrypt(): reject KDF cost
     // parameters that the decryption path would refuse, so create() can
@@ -79,14 +90,22 @@ public class Wallet {
       throw new CipherException(paramError);
     }
 
+    byte[] privateKeyBytes = sign.getPrivateKey();
+    if (!ECKey.isValidPrivateKey(privateKeyBytes)) {
+      throw new CipherException("Invalid private key");
+    }
+
     byte[] salt = generateRandomBytes(32);
 
-    byte[] derivedKey = generateDerivedScryptKey(password.getBytes(UTF_8), salt, n, R, p, DKLEN);
+    byte[] derivedKey;
+    try {
+      derivedKey = generateDerivedScryptKey(password.getBytes(UTF_8), salt, n, R, p, DKLEN);
+    } catch (RuntimeException e) {
+      throw new CipherException("Scrypt key derivation failed", e);
+    }
 
     byte[] encryptKey = Arrays.copyOfRange(derivedKey, 0, 16);
     byte[] iv = generateRandomBytes(16);
-
-    byte[] privateKeyBytes = sign.getPrivateKey();
 
     byte[] cipherText = performCipherOperation(Cipher.ENCRYPT_MODE, iv, encryptKey,
         privateKeyBytes);
@@ -314,13 +333,22 @@ public class Wallet {
     if (crypto.getCipherparams() == null) {
       return "Missing cipherparams";
     }
-    if (!validHex(crypto.getCipherparams().getIv(), 16)) {
+    String iv = crypto.getCipherparams().getIv();
+    if (iv == null || iv.length() > 34 || !StringUtil.isHexadecimal(iv)
+        || ByteArray.fromHexString(iv).length != 16) {
       return "IV must be 16 bytes of hex";
     }
-    if (!validHex(crypto.getCiphertext(), 32)) {
-      return "Ciphertext must be 32 bytes of hex";
+    String ciphertext = crypto.getCiphertext();
+    // Allow the private-key encodings accepted by ECKey; validate the scalar after decryption.
+    if (ciphertext == null
+        || ciphertext.length() > 68
+        || !StringUtil.isHexadecimal(ciphertext)
+        || ByteArray.fromHexString(ciphertext).length > 33) {
+      return "Ciphertext must be 1 to 33 bytes of hex";
     }
-    if (!validHex(crypto.getMac(), 32)) {
+    String mac = crypto.getMac();
+    if (mac == null || mac.length() > 66 || !StringUtil.isHexadecimal(mac)
+        || ByteArray.fromHexString(mac).length != 32) {
       return "MAC must be 32 bytes of hex";
     }
     String kdf = crypto.getKdf();
@@ -336,7 +364,7 @@ public class Wallet {
         return "Scrypt KDF params are missing or malformed";
       }
       WalletFile.ScryptKdfParams params = (WalletFile.ScryptKdfParams) kdfParams;
-      if (!validHex(params.getSalt(), -1)) {
+      if (!StringUtil.isHexadecimal(params.getSalt())) {
         return "Scrypt salt must be non-empty hex";
       }
       return scryptKdfParamsError(params.getDklen(), params.getN(), params.getR(), params.getP());
@@ -345,34 +373,13 @@ public class Wallet {
       return "Pbkdf2 KDF params are missing or malformed";
     }
     WalletFile.Aes128CtrKdfParams params = (WalletFile.Aes128CtrKdfParams) kdfParams;
-    if (!validHex(params.getSalt(), -1)) {
+    if (!StringUtil.isHexadecimal(params.getSalt())) {
       return "Pbkdf2 salt must be non-empty hex";
     }
     if (!"hmac-sha256".equals(params.getPrf())) {
       return "Unsupported prf: " + params.getPrf();
     }
     return pbkdf2KdfParamsError(params.getDklen(), params.getC());
-  }
-
-  private static boolean validHex(String value, int byteLength) {
-    if (value == null) {
-      return false;
-    }
-    // Preserve the existing optional 0x prefix, but reject padding and non-ASCII digits.
-    int start = value.startsWith("0x") ? 2 : 0;
-    int length = value.length() - start;
-    if (length == 0 || (length & 1) != 0
-        || (byteLength >= 0 && length != byteLength * 2)) {
-      return false;
-    }
-    for (int i = start; i < value.length(); i++) {
-      char c = value.charAt(i);
-      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
-          || (c >= 'A' && c <= 'F'))) {
-        return false;
-      }
-    }
-    return true;
   }
 
   private static boolean validAddress(String address) {
