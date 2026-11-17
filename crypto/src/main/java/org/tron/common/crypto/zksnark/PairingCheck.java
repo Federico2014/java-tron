@@ -100,7 +100,7 @@ public class PairingCheck {
 
     List<EllCoeffs> coeffs = new ArrayList<>();
 
-    BN128G2 addend = base;
+    G2Homogeneous addend = G2Homogeneous.fromAffine(base);
 
     // for each bit except most significant one
     for (int i = LOOP_COUNT.bitLength() - 2; i >= 0; i--) {
@@ -132,7 +132,8 @@ public class PairingCheck {
     return coeffs;
   }
 
-  private static Precomputed flippedMillerLoopMixedAddition(BN128G2 base, BN128G2 addend) {
+  private static Precomputed flippedMillerLoopMixedAddition(BN128G2 base,
+      G2Homogeneous addend) {
 
     Fp2 x1 = addend.x, y1 = addend.y, z1 = addend.z;
     Fp2 x2 = base.x, y2 = base.y;
@@ -154,12 +155,12 @@ public class PairingCheck {
     Fp2 ellVW = d;                                      // ell_VW = d
 
     return Precomputed.of(
-        new BN128G2(x3, y3, z3),
+        new G2Homogeneous(x3, y3, z3),
         new EllCoeffs(ell0, ellVW, ellVV)
     );
   }
 
-  private static Precomputed flippedMillerLoopDoubling(BN128G2 g2) {
+  private static Precomputed flippedMillerLoopDoubling(G2Homogeneous g2) {
 
     Fp2 x = g2.x, y = g2.y, z = g2.z;
 
@@ -184,7 +185,7 @@ public class PairingCheck {
     Fp2 ellVV = j.add(j).add(j);    // ell_VV = 3 * j
 
     return Precomputed.of(
-        new BN128G2(rx, ry, rz),
+        new G2Homogeneous(rx, ry, rz),
         new EllCoeffs(ell0, ellVW, ellVV)
     );
   }
@@ -257,16 +258,46 @@ public class PairingCheck {
 
   static class Precomputed {
 
-    BN128G2 g2;
+    G2Homogeneous g2;
     EllCoeffs coeffs;
 
-    Precomputed(BN128G2 g2, EllCoeffs coeffs) {
+    Precomputed(G2Homogeneous g2, EllCoeffs coeffs) {
       this.g2 = g2;
       this.coeffs = coeffs;
     }
 
-    static Precomputed of(BN128G2 g2, EllCoeffs coeffs) {
+    static Precomputed of(G2Homogeneous g2, EllCoeffs coeffs) {
       return new Precomputed(g2, coeffs);
+    }
+  }
+
+  /**
+   * Running point of the flipped Miller loop, stored in homogeneous projective coordinates: the
+   * affine point it denotes is {@code (x / z, y / z)}. This differs from {@link BN128G2}, which is
+   * Jacobian ({@code (x / z^2, y / z^3)}), so the two must never be mixed. The type deliberately
+   * exposes no group operations.
+   */
+  static final class G2Homogeneous {
+
+    final Fp2 x;
+    final Fp2 y;
+    final Fp2 z;
+
+    private G2Homogeneous(Fp2 x, Fp2 y, Fp2 z) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+
+    /**
+     * Creates the running point from a curve point in affine coordinates, i.e. one with
+     * {@code z = 1}, where homogeneous and Jacobian coordinates agree.
+     */
+    static G2Homogeneous fromAffine(BN128G2 p) {
+      if (!Fp2._1.equals(p.z)) {
+        throw new IllegalArgumentException("expected an affine point (z = 1)");
+      }
+      return new G2Homogeneous(p.x, p.y, p.z);
     }
   }
 
