@@ -6,14 +6,19 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.security.KeyPair;
 import java.security.MessageDigest;
 import java.security.Provider;
 import java.security.SecureRandom;
 import java.security.Security;
+import java.security.Signature;
 import java.util.Arrays;
+import org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPrivateKey;
+import org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPublicKey;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.encoders.Hex;
 import org.junit.Test;
@@ -30,6 +35,21 @@ public class TronCastleProviderTest {
   @Test
   public void testNoRegisteredProvider() throws Exception {
     assertProviderIsolation(null);
+  }
+
+  @Test
+  public void testKeyPairGenerationUsesTronCastleProvider() {
+    KeyPair keyPair = ECKeyPairGenerator.generateKeyPair();
+
+    assertTrue(keyPair.getPrivate() instanceof BCECPrivateKey);
+    assertTrue(keyPair.getPublic() instanceof BCECPublicKey);
+  }
+
+  @Test
+  public void testRawSignatureUsesTronCastleProvider() {
+    Signature signature = ECSignatureFactory.getRawInstance();
+
+    assertSame(TronCastleProvider.getInstance(), signature.getProvider());
   }
 
   private void assertProviderIsolation(Provider existing) throws Exception {
