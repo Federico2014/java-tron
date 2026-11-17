@@ -148,6 +148,30 @@ public class WalletSchemaValidationTest {
   }
 
   @Test
+  public void testSaltLengthBounds() throws Exception {
+    for (boolean pbkdf2 : new boolean[] {false, true}) {
+      for (String prefix : new String[] {"", "0x"}) {
+        for (int length : new int[] {1, 32, 1023, 1024, 1025, 2048}) {
+          WalletFile wallet = validWallet(pbkdf2);
+          String salt = prefix + hex(length);
+          WalletFile.KdfParams params = wallet.getCrypto().getKdfparams();
+          if (pbkdf2) {
+            ((WalletFile.Aes128CtrKdfParams) params).setSalt(salt);
+          } else {
+            ((WalletFile.ScryptKdfParams) params).setSalt(salt);
+          }
+          if (length <= 1024) {
+            Wallet.validate(wallet);
+            assertTrue(Wallet.isValidKeystoreFile(wallet));
+          } else {
+            assertRejected(wallet);
+          }
+        }
+      }
+    }
+  }
+
+  @Test
   public void testInvalidAddressesAreRejectedBeforeKdf() {
     for (String address : new String[] {"T0", "../wallet", hex(64),
         "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwa", StringUtil.encode58Check(new byte[21])}) {

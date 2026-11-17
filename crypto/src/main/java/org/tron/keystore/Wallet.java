@@ -67,6 +67,7 @@ public class Wallet {
   private static final int SCRYPT_P_MAX = 8;
   private static final long SCRYPT_MEMORY_MAX_BYTES = 1L << 30; // 128 * r * n cap = 1 GiB
   private static final int KDF_DKLEN_MAX = 128;
+  private static final int KDF_SALT_MAX_BYTES = 1024;
   private static final int PBKDF2_C_MAX = 1 << 20;
 
   /**
@@ -358,6 +359,11 @@ public class Wallet {
     WalletFile.KdfParams kdfParams = crypto.getKdfparams();
     if (kdfParams == null) {
       return "Missing kdfparams";
+    }
+    String salt = kdfParams.getSalt();
+    if (salt != null
+        && salt.length() > 2 * KDF_SALT_MAX_BYTES + (salt.startsWith("0x") ? 2 : 0)) {
+      return "KDF salt exceeds " + KDF_SALT_MAX_BYTES + " bytes";
     }
     if (SCRYPT.equals(kdf)) {
       if (!(kdfParams instanceof WalletFile.ScryptKdfParams)) {

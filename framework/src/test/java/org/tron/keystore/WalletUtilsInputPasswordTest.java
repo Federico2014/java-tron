@@ -3,8 +3,10 @@ package org.tron.keystore;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +15,7 @@ import java.io.Console;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.Permission;
 import java.util.Arrays;
 import org.junit.After;
 import org.junit.Before;
@@ -173,6 +176,38 @@ public class WalletUtilsInputPasswordTest {
         () -> WalletUtils.readConsolePassword(console, "password: "));
     assertTrue(error.getMessage().contains("UTF-8"));
     assertArrayEquals(new char[password.length], password);
+  }
+
+  @Test
+  public void testConsoleReadClearsPasswordWhenOsPropertyDenied() {
+    assumeTrue("1.8".equals(System.getProperty("java.specification.version")));
+    Console console = mock(Console.class);
+    char[] password = "secret password".toCharArray();
+    when(console.readPassword("%s", "password: ")).thenReturn(password);
+    SecurityException denied = new SecurityException("os.name access denied");
+    SecurityManager original = System.getSecurityManager();
+    try {
+      System.setSecurityManager(new SecurityManager() {
+        @Override
+        public void checkPermission(Permission permission) {
+          // Only deny the property read under test.
+        }
+
+        @Override
+        public void checkPropertyAccess(String key) {
+          if ("os.name".equals(key)) {
+            throw denied;
+          }
+        }
+      });
+
+      IOException error = assertThrows(IOException.class,
+          () -> WalletUtils.readConsolePassword(console, "password: "));
+      assertSame(denied, error.getCause());
+      assertArrayEquals(new char[password.length], password);
+    } finally {
+      System.setSecurityManager(original);
+    }
   }
 
   @Test

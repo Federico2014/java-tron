@@ -281,8 +281,15 @@ public class WalletUtils {
       return (Charset) Console.class.getMethod("charset").invoke(console);
     } catch (NoSuchMethodException e) {
       // On supported JDK 8 Linux/macOS runtimes Console uses the default charset.
-      String os = System.getProperty("os.name");
-      return "Linux".equals(os) || "Mac OS X".equals(os) ? Charset.defaultCharset() : null;
+      try {
+        String os = System.getProperty("os.name");
+        if ("Linux".equals(os) || "Mac OS X".equals(os)) {
+          return Charset.defaultCharset();
+        }
+        return null;
+      } catch (SecurityException ex) {
+        throw new IOException("Cannot determine console encoding; use UTF-8 password input", ex);
+      }
     } catch (ReflectiveOperationException | SecurityException e) {
       throw new IOException("Cannot determine console encoding; use UTF-8 password input", e);
     }
