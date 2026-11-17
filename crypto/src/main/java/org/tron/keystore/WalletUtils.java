@@ -159,7 +159,7 @@ public class WalletUtils {
     }
   }
 
-  public static String getWalletFileName(WalletFile walletFile) {
+  private static String getWalletFileName(WalletFile walletFile) {
     DateTimeFormatter format = DateTimeFormatter.ofPattern(
         "'UTC--'yyyy-MM-dd'T'HH-mm-ss.nVV'--'");
     ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
