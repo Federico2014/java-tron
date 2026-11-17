@@ -1,12 +1,19 @@
 package org.tron.keystore;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
+import java.io.Console;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -97,15 +104,88 @@ public class WalletUtilsInputPasswordTest {
         "  with spaces  ", pw);
   }
 
-  // ---------- EOF fail-fast tests ----------
+  // ---------- encoding validation ----------
+
+  @Test(timeout = 5000)
+  public void testInputPasswordPreservesUtf8AcrossReads() {
+    String password = "密码测试 é🔑";
+    System.setIn(new ByteArrayInputStream(
+        (password + "\n" + password + "\n").getBytes(StandardCharsets.UTF_8)));
+
+    assertEquals(password, WalletUtils.inputPassword());
+    assertEquals(password, WalletUtils.inputPassword());
+  }
+
+  @Test(timeout = 5000)
+  public void testInputPasswordRejectsMalformedUtf8() {
+    System.setIn(new ByteArrayInputStream(new byte[]{(byte) 0xc3, 0x28, '\n'}));
+
+    TronError error = assertThrows(TronError.class, WalletUtils::inputPassword);
+    assertTrue(error.getMessage().contains("UTF-8"));
+    assertEquals(TronError.ErrCode.WITNESS_KEYSTORE_LOAD, error.getErrCode());
+  }
+
+  @Test(timeout = 5000)
+  public void testInputPasswordRejectsPartialLineOnDecoderFailure() {
+    // Scanner can buffer a valid prefix before treating a decoder error as EOF.
+    byte[] bytes = new byte[9001];
+    Arrays.fill(bytes, (byte) 'a');
+    bytes[bytes.length - 1] = (byte) 0xc3;
+    System.setIn(new ByteArrayInputStream(bytes));
+
+    TronError error = assertThrows(TronError.class, WalletUtils::inputPassword);
+    assertTrue(error.getMessage().contains("UTF-8"));
+  }
+
+  @Test
+  public void testConsolePasswordEncodingValidation() throws Exception {
+    char[] unicode = "密码测试 é🔑".toCharArray();
+    WalletUtils.validateConsolePassword(unicode, StandardCharsets.UTF_8);
+    WalletUtils.validateConsolePassword("ascii password".toCharArray(),
+        StandardCharsets.US_ASCII);
+    WalletUtils.validateConsolePassword("ascii password".toCharArray(), null);
+
+    assertThrows(IOException.class,
+        () -> WalletUtils.validateConsolePassword(unicode, StandardCharsets.US_ASCII));
+    assertThrows(IOException.class,
+        () -> WalletUtils.validateConsolePassword(unicode, StandardCharsets.ISO_8859_1));
+    assertThrows(IOException.class,
+        () -> WalletUtils.validateConsolePassword(unicode, null));
+    // Even a UTF-8 console may have already replaced malformed input bytes.
+    char[] replaced = "pass\uFFFDword".toCharArray(); // U+FFFD: decoder replacement.
+    assertThrows(IOException.class,
+        () -> WalletUtils.validateConsolePassword(replaced, StandardCharsets.UTF_8));
+  }
+
+  @Test
+  public void testDecodePasswordRejectsMalformedUtf8() {
+    assertThrows(IOException.class, () -> WalletUtils.decodePassword(
+        new byte[]{'p', 'a', 's', 's', (byte) 0xc3}));
+  }
+
+  @Test
+  public void testConsoleReadRejectsAndClearsCorruptedPassword() {
+    Console console = mock(Console.class);
+    char[] password = "secret\uFFFD".toCharArray(); // U+FFFD: decoder replacement.
+    when(console.readPassword("%s", "password: ")).thenReturn(password);
+
+    IOException error = assertThrows(IOException.class,
+        () -> WalletUtils.readConsolePassword(console, "password: "));
+    assertTrue(error.getMessage().contains("UTF-8"));
+    assertArrayEquals(new char[password.length], password);
+  }
+
+  @Test
+  public void testConsoleReadPreservesEof() throws Exception {
+    Console console = mock(Console.class);
+    assertNull(WalletUtils.readConsolePassword(console, "password: "));
+  }
 
   @Test(timeout = 5000)
   public void testInputPasswordPipedStdinEofThrowsTronError() {
     // Non-TTY branch: Scanner.nextLine() throws NoSuchElementException at
     // EOF; it must be translated into a fail-fast TronError.
-    // (The TTY branch's Console.readPassword() null-on-EOF check cannot be
-    // exercised under JUnit, where System.console() is always null and
-    // java.io.Console is final — covered by code review only.)
+    // Console EOF is covered separately using a mocked Console.
     System.setIn(new ByteArrayInputStream(new byte[0]));
 
     TronError err = assertThrows(TronError.class, WalletUtils::inputPassword);

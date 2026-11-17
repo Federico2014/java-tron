@@ -6,6 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Console;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -17,6 +22,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.NoSuchElementException;
@@ -220,9 +226,63 @@ public class WalletUtils {
 
   private static synchronized Scanner getSharedStdinScanner() {
     if (sharedStdinScanner == null) {
-      sharedStdinScanner = new Scanner(System.in);
+      // CharsetDecoder defaults to REPORT: never replace malformed password bytes.
+      sharedStdinScanner = new Scanner(new InputStreamReader(System.in,
+          StandardCharsets.UTF_8.newDecoder()));
     }
     return sharedStdinScanner;
+  }
+
+  /**
+   * Decode a UTF-8 password file without silently replacing malformed bytes.
+   */
+  public static String decodePassword(byte[] bytes) throws IOException {
+    try {
+      return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
+    } catch (CharacterCodingException e) {
+      throw new IOException("Password input must be valid UTF-8", e);
+    }
+  }
+
+  /**
+   * Read with echo disabled, rejecting potentially corrupted console input.
+   * The caller must clear the returned array; EOF is returned as {@code null}.
+   */
+  public static char[] readConsolePassword(Console console, String prompt) throws IOException {
+    char[] password = console.readPassword("%s", prompt);
+    if (password == null) {
+      return null;
+    }
+    try {
+      validateConsolePassword(password, consoleCharset(console));
+      return password;
+    } catch (IOException e) {
+      Arrays.fill(password, '\0');
+      throw e;
+    }
+  }
+
+  private static Charset consoleCharset(Console console) throws IOException {
+    try {
+      // Console.charset() was added in JDK 17; keep the JDK 8 build compatible.
+      return (Charset) Console.class.getMethod("charset").invoke(console);
+    } catch (NoSuchMethodException e) {
+      // On supported JDK 8 Linux/macOS runtimes Console uses the default charset.
+      String os = System.getProperty("os.name");
+      return "Linux".equals(os) || "Mac OS X".equals(os) ? Charset.defaultCharset() : null;
+    } catch (ReflectiveOperationException | SecurityException e) {
+      throw new IOException("Cannot determine console encoding; use UTF-8 password input", e);
+    }
+  }
+
+  static void validateConsolePassword(char[] password, Charset charset) throws IOException {
+    for (char c : password) {
+      // Console decoders replace malformed bytes; the original input cannot be recovered.
+      if (c == '\uFFFD' || (c > 0x7f && !StandardCharsets.UTF_8.equals(charset))) {
+        throw new IOException("Password may be corrupted by the console encoding; "
+            + "use a UTF-8 terminal or UTF-8 password file/stdin");
+      }
+    }
   }
 
   public static String inputPassword() {
@@ -231,7 +291,12 @@ public class WalletUtils {
     Scanner in = cons == null ? getSharedStdinScanner() : null;
     while (true) {
       if (cons != null) {
-        char[] pwd = cons.readPassword("password: ");
+        char[] pwd;
+        try {
+          pwd = readConsolePassword(cons, "password: ");
+        } catch (IOException e) {
+          throw new TronError(e.getMessage(), e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+        }
         // Console EOF (e.g. Ctrl+D) returns null; fail fast instead of
         // crashing with a raw NullPointerException.
         if (pwd == null) {
@@ -240,7 +305,11 @@ public class WalletUtils {
                   + "restart with --password or provide an interactive TTY",
               TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
         }
-        password = String.valueOf(pwd);
+        try {
+          password = String.valueOf(pwd);
+        } finally {
+          Arrays.fill(pwd, '\0');
+        }
       } else {
         // Preserve the full password including embedded whitespace.
         // The previous implementation applied trim() + split("\\s+")[0]
@@ -252,12 +321,19 @@ public class WalletUtils {
         try {
           line = in.nextLine();
         } catch (NoSuchElementException e) {
+          if (in.ioException() != null) {
+            throw passwordInputError(in.ioException());
+          }
           // Piped stdin reached EOF before a password line was available;
           // fail fast instead of leaking a raw NoSuchElementException.
           throw new TronError(
               "password input closed (EOF): piped stdin provided no password "
                   + "line; restart with --password or provide an interactive TTY",
               e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+        }
+        // Scanner treats reader failures as EOF and can return a partial line.
+        if (in.ioException() != null) {
+          throw passwordInputError(in.ioException());
         }
         password = stripPasswordLine(line);
       }
@@ -266,6 +342,11 @@ public class WalletUtils {
       }
       System.out.println("Invalid password, please input again.");
     }
+  }
+
+  private static TronError passwordInputError(IOException cause) {
+    return new TronError("Cannot read password input; stdin must contain valid UTF-8", cause,
+        TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
   }
 
 }

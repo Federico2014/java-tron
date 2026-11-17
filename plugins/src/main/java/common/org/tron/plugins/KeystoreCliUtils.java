@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
@@ -127,7 +126,7 @@ final class KeystoreCliUtils {
       }
       try {
         String password = WalletUtils.stripPasswordLine(
-            new String(bytes, StandardCharsets.UTF_8));
+            WalletUtils.decodePassword(bytes));
         // Reject multi-line password files. stripPasswordLine only trims
         // trailing terminators; any remaining \n/\r means the file had
         // interior line breaks. A common mistake is passing a two-line
@@ -158,18 +157,18 @@ final class KeystoreCliUtils {
       return null;
     }
 
-    char[] pwd1 = console.readPassword("Enter password: ");
+    char[] pwd1 = WalletUtils.readConsolePassword(console, "Enter password: ");
     if (pwd1 == null) {
       err.println("Password input cancelled.");
       return null;
     }
-    char[] pwd2 = console.readPassword("Confirm password: ");
-    if (pwd2 == null) {
-      Arrays.fill(pwd1, '\0');
-      err.println("Password input cancelled.");
-      return null;
-    }
+    char[] pwd2 = null;
     try {
+      pwd2 = WalletUtils.readConsolePassword(console, "Confirm password: ");
+      if (pwd2 == null) {
+        err.println("Password input cancelled.");
+        return null;
+      }
       if (!Arrays.equals(pwd1, pwd2)) {
         err.println("Passwords do not match.");
         return null;
@@ -182,7 +181,9 @@ final class KeystoreCliUtils {
       return password;
     } finally {
       Arrays.fill(pwd1, '\0');
-      Arrays.fill(pwd2, '\0');
+      if (pwd2 != null) {
+        Arrays.fill(pwd2, '\0');
+      }
     }
   }
 

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Console;
 import java.io.File;
 import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
 import org.tron.common.crypto.SignInterface;
@@ -69,7 +68,7 @@ public class KeystoreUpdate implements Callable<Integer> {
           return 1;
         }
         try {
-          String content = new String(bytes, StandardCharsets.UTF_8);
+          String content = WalletUtils.decodePassword(bytes);
           // Strip UTF-8 BOM if present (Windows Notepad)
           if (content.length() > 0 && content.charAt(0) == '\uFEFF') {
             content = content.substring(1);
@@ -99,25 +98,24 @@ public class KeystoreUpdate implements Callable<Integer> {
               + "Use --password-file to provide passwords.");
           return 1;
         }
-        char[] oldPwd = console.readPassword("Enter current password: ");
+        char[] oldPwd = WalletUtils.readConsolePassword(console, "Enter current password: ");
         if (oldPwd == null) {
           err.println(INPUT_CANCELLED);
           return 1;
         }
-        char[] newPwd = console.readPassword("Enter new password: ");
-        if (newPwd == null) {
-          Arrays.fill(oldPwd, '\0');
-          err.println(INPUT_CANCELLED);
-          return 1;
-        }
-        char[] confirmPwd = console.readPassword("Confirm new password: ");
-        if (confirmPwd == null) {
-          Arrays.fill(oldPwd, '\0');
-          Arrays.fill(newPwd, '\0');
-          err.println(INPUT_CANCELLED);
-          return 1;
-        }
+        char[] newPwd = null;
+        char[] confirmPwd = null;
         try {
+          newPwd = WalletUtils.readConsolePassword(console, "Enter new password: ");
+          if (newPwd == null) {
+            err.println(INPUT_CANCELLED);
+            return 1;
+          }
+          confirmPwd = WalletUtils.readConsolePassword(console, "Confirm new password: ");
+          if (confirmPwd == null) {
+            err.println(INPUT_CANCELLED);
+            return 1;
+          }
           oldPassword = new String(oldPwd);
           newPassword = new String(newPwd);
           String confirmPassword = new String(confirmPwd);
@@ -127,8 +125,12 @@ public class KeystoreUpdate implements Callable<Integer> {
           }
         } finally {
           Arrays.fill(oldPwd, '\0');
-          Arrays.fill(newPwd, '\0');
-          Arrays.fill(confirmPwd, '\0');
+          if (newPwd != null) {
+            Arrays.fill(newPwd, '\0');
+          }
+          if (confirmPwd != null) {
+            Arrays.fill(confirmPwd, '\0');
+          }
         }
       }
 

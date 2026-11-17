@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -170,6 +171,26 @@ public class KeystoreCliUtilsTest {
     StringWriter err = new StringWriter();
     String pw = KeystoreCliUtils.readPassword(pwFile, new PrintWriter(err));
     assertEquals("goodpassword", pw);
+  }
+
+  @Test
+  public void testReadPasswordFilePreservesUnicode() throws Exception {
+    File pwFile = tempFolder.newFile("pw-unicode.txt");
+    String password = "密码测试 é🔑";
+    Files.write(pwFile.toPath(), (password + "\n").getBytes(StandardCharsets.UTF_8));
+    makeOwnerOnly(pwFile);
+    assertEquals(password, KeystoreCliUtils.readPassword(pwFile,
+        new PrintWriter(new StringWriter())));
+  }
+
+  @Test
+  public void testReadPasswordFileRejectsMalformedUtf8() throws Exception {
+    File pwFile = tempFolder.newFile("pw-malformed.txt");
+    Files.write(pwFile.toPath(), new byte[]{'s', 'e', 'c', 'r', 'e', 't', (byte) 0xff});
+    makeOwnerOnly(pwFile);
+    IOException error = assertThrows(IOException.class,
+        () -> KeystoreCliUtils.readPassword(pwFile, new PrintWriter(new StringWriter())));
+    assertTrue(error.getMessage().contains("UTF-8"));
   }
 
   @Test

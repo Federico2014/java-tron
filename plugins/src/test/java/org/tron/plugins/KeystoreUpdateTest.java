@@ -32,6 +32,29 @@ public class KeystoreUpdateTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   @Test
+  public void testMalformedNewPasswordDoesNotOverwriteKeystore() throws Exception {
+    File dir = tempFolder.newFolder("keystore-malformed");
+    SignInterface key = SignUtils.getGeneratedRandomSign(SecureRandom.getInstance("NativePRNG"));
+    File keystore = new File(dir, WalletUtils.generateWalletFile("oldpass123", key, dir, false));
+    byte[] original = Files.readAllBytes(keystore.toPath());
+    String address = MAPPER.readValue(original, WalletFile.class).getAddress();
+    File pwFile = tempFolder.newFile("malformed-passwords.txt");
+    byte[] passwords = "oldpass123\nnewpass456X".getBytes(StandardCharsets.UTF_8);
+    passwords[passwords.length - 1] = (byte) 0xff;
+    Files.write(pwFile.toPath(), passwords);
+    makeOwnerOnly(pwFile);
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setErr(new PrintWriter(err));
+
+    assertEquals(1, cmd.execute("keystore", "update", address,
+        "--keystore-dir", dir.getAbsolutePath(),
+        "--password-file", pwFile.getAbsolutePath()));
+    assertTrue(err.toString().contains("UTF-8"));
+    assertArrayEquals(original, Files.readAllBytes(keystore.toPath()));
+  }
+
+  @Test
   public void testUpdatePassword() throws Exception {
     File dir = tempFolder.newFolder("keystore");
     String oldPassword = "oldpass123";
