@@ -148,6 +148,11 @@ public class Blake2bfMessageDigest extends BCMessageDigest implements Cloneable 
         throw new IllegalStateException("The buffer must be filled with 213 bytes");
       }
 
+      // Validate before compress() so a bad output buffer cannot leave the instance tainted.
+      if (out == null || offset < 0 || offset > out.length - DIGEST_LENGTH) {
+        throw new IllegalArgumentException("Output buffer too small for the digest");
+      }
+
       compress();
 
       for (int i = 0; i < h.length; i++) {
