@@ -508,7 +508,8 @@ public class ECKey implements Serializable, SignInterface {
    * @return encoded public key, or {@code null} if recovery is not possible
    * @throws IllegalArgumentException if an argument is invalid or the candidate point is not on
    *     the curve
-   * @throws ArithmeticException if {@code r} is not invertible modulo the curve order
+   * @throws ArithmeticException if {@code r} is not invertible modulo the curve order when
+   *     strict validation is disabled
    */
   @Nullable
   public static byte[] recoverPubBytesFromSignature(int recId,

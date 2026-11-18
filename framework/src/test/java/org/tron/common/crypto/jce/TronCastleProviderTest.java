@@ -8,9 +8,11 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Provider;
 import java.security.SecureRandom;
@@ -38,11 +40,19 @@ public class TronCastleProviderTest {
   }
 
   @Test
-  public void testKeyPairGenerationUsesTronCastleProvider() {
+  public void testKeyPairGenerationUsesTronCastleProvider() throws Exception {
     KeyPair keyPair = ECKeyPairGenerator.generateKeyPair();
 
     assertTrue(keyPair.getPrivate() instanceof BCECPrivateKey);
     assertTrue(keyPair.getPublic() instanceof BCECPublicKey);
+
+    // Assert the generator itself was created with TronCastleProvider, not a globally
+    // registered Bouncy Castle provider.
+    Class<?> holder = Class.forName(ECKeyPairGenerator.class.getName() + "$Holder");
+    Field instance = holder.getDeclaredField("INSTANCE");
+    instance.setAccessible(true);
+    assertSame(TronCastleProvider.getInstance(),
+        ((KeyPairGenerator) instance.get(null)).getProvider());
   }
 
   @Test

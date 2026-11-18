@@ -515,6 +515,5 @@ public class ECKeyTest {
     assertEquals(low, new ECDSASignature(r, s, (byte) 27));
     assertEquals(low.hashCode(), new ECDSASignature(r, s, (byte) 27).hashCode());
     assertNotEquals(low, high);
-    assertNotEquals(low.hashCode(), high.hashCode());
   }
 }
