@@ -1041,7 +1041,7 @@ public class ECKey implements Serializable, SignInterface {
   }
 
   @SuppressWarnings("serial")
-  public static class MissingPrivateKeyException extends RuntimeException {
+  public static class MissingPrivateKeyException extends IllegalStateException {
 
   }
 

@@ -470,6 +470,14 @@ public class ECKeyTest {
   }
 
   @Test
+  public void testMissingPrivateKeyIsIllegalStateException() {
+    ECKey publicOnly = ECKey.fromPublicOnly(pubKey);
+
+    assertThrows(IllegalStateException.class, publicOnly::getPrivKey);
+    assertThrows(IllegalStateException.class, () -> publicOnly.sign(new byte[32]));
+  }
+
+  @Test
   public void testSignatureEqualityIncludesRecoveryId() {
     byte[] r = BigInteger.ONE.toByteArray();
     byte[] s = BigInteger.valueOf(2).toByteArray();
