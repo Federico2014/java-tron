@@ -816,7 +816,13 @@ public class ECKey implements Serializable, SignInterface {
     int recId = -1;
     byte[] thisKey = this.pub.getEncoded(/* compressed */ false);
     for (int i = 0; i < 4; i++) {
-      byte[] k = ECKey.recoverPubBytesFromSignature(i, sig, messageHash, true);
+      byte[] k;
+      try {
+        k = ECKey.recoverPubBytesFromSignature(i, sig, messageHash, true);
+      } catch (IllegalArgumentException e) {
+        // x = r + (i / 2) * n is not a valid curve point; try the next recId.
+        continue;
+      }
       if (k != null && Arrays.equals(k, thisKey)) {
         recId = i;
         break;
@@ -826,6 +832,9 @@ public class ECKey implements Serializable, SignInterface {
       throw new RuntimeException("Could not construct a recoverable key" +
           ". This should never happen.");
     }
+    // recId 2 or 3 gives v = 29 or 30. It occurs only when n <= x(R) < p (probability about
+    // 2^-127.65) and is valid for transaction signatures; validateComponents restricts the
+    // precompile path to recIds 0 and 1.
     sig.v = (byte) (recId + 27);
     return sig;
   }
@@ -927,6 +936,12 @@ public class ECKey implements Serializable, SignInterface {
       return signature;
     }
 
+    /**
+     * Validates signature components for the precompile path, which accepts only recovery ids 0
+     * and 1 (v = 27 or 28). Transaction signatures may also use recovery ids 2 and 3 (v = 29 or
+     * 30) and are validated through {@link ECKey#signatureToKeyBytes(byte[], ECDSASignature,
+     * boolean)}.
+     */
     public static boolean validateComponents(BigInteger r, BigInteger s,
         byte v) {
 
