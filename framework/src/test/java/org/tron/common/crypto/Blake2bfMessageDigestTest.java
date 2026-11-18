@@ -26,6 +26,17 @@ public class Blake2bfMessageDigestTest {
     Assert.assertArrayEquals(expected, digest.digest());
   }
 
+  @Test
+  public void testCloneIsNotSupported() throws Exception {
+    MessageDigest digest = new Blake2bfMessageDigest();
+    try {
+      digest.clone();
+      Assert.fail("Expected cloning to be unsupported");
+    } catch (CloneNotSupportedException expectedFailure) {
+      // the digest deliberately does not implement Cloneable
+    }
+  }
+
   private byte[] digest(byte[] input) {
     MessageDigest digest = new Blake2bfMessageDigest();
     digest.update(input);
