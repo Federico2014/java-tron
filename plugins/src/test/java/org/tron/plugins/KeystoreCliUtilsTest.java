@@ -6,11 +6,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Locale;
@@ -18,6 +20,7 @@ import java.util.Map;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.MockedStatic;
 import org.tron.common.utils.ByteArray;
 import org.tron.keystore.WalletFile;
 
@@ -268,7 +271,11 @@ public class KeystoreCliUtilsTest {
   public void testEnsureDirectoryCreatesNested() throws Exception {
     File dir = new File(tempFolder.getRoot(), "a/b/c");
     assertFalse(dir.exists());
-    KeystoreCliUtils.ensureDirectory(dir);
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      throw new IOException("directory reads are unsupported");
+    })) {
+      KeystoreCliUtils.ensureDirectory(dir);
+    }
     assertTrue(dir.exists());
     assertTrue(dir.isDirectory());
   }

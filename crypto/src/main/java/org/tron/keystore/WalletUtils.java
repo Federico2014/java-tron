@@ -26,11 +26,9 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
-import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.Set;
@@ -79,11 +77,6 @@ public class WalletUtils {
   /**
    * Write a WalletFile to the given destination path with owner-only (0600)
    * permissions, using a temp file + atomic rename.
-   * The temporary file is synced before replacement, then the destination directory and
-   * the directories whose entries this call created are synced to persist them. Existing
-   * ancestors above the first pre-existing directory are not opened, so they do not need
-   * read permission. Directory syncing requires filesystem support. A sync failure after
-   * replacement is reported to the caller, but does not roll back the replacement.
    *
    * <p>The temporary file is atomically created with 0600 permissions and written
    * through the same channel, without reopening its path. Filesystems that cannot
@@ -100,16 +93,6 @@ public class WalletUtils {
   public static void writeWalletFile(WalletFile walletFile, File destination)
       throws IOException {
     Path dir = destination.getAbsoluteFile().getParentFile().toPath();
-    // Sync the destination directory and only the ancestors whose entries this call
-    // (re)creates. Existing ancestors above the first pre-existing directory are not
-    // opened, so they do not need read permission.
-    List<Path> dirsToSync = new ArrayList<>();
-    for (Path current = dir; current != null; current = current.getParent()) {
-      dirsToSync.add(current);
-      if (Files.exists(current)) {
-        break;
-      }
-    }
     Files.createDirectories(dir);
 
     Path tmp = dir.resolve("keystore-" + UUID.randomUUID() + ".tmp");
@@ -131,16 +114,6 @@ public class WalletUtils {
             StandardCopyOption.ATOMIC_MOVE);
       } catch (AtomicMoveNotSupportedException e) {
         Files.move(tmp, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
-      }
-      try {
-        for (Path current : dirsToSync) {
-          try (FileChannel directory = FileChannel.open(current.toRealPath(),
-              StandardOpenOption.READ)) {
-            directory.force(true);
-          }
-        }
-      } catch (IOException e) {
-        throw new IOException("Keystore was replaced, but directory sync failed: " + dir, e);
       }
     } catch (Exception e) {
       try {

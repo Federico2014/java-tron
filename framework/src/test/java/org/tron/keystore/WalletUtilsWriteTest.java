@@ -8,7 +8,6 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -212,86 +211,20 @@ public class WalletUtilsWriteTest {
   }
 
   @Test
-  public void testDirectorySyncFailureReportsCompletedReplacement() throws Exception {
-    File dir = tempFolder.newFolder("directory-sync-fail");
-    File destination = new File(dir, "wallet.json");
-    WalletUtils.writeWalletFile(lightWalletFile("oldpassword"), destination);
-    WalletFile replacement = lightWalletFile("newpassword");
-    Path realDir = dir.toPath().toRealPath();
-    FileChannel channel = mock(FileChannel.class);
-    doThrow(new IOException("directory sync failed")).when(channel).force(true);
-
-    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation ->
-        realDir.equals(invocation.getArgument(0)) ? channel : invocation.callRealMethod())) {
-      IOException error = assertThrows(IOException.class,
-          () -> WalletUtils.writeWalletFile(replacement, destination));
-      assertTrue(error.getMessage().contains("Keystore was replaced"));
-      assertEquals("directory sync failed", error.getCause().getMessage());
-    }
-    verify(channel).close();
-    assertEquals(replacement.getAddress(),
-        WalletUtils.loadCredentials("newpassword", destination).getAddress());
-    assertEquals("No temporary file should remain", 1, dir.list().length);
-  }
-
-  @Test
-  public void testParentSyncFailureForNewDirectoryIsNotIgnored() throws Exception {
-    File base = tempFolder.newFolder("new-directory-parent-sync-fail");
-    Path baseReal = base.toPath().toRealPath();
-    Path newDir = baseReal.resolve("newdir");
-    File destination = new File(base, "newdir/wallet.json");
+  public void testWriteWalletFileDoesNotOpenDirectories() throws Exception {
+    File base = tempFolder.newFolder("write-without-directory-reads");
+    File destination = new File(base, "a/b/wallet.json");
     WalletFile wallet = lightWalletFile("password123");
-    FileChannel directory = mock(FileChannel.class);
-    FileChannel parent = mock(FileChannel.class);
-    doThrow(new IOException("parent sync failed")).when(parent).force(true);
 
     try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
       Path path = invocation.getArgument(0);
-      if (newDir.equals(path)) {
-        return directory;
-      }
-      if (baseReal.equals(path)) {
-        return parent;
-      }
-      return invocation.callRealMethod();
-    })) {
-      IOException error = assertThrows(IOException.class,
-          () -> WalletUtils.writeWalletFile(wallet, destination));
-      assertEquals("parent sync failed", error.getCause().getMessage());
-    }
-    verify(directory).force(true);
-    verify(directory).close();
-    verify(parent).close();
-    assertEquals(wallet.getAddress(),
-        WalletUtils.loadCredentials("password123", destination).getAddress());
-  }
-
-  @Test
-  public void testExistingDirectoryDoesNotOpenAncestors() throws Exception {
-    File base = tempFolder.newFolder("existing-dir-no-ancestor-sync");
-    File dir = new File(base, "wallet");
-    assertTrue(dir.mkdir());
-    File destination = new File(dir, "wallet.json");
-    WalletFile wallet = lightWalletFile("password123");
-    Path realDir = dir.toPath().toRealPath();
-    Path realParent = realDir.getParent();
-    assertNotNull(realParent);
-    FileChannel directory = mock(FileChannel.class);
-
-    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
-      Path path = invocation.getArgument(0);
-      if (realDir.equals(path)) {
-        return directory;
-      }
-      if (realParent.equals(path)) {
-        // An execute-only ancestor would fail here; existing directories must not be opened.
-        throw new IOException("unexpected ancestor sync");
+      if (Files.isDirectory(path)) {
+        throw new IOException("directory reads are unsupported");
       }
       return invocation.callRealMethod();
     })) {
       WalletUtils.writeWalletFile(wallet, destination);
     }
-    verify(directory).force(true);
     assertEquals(wallet.getAddress(),
         WalletUtils.loadCredentials("password123", destination).getAddress());
   }
