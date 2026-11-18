@@ -470,6 +470,25 @@ public class ECKeyTest {
   }
 
   @Test
+  public void testComputeAddressRejectsMalformedPublicKey() {
+    assertThrows(IllegalArgumentException.class, () -> Hash.computeAddress(new byte[33]));
+    assertThrows(IllegalArgumentException.class, () -> Hash.computeAddress(new byte[65]));
+
+    ECKey key = ECKey.fromPrivate(privateKey);
+    assertArrayEquals(key.getAddress(), Hash.computeAddress(key.getPubKey()));
+  }
+
+  @Test
+  public void testLegacyPointAtInfinityAddressUnchanged() {
+    // The address derived from the Keccak-256 hash of the empty input, as documented before the
+    // change: legacy recovery encoded the point at infinity as the single byte 0x00.
+    byte[] expected = Hex.decode("41dcc703c0e500b653ca82273b7bfad8045d85a470");
+
+    assertArrayEquals(expected, Hash.computeAddress(new byte[]{0}));
+    assertArrayEquals(expected, Hash.sha3omit12(new byte[0]));
+  }
+
+  @Test
   public void testMissingPrivateKeyIsIllegalStateException() {
     ECKey publicOnly = ECKey.fromPublicOnly(pubKey);
 
