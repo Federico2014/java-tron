@@ -17,6 +17,7 @@ import java.security.SignatureException;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.sec.SECNamedCurves;
+import org.bouncycastle.math.ec.ECPoint;
 import org.bouncycastle.util.BigIntegers;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
@@ -486,6 +487,13 @@ public class ECKeyTest {
 
     assertArrayEquals(expected, Hash.computeAddress(new byte[]{0}));
     assertArrayEquals(expected, Hash.sha3omit12(new byte[0]));
+  }
+
+  @Test
+  public void testComputeAddressRejectsPointAtInfinity() {
+    assertThrows(IllegalArgumentException.class,
+        () -> Hash.computeAddress(ECKey.CURVE.getCurve().getInfinity()));
+    assertThrows(IllegalArgumentException.class, () -> Hash.computeAddress((ECPoint) null));
   }
 
   @Test

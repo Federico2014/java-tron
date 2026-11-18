@@ -177,6 +177,10 @@ public class Hash {
   }
 
   public static byte[] computeAddress(ECPoint pubPoint) {
+    if (pubPoint == null || pubPoint.isInfinity()) {
+      throw new IllegalArgumentException(
+          "Public key must not be null or the point at infinity");
+    }
     return computeAddress(pubPoint.getEncoded(/* uncompressed */ false));
   }
 
