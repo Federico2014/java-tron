@@ -17,11 +17,9 @@
  */
 package org.tron.common.crypto.zksnark;
 
-import static org.tron.common.crypto.zksnark.Params.R;
+import static org.tron.common.crypto.zksnark.Params.PAIRING_FINAL_EXPONENT_Z;
 import static org.tron.common.crypto.zksnark.Params.TWIST_MUL_BY_P_X;
 import static org.tron.common.crypto.zksnark.Params.TWIST_MUL_BY_P_Y;
-
-import java.math.BigInteger;
 
 /**
  * Implementation of specific cyclic subgroup of points belonging to {@link BN128Fp2} <br/> Members
@@ -38,8 +36,6 @@ import java.math.BigInteger;
  * @since 31.08.2017
  */
 public class BN128G2 extends BN128Fp2 {
-
-  static final BigInteger FR_NEG_ONE = BigInteger.ONE.negate().mod(R);
 
   BN128G2(BN128<Fp2> p) {
     super(p.x, p.y, p.z);
@@ -71,8 +67,20 @@ public class BN128G2 extends BN128Fp2 {
   }
 
   private static boolean isGroupMember(BN128<Fp2> p) {
-    BN128<Fp2> left = p.mul(FR_NEG_ONE).add(p);
-    return left.isZero(); // should satisfy condition: -1 * p + p == 0, where -1 belongs to F_r
+    if (p.isZero()) {
+      return true;
+    }
+    // For this BN curve, [r]P = O iff [z+1]P + psi([z]P) + psi^2([z]P)
+    // equals psi^3([2z]P), where psi is mulByP and z is the 63-bit BN seed.
+    // See https://eprint.iacr.org/2022/348, Sections 3 and 5.1.
+    BN128G2 zp = new BN128G2(p.mul(PAIRING_FINAL_EXPONENT_Z));
+    BN128G2 a = zp.mulByP();
+    BN128G2 b = a.mulByP();
+    BN128G2 c = b.mulByP();
+    BN128<Fp2> left = zp.add(p).add(a).add(b);
+    BN128<Fp2> right = c.add(c);
+    // equals() compares raw Jacobian coordinates, so compare points by subtraction.
+    return left.add(new BN128G2(right.x, right.y.negate(), right.z)).isZero();
   }
 
   @Override
