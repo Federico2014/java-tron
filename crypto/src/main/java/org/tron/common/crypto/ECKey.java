@@ -501,15 +501,14 @@ public class ECKey implements Serializable, SignInterface {
   /**
    * Recovers the public key using SEC1v2 section 4.1.6.
    *
-   * <p>Replaces the three-argument overload; pass {@code false} for legacy recovery and rebuild
-   * downstream callers.</p>
-   *
    * @param recId recovery selector, from 0 to 3
    * @param sig signature components
    * @param messageHash hash of the signed data
-   * @param strictValidation whether to enforce strict ECDSA validation; consensus callers use
-   *     the applicable proposal state
+   * @param strictValidation whether to enforce strict ECDSA validation
    * @return encoded public key, or {@code null} if recovery is not possible
+   * @throws IllegalArgumentException if an argument is invalid or the candidate point is not on
+   *     the curve
+   * @throws ArithmeticException if {@code r} is not invertible modulo the curve order
    */
   @Nullable
   public static byte[] recoverPubBytesFromSignature(int recId,
