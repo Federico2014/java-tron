@@ -468,4 +468,18 @@ public class ECKeyTest {
 
     assertEquals(key, ECKey.fromNodeId(key.getNodeId()));
   }
+
+  @Test
+  public void testSignatureEqualityIncludesRecoveryId() {
+    byte[] r = BigInteger.ONE.toByteArray();
+    byte[] s = BigInteger.valueOf(2).toByteArray();
+
+    ECDSASignature low = new ECDSASignature(r, s, (byte) 27);
+    ECDSASignature high = new ECDSASignature(r, s, (byte) 28);
+
+    assertEquals(low, new ECDSASignature(r, s, (byte) 27));
+    assertEquals(low.hashCode(), new ECDSASignature(r, s, (byte) 27).hashCode());
+    assertNotEquals(low, high);
+    assertNotEquals(low.hashCode(), high.hashCode());
+  }
 }

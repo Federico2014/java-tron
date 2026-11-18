@@ -1007,6 +1007,9 @@ public class ECKey implements Serializable, SignInterface {
 
       ECDSASignature signature = (ECDSASignature) o;
 
+      if (v != signature.v) {
+        return false;
+      }
       if (!r.equals(signature.r)) {
         return false;
       }
@@ -1017,6 +1020,7 @@ public class ECKey implements Serializable, SignInterface {
     public int hashCode() {
       int result = r.hashCode();
       result = 31 * result + s.hashCode();
+      result = 31 * result + (int) v;
       return result;
     }
   }
