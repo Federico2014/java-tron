@@ -156,7 +156,7 @@ public class Blake2bfMessageDigest extends BCMessageDigest {
       compress();
 
       for (int i = 0; i < h.length; i++) {
-        System.arraycopy(Pack.longToLittleEndian(h[i]), 0, out, i * 8, 8);
+        System.arraycopy(Pack.longToLittleEndian(h[i]), 0, out, offset + i * 8, 8);
       }
 
       reset();
