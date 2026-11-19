@@ -17,7 +17,6 @@ package org.tron.common.crypto;
  * along with the ethereumJ library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import java.io.Serializable;
 import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
@@ -64,7 +63,7 @@ import org.tron.common.utils.ByteUtil;
  * low-S signatures.
  */
 @Slf4j(topic = "crypto")
-public class ECKey implements Serializable, SignInterface {
+public class ECKey implements SignInterface {
 
   /**
    * The parameters of the secp256k1 curve.
@@ -88,7 +87,6 @@ public class ECKey implements Serializable, SignInterface {
   private static final BigInteger SECP256K1N =
       new BigInteger("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16);
   private static final SecureRandom secureRandom;
-  private static final long serialVersionUID = -728224901792295832L;
 
   static {
     // All clients must agree on the curve to use by agreement.

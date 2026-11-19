@@ -497,6 +497,12 @@ public class ECKeyTest {
   }
 
   @Test
+  public void testECKeyIsNotSerializable() {
+    ECKey key = ECKey.fromPrivate(privateKey);
+    assertFalse(key instanceof java.io.Serializable);
+  }
+
+  @Test
   public void testMissingPrivateKeyIsIllegalStateException() {
     ECKey publicOnly = ECKey.fromPublicOnly(pubKey);
 
