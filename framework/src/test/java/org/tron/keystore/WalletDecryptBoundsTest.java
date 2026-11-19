@@ -2,15 +2,16 @@ package org.tron.keystore;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
+import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Utils;
 import org.tron.core.exception.CipherException;
 
@@ -32,17 +33,22 @@ public class WalletDecryptBoundsTest {
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
       .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+  private static final String ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
+  private static final String IV = ByteArray.toHexString(new byte[16]);
+  private static final String WORD = ByteArray.toHexString(new byte[32]);
 
   private static final String SCRYPT_TEMPLATE =
-      "{\"version\":3,\"address\":\"addr\",\"id\":\"test\",\"crypto\":{"
-          + "\"cipher\":\"aes-128-ctr\",\"ciphertext\":\"00\","
-          + "\"cipherparams\":{\"iv\":\"00\"},\"mac\":\"00\",\"kdf\":\"scrypt\","
+      "{\"version\":3,\"address\":\"" + ADDRESS + "\",\"id\":\"test\",\"crypto\":{"
+          + "\"cipher\":\"aes-128-ctr\",\"ciphertext\":\"" + WORD + "\","
+          + "\"cipherparams\":{\"iv\":\"" + IV + "\"},\"mac\":\"" + WORD
+          + "\",\"kdf\":\"scrypt\","
           + "\"kdfparams\":{\"dklen\":%d,\"n\":%d,\"r\":%d,\"p\":%d,\"salt\":\"00\"}}}";
 
   private static final String PBKDF2_TEMPLATE =
-      "{\"version\":3,\"address\":\"addr\",\"id\":\"test\",\"crypto\":{"
-          + "\"cipher\":\"aes-128-ctr\",\"ciphertext\":\"00\","
-          + "\"cipherparams\":{\"iv\":\"00\"},\"mac\":\"00\",\"kdf\":\"pbkdf2\","
+      "{\"version\":3,\"address\":\"" + ADDRESS + "\",\"id\":\"test\",\"crypto\":{"
+          + "\"cipher\":\"aes-128-ctr\",\"ciphertext\":\"" + WORD + "\","
+          + "\"cipherparams\":{\"iv\":\"" + IV + "\"},\"mac\":\"" + WORD
+          + "\",\"kdf\":\"pbkdf2\","
           + "\"kdfparams\":{\"dklen\":%d,\"c\":%d,\"prf\":\"hmac-sha256\",\"salt\":\"00\"}}}";
 
   private static WalletFile parseKeystore(String json) throws Exception {
@@ -147,14 +153,14 @@ public class WalletDecryptBoundsTest {
       String kdf, WalletFile.KdfParams kdfParams) {
     WalletFile walletFile = new WalletFile();
     walletFile.setVersion(3);
-    walletFile.setAddress("addr");
+    walletFile.setAddress(ADDRESS);
     WalletFile.Crypto crypto = new WalletFile.Crypto();
     crypto.setCipher("aes-128-ctr");
-    crypto.setCiphertext("00");
+    crypto.setCiphertext(WORD);
     WalletFile.CipherParams cipherParams = new WalletFile.CipherParams();
-    cipherParams.setIv("00");
+    cipherParams.setIv(IV);
     crypto.setCipherparams(cipherParams);
-    crypto.setMac("00");
+    crypto.setMac(WORD);
     crypto.setKdf(kdf);
     crypto.setKdfparams(kdfParams);
     walletFile.setCrypto(crypto);
@@ -162,28 +168,19 @@ public class WalletDecryptBoundsTest {
   }
 
   @Test
-  public void testValidateToleratesMissingScryptKdfparams() {
-    // Structural stubs without kdfparams are tolerated (KeystoreCliUtilsTest
-    // fixture contract); decrypt() still fails safely because the
-    // ClassCastException (RuntimeException) is wrapped into CipherException.
+  public void testValidateRejectsMissingScryptKdfparams() {
     WalletFile walletFile = walletWithKdfparams("scrypt", null);
-    try {
-      Wallet.validate(walletFile);
-    } catch (CipherException e) {
-      fail("missing kdfparams must be tolerated, got: " + e.getMessage());
-    }
+    assertThrows(CipherException.class, () -> Wallet.validate(walletFile));
+    assertFalse(Wallet.isValidKeystoreFile(walletFile));
     assertThrows(CipherException.class,
         () -> Wallet.decrypt("password123", walletFile));
   }
 
   @Test
-  public void testValidateToleratesMissingPbkdf2Kdfparams() {
+  public void testValidateRejectsMissingPbkdf2Kdfparams() {
     WalletFile walletFile = walletWithKdfparams("pbkdf2", null);
-    try {
-      Wallet.validate(walletFile);
-    } catch (CipherException e) {
-      fail("missing kdfparams must be tolerated, got: " + e.getMessage());
-    }
+    assertThrows(CipherException.class, () -> Wallet.validate(walletFile));
+    assertFalse(Wallet.isValidKeystoreFile(walletFile));
     assertThrows(CipherException.class,
         () -> Wallet.decrypt("password123", walletFile));
   }
@@ -249,9 +246,7 @@ public class WalletDecryptBoundsTest {
     // In-bounds low-cost scrypt params (fast), but tampered MAC:
     // decrypt must fail with a clean CipherException, never leak a raw
     // RuntimeException stack.
-    String json = String.format(SCRYPT_TEMPLATE, 32, 1 << 12, 1, 1)
-        .replace("\"mac\":\"00\"",
-            "\"mac\":\"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"");
+    String json = String.format(SCRYPT_TEMPLATE, 32, 1 << 12, 1, 1);
     WalletFile walletFile = parseKeystore(json);
     Wallet.validate(walletFile);
 
@@ -261,21 +256,15 @@ public class WalletDecryptBoundsTest {
   }
 
   @Test
-  public void testDecryptWrapsScryptRuntimeException() throws Exception {
-    // r=1 with n=131072 passes every validation bound (n is a power of 2 in
-    // [2^12, 2^20], r=1, p=1, 128*r*n = 16 MiB, dklen=32), but Bouncy
-    // Castle's SCrypt.generate itself rejects r==1 with n >= 65536 and throws
-    // a raw IllegalArgumentException. decrypt() must wrap that runtime KDF
-    // engine failure into a clean CipherException, preserving the cause.
+  public void testRejectsScryptR1CostBeforeDerivation() throws Exception {
     WalletFile walletFile = parseKeystore(String.format(SCRYPT_TEMPLATE,
         32, 1 << 17, 1, 1));
-    Wallet.validate(walletFile);
+    assertThrows(CipherException.class, () -> Wallet.validate(walletFile));
+    assertFalse(Wallet.isValidKeystoreFile(walletFile));
 
     CipherException err = assertThrows(CipherException.class,
         () -> Wallet.decrypt("password123", walletFile));
-    assertEquals("Scrypt key derivation failed", err.getMessage());
-    assertTrue("cause must be the SCrypt IllegalArgumentException",
-        err.getCause() instanceof IllegalArgumentException);
+    assertTrue(err.getMessage().contains("less than 65536"));
   }
 
   // ---------- create(): KDF params validated symmetric with decrypt() ----------

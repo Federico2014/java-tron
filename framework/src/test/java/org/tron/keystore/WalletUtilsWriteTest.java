@@ -1,22 +1,34 @@
 package org.tron.keystore;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.MockedStatic;
 import org.tron.common.crypto.SignInterface;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.utils.Utils;
@@ -166,6 +178,142 @@ public class WalletUtilsWriteTest {
         && name.endsWith(".tmp"));
     assertNotNull(tempFiles);
     assertEquals("Temp file must be cleaned up on failure", 0, tempFiles.length);
+  }
+
+  @Test
+  public void testFileSyncFailurePreservesExistingKeystore() throws Exception {
+    File dir = tempFolder.newFolder("file-sync-fail");
+    File destination = new File(dir, "wallet.json");
+    WalletFile original = lightWalletFile("password123");
+    WalletUtils.writeWalletFile(original, destination);
+    byte[] before = Files.readAllBytes(destination.toPath());
+    WalletFile replacement = lightWalletFile("newpassword");
+    AtomicReference<FileChannel> walletOutput = new AtomicReference<>();
+
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      FileChannel output = (FileChannel) invocation.callRealMethod();
+      if (invocation.getArguments().length == 3
+          && ((Set<?>) invocation.getArgument(1)).contains(StandardOpenOption.CREATE_NEW)) {
+        output = spy(output);
+        doThrow(new IOException("file sync failed")).when(output).force(true);
+        walletOutput.set(output);
+      }
+      return output;
+    })) {
+      IOException error = assertThrows(IOException.class,
+          () -> WalletUtils.writeWalletFile(replacement, destination));
+      assertEquals("file sync failed", error.getMessage());
+      assertNotNull(walletOutput.get());
+      verify(walletOutput.get()).close();
+    }
+    assertArrayEquals(before, Files.readAllBytes(destination.toPath()));
+    assertEquals("Only the original wallet should remain", 1, dir.list().length);
+  }
+
+  @Test
+  public void testWriteWalletFileDoesNotOpenDirectories() throws Exception {
+    File base = tempFolder.newFolder("write-without-directory-reads");
+    File destination = new File(base, "a/b/wallet.json");
+    WalletFile wallet = lightWalletFile("password123");
+
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      Path path = invocation.getArgument(0);
+      if (Files.isDirectory(path)) {
+        throw new IOException("directory reads are unsupported");
+      }
+      return invocation.callRealMethod();
+    })) {
+      WalletUtils.writeWalletFile(wallet, destination);
+    }
+    assertEquals(wallet.getAddress(),
+        WalletUtils.loadCredentials("password123", destination).getAddress());
+  }
+
+  @Test
+  public void testReplacedTemporaryFileDoesNotReceiveWalletBytes() throws Exception {
+    assertTemporaryPathReplacementDoesNotReceiveWalletBytes(false);
+  }
+
+  @Test
+  public void testReplacedTemporarySymlinkDoesNotReceiveWalletBytes() throws Exception {
+    assertTemporaryPathReplacementDoesNotReceiveWalletBytes(true);
+  }
+
+  private void assertTemporaryPathReplacementDoesNotReceiveWalletBytes(boolean symlink)
+      throws Exception {
+    File dir = tempFolder.newFolder("replace-temp");
+    File destination = new File(dir, "wallet.json");
+    Path original = dir.toPath().resolve("original.tmp");
+    Path attacker = dir.toPath().resolve("attacker-file");
+    byte[] marker = new byte[] {1, 2, 3};
+    Files.write(attacker, marker);
+    WalletFile wallet = lightWalletFile("password123");
+
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      FileChannel channel = (FileChannel) invocation.callRealMethod();
+      if (invocation.getArguments().length == 3
+          && ((Set<?>) invocation.getArgument(1)).contains(StandardOpenOption.CREATE_NEW)) {
+        // Replace the directory entry after creation, before serialization starts.
+        Path tmp = invocation.getArgument(0);
+        Files.move(tmp, original);
+        if (symlink) {
+          Files.createSymbolicLink(tmp, attacker);
+        } else {
+          Files.write(tmp, marker);
+        }
+      }
+      return channel;
+    })) {
+      WalletUtils.writeWalletFile(wallet, destination);
+    }
+    assertArrayEquals(marker, Files.readAllBytes(attacker));
+    assertArrayEquals(marker, Files.readAllBytes(destination.toPath()));
+    assertEquals(wallet.getAddress(),
+        WalletUtils.loadCredentials("password123", original.toFile()).getAddress());
+    assertEquals(EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+        Files.getPosixFilePermissions(original));
+  }
+
+  @Test
+  public void testTemporaryNameCollisionLeavesExistingFileUntouched() throws Exception {
+    File dir = tempFolder.newFolder("temp-collision");
+    File destination = new File(dir, "wallet.json");
+    AtomicReference<Path> existing = new AtomicReference<>();
+    byte[] marker = new byte[] {1, 2, 3};
+    WalletFile wallet = lightWalletFile("password123");
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      if (invocation.getArguments().length == 3
+          && ((Set<?>) invocation.getArgument(1)).contains(StandardOpenOption.CREATE_NEW)) {
+        Path path = invocation.getArgument(0);
+        Files.write(path, marker);
+        existing.set(path);
+      }
+      return invocation.callRealMethod();
+    })) {
+      assertThrows(FileAlreadyExistsException.class,
+          () -> WalletUtils.writeWalletFile(wallet, destination));
+    }
+    assertNotNull(existing.get());
+    assertArrayEquals(marker, Files.readAllBytes(existing.get()));
+    assertFalse(destination.exists());
+  }
+
+  @Test
+  public void testUnsupportedAtomicPermissionsDoesNotFallBack() throws Exception {
+    File dir = tempFolder.newFolder("unsupported-permissions");
+    File destination = new File(dir, "wallet.json");
+    WalletFile wallet = lightWalletFile("password123");
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      if (invocation.getArguments().length == 3
+          && ((Set<?>) invocation.getArgument(1)).contains(StandardOpenOption.CREATE_NEW)) {
+        throw new UnsupportedOperationException("Atomic permissions unavailable");
+      }
+      return invocation.callRealMethod();
+    })) {
+      assertThrows(UnsupportedOperationException.class,
+          () -> WalletUtils.writeWalletFile(wallet, destination));
+    }
+    assertEquals("No wallet or temporary file should be created", 0, dir.list().length);
   }
 
   // ---------- loadCredentials symlink behavior ----------

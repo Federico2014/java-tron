@@ -1,27 +1,38 @@
 package org.tron.keystore;
 
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Console;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.tron.common.crypto.SignInterface;
@@ -67,18 +78,14 @@ public class WalletUtils {
    * Write a WalletFile to the given destination path with owner-only (0600)
    * permissions, using a temp file + atomic rename.
    *
-   * <p>On POSIX filesystems, the temp file is created atomically with 0600
-   * permissions via {@link Files#createTempFile(Path, String, String,
-   * java.nio.file.attribute.FileAttribute[])}, avoiding any window where the
-   * file is world-readable.
+   * <p>The temporary file is atomically created with 0600 permissions and written
+   * through the same channel, without reopening its path. Filesystems that cannot
+   * atomically set these permissions are not supported.
    *
-   * <p>On non-POSIX filesystems (e.g. Windows) the fallback uses
-   * {@link File#setReadable(boolean, boolean)} /
-   * {@link File#setWritable(boolean, boolean)} which is best-effort — these
-   * methods manipulate only DOS-style attributes on Windows and may not update
-   * file ACLs. The sensitive keystore JSON is written only after the narrowing
-   * calls, so no confidential data is exposed during the window, but callers
-   * on Windows should not infer strict owner-only ACL enforcement from this.
+   * <p>The destination must be in a trusted directory hierarchy. Keeping the channel
+   * open prevents a replaced temporary path from redirecting the wallet bytes, but
+   * users able to modify directory entries can still replace or remove the file
+   * before or after the move.
    *
    * @param walletFile  the keystore to serialize
    * @param destination the final target file (existing file will be replaced)
@@ -88,22 +95,19 @@ public class WalletUtils {
     Path dir = destination.getAbsoluteFile().getParentFile().toPath();
     Files.createDirectories(dir);
 
-    Path tmp;
-    try {
-      tmp = Files.createTempFile(dir, "keystore-", ".tmp",
-          PosixFilePermissions.asFileAttribute(OWNER_ONLY));
-    } catch (UnsupportedOperationException e) {
-      // Windows / non-POSIX fallback — best-effort narrowing only (see JavaDoc)
-      tmp = Files.createTempFile(dir, "keystore-", ".tmp");
-      File tf = tmp.toFile();
-      tf.setReadable(false, false);
-      tf.setReadable(true, true);
-      tf.setWritable(false, false);
-      tf.setWritable(true, true);
-    }
+    Path tmp = dir.resolve("keystore-" + UUID.randomUUID() + ".tmp");
+    // Open before entering cleanup: a CREATE_NEW collision must not delete an existing file.
+    FileChannel channel = FileChannel.open(tmp,
+        EnumSet.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
+        PosixFilePermissions.asFileAttribute(OWNER_ONLY));
 
     try {
-      objectMapper.writeValue(tmp.toFile(), walletFile);
+      try (FileChannel output = channel) {
+        // Keep the creating channel open until all serialized bytes have been synced.
+        objectMapper.writer().without(JsonGenerator.Feature.AUTO_CLOSE_TARGET)
+            .writeValue(Channels.newOutputStream(output), walletFile);
+        output.force(true);
+      }
       try {
         Files.move(tmp, destination.toPath(),
             StandardCopyOption.REPLACE_EXISTING,
@@ -153,7 +157,7 @@ public class WalletUtils {
     }
   }
 
-  public static String getWalletFileName(WalletFile walletFile) {
+  private static String getWalletFileName(WalletFile walletFile) {
     DateTimeFormatter format = DateTimeFormatter.ofPattern(
         "'UTC--'yyyy-MM-dd'T'HH-mm-ss.nVV'--'");
     ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
@@ -220,9 +224,70 @@ public class WalletUtils {
 
   private static synchronized Scanner getSharedStdinScanner() {
     if (sharedStdinScanner == null) {
-      sharedStdinScanner = new Scanner(System.in);
+      // CharsetDecoder defaults to REPORT: never replace malformed password bytes.
+      sharedStdinScanner = new Scanner(new InputStreamReader(System.in,
+          StandardCharsets.UTF_8.newDecoder()));
     }
     return sharedStdinScanner;
+  }
+
+  /**
+   * Decode a UTF-8 password file without silently replacing malformed bytes.
+   */
+  public static String decodePassword(byte[] bytes) throws IOException {
+    try {
+      return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
+    } catch (CharacterCodingException e) {
+      throw new IOException("Password input must be valid UTF-8", e);
+    }
+  }
+
+  /**
+   * Read with echo disabled, rejecting potentially corrupted console input.
+   * The caller must clear the returned array; EOF is returned as {@code null}.
+   */
+  public static char[] readConsolePassword(Console console, String prompt) throws IOException {
+    char[] password = console.readPassword("%s", prompt);
+    if (password == null) {
+      return null;
+    }
+    try {
+      validateConsolePassword(password, consoleCharset(console));
+      return password;
+    } catch (IOException e) {
+      Arrays.fill(password, '\0');
+      throw e;
+    }
+  }
+
+  private static Charset consoleCharset(Console console) throws IOException {
+    try {
+      // Console.charset() was added in JDK 17; keep the JDK 8 build compatible.
+      return (Charset) Console.class.getMethod("charset").invoke(console);
+    } catch (NoSuchMethodException e) {
+      // On supported JDK 8 Linux/macOS runtimes Console uses the default charset.
+      try {
+        String os = System.getProperty("os.name");
+        if ("Linux".equals(os) || "Mac OS X".equals(os)) {
+          return Charset.defaultCharset();
+        }
+        return null;
+      } catch (SecurityException ex) {
+        throw new IOException("Cannot determine console encoding; use UTF-8 password input", ex);
+      }
+    } catch (ReflectiveOperationException | SecurityException e) {
+      throw new IOException("Cannot determine console encoding; use UTF-8 password input", e);
+    }
+  }
+
+  static void validateConsolePassword(char[] password, Charset charset) throws IOException {
+    for (char c : password) {
+      // Console decoders replace malformed bytes; the original input cannot be recovered.
+      if (c == '\uFFFD' || (c > 0x7f && !StandardCharsets.UTF_8.equals(charset))) {
+        throw new IOException("Password may be corrupted by the console encoding; "
+            + "use a UTF-8 terminal or UTF-8 password file/stdin");
+      }
+    }
   }
 
   public static String inputPassword() {
@@ -231,7 +296,12 @@ public class WalletUtils {
     Scanner in = cons == null ? getSharedStdinScanner() : null;
     while (true) {
       if (cons != null) {
-        char[] pwd = cons.readPassword("password: ");
+        char[] pwd;
+        try {
+          pwd = readConsolePassword(cons, "password: ");
+        } catch (IOException e) {
+          throw new TronError(e.getMessage(), e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+        }
         // Console EOF (e.g. Ctrl+D) returns null; fail fast instead of
         // crashing with a raw NullPointerException.
         if (pwd == null) {
@@ -240,7 +310,11 @@ public class WalletUtils {
                   + "restart with --password or provide an interactive TTY",
               TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
         }
-        password = String.valueOf(pwd);
+        try {
+          password = String.valueOf(pwd);
+        } finally {
+          Arrays.fill(pwd, '\0');
+        }
       } else {
         // Preserve the full password including embedded whitespace.
         // The previous implementation applied trim() + split("\\s+")[0]
@@ -252,12 +326,19 @@ public class WalletUtils {
         try {
           line = in.nextLine();
         } catch (NoSuchElementException e) {
+          if (in.ioException() != null) {
+            throw passwordInputError(in.ioException());
+          }
           // Piped stdin reached EOF before a password line was available;
           // fail fast instead of leaking a raw NoSuchElementException.
           throw new TronError(
               "password input closed (EOF): piped stdin provided no password "
                   + "line; restart with --password or provide an interactive TTY",
               e, TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
+        }
+        // Scanner treats reader failures as EOF and can return a partial line.
+        if (in.ioException() != null) {
+          throw passwordInputError(in.ioException());
         }
         password = stripPasswordLine(line);
       }
@@ -266,6 +347,11 @@ public class WalletUtils {
       }
       System.out.println("Invalid password, please input again.");
     }
+  }
+
+  private static TronError passwordInputError(IOException cause) {
+    return new TronError("Cannot read password input; stdin must contain valid UTF-8", cause,
+        TronError.ErrCode.WITNESS_KEYSTORE_LOAD);
   }
 
 }

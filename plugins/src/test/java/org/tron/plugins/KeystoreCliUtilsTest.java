@@ -4,12 +4,15 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Locale;
@@ -17,6 +20,8 @@ import java.util.Map;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.MockedStatic;
+import org.tron.common.utils.ByteArray;
 import org.tron.keystore.WalletFile;
 
 public class KeystoreCliUtilsTest {
@@ -52,13 +57,25 @@ public class KeystoreCliUtilsTest {
     WalletFile.Crypto crypto = new WalletFile.Crypto();
     crypto.setCipher("aes-128-ctr");
     crypto.setKdf("scrypt");
+    crypto.setCiphertext(ByteArray.toHexString(new byte[32]));
+    crypto.setMac(ByteArray.toHexString(new byte[32]));
+    WalletFile.CipherParams cipher = new WalletFile.CipherParams();
+    cipher.setIv(ByteArray.toHexString(new byte[16]));
+    crypto.setCipherparams(cipher);
+    WalletFile.ScryptKdfParams params = new WalletFile.ScryptKdfParams();
+    params.setDklen(32);
+    params.setN(4096);
+    params.setR(8);
+    params.setP(1);
+    params.setSalt("00");
+    crypto.setKdfparams(params);
     return crypto;
   }
 
   @Test
   public void testIsValidKeystoreFileValid() {
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(3);
     wf.setCrypto(supportedCrypto());
     assertTrue(KeystoreCliUtils.isValidKeystoreFile(wf));
@@ -75,7 +92,7 @@ public class KeystoreCliUtilsTest {
   @Test
   public void testIsValidKeystoreFileNullCrypto() {
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(3);
     assertFalse(KeystoreCliUtils.isValidKeystoreFile(wf));
   }
@@ -83,7 +100,7 @@ public class KeystoreCliUtilsTest {
   @Test
   public void testIsValidKeystoreFileWrongVersion() {
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(2);
     wf.setCrypto(supportedCrypto());
     assertFalse(KeystoreCliUtils.isValidKeystoreFile(wf));
@@ -94,7 +111,7 @@ public class KeystoreCliUtilsTest {
     // {"address":"T...","version":3,"crypto":{}} — passes the old checks
     // but Wallet.validate would later reject it. Discovery should skip it.
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(3);
     wf.setCrypto(new WalletFile.Crypto());
     assertFalse(KeystoreCliUtils.isValidKeystoreFile(wf));
@@ -103,7 +120,7 @@ public class KeystoreCliUtilsTest {
   @Test
   public void testIsValidKeystoreFileRejectsUnsupportedCipher() {
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(3);
     WalletFile.Crypto crypto = new WalletFile.Crypto();
     crypto.setCipher("des");
@@ -115,7 +132,7 @@ public class KeystoreCliUtilsTest {
   @Test
   public void testIsValidKeystoreFileRejectsUnsupportedKdf() {
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(3);
     WalletFile.Crypto crypto = new WalletFile.Crypto();
     crypto.setCipher("aes-128-ctr");
@@ -128,11 +145,16 @@ public class KeystoreCliUtilsTest {
   public void testIsValidKeystoreFileAcceptsPbkdf2Kdf() {
     // pbkdf2 is the other supported KDF (used by some Ethereum keystores).
     WalletFile wf = new WalletFile();
-    wf.setAddress("TAddr");
+    wf.setAddress("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
     wf.setVersion(3);
-    WalletFile.Crypto crypto = new WalletFile.Crypto();
-    crypto.setCipher("aes-128-ctr");
+    WalletFile.Crypto crypto = supportedCrypto();
     crypto.setKdf("pbkdf2");
+    WalletFile.Aes128CtrKdfParams params = new WalletFile.Aes128CtrKdfParams();
+    params.setDklen(32);
+    params.setC(262144);
+    params.setPrf("hmac-sha256");
+    params.setSalt("00");
+    crypto.setKdfparams(params);
     wf.setCrypto(crypto);
     assertTrue(KeystoreCliUtils.isValidKeystoreFile(wf));
   }
@@ -170,6 +192,26 @@ public class KeystoreCliUtilsTest {
     StringWriter err = new StringWriter();
     String pw = KeystoreCliUtils.readPassword(pwFile, new PrintWriter(err));
     assertEquals("goodpassword", pw);
+  }
+
+  @Test
+  public void testReadPasswordFilePreservesUnicode() throws Exception {
+    File pwFile = tempFolder.newFile("pw-unicode.txt");
+    String password = "密码测试 é🔑";
+    Files.write(pwFile.toPath(), (password + "\n").getBytes(StandardCharsets.UTF_8));
+    makeOwnerOnly(pwFile);
+    assertEquals(password, KeystoreCliUtils.readPassword(pwFile,
+        new PrintWriter(new StringWriter())));
+  }
+
+  @Test
+  public void testReadPasswordFileRejectsMalformedUtf8() throws Exception {
+    File pwFile = tempFolder.newFile("pw-malformed.txt");
+    Files.write(pwFile.toPath(), new byte[]{'s', 'e', 'c', 'r', 'e', 't', (byte) 0xff});
+    makeOwnerOnly(pwFile);
+    IOException error = assertThrows(IOException.class,
+        () -> KeystoreCliUtils.readPassword(pwFile, new PrintWriter(new StringWriter())));
+    assertTrue(error.getMessage().contains("UTF-8"));
   }
 
   @Test
@@ -229,7 +271,11 @@ public class KeystoreCliUtilsTest {
   public void testEnsureDirectoryCreatesNested() throws Exception {
     File dir = new File(tempFolder.getRoot(), "a/b/c");
     assertFalse(dir.exists());
-    KeystoreCliUtils.ensureDirectory(dir);
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class, invocation -> {
+      throw new IOException("directory reads are unsupported");
+    })) {
+      KeystoreCliUtils.ensureDirectory(dir);
+    }
     assertTrue(dir.exists());
     assertTrue(dir.isDirectory());
   }

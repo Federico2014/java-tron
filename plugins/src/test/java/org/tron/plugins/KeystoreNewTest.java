@@ -207,6 +207,23 @@ public class KeystoreNewTest {
   }
 
   @Test
+  public void testMalformedPasswordDoesNotCreateKeystore() throws Exception {
+    File dir = tempFolder.newFolder("keystore-malformed");
+    File pwFile = tempFolder.newFile("malformed-password.txt");
+    Files.write(pwFile.toPath(), new byte[]{'s', 'e', 'c', 'r', 'e', 't', (byte) 0xff});
+    makeOwnerOnly(pwFile);
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setErr(new PrintWriter(err));
+
+    assertEquals(1, cmd.execute("keystore", "new",
+        "--keystore-dir", dir.getAbsolutePath(),
+        "--password-file", pwFile.getAbsolutePath()));
+    assertTrue(err.toString().contains("UTF-8"));
+    assertEquals(0, dir.listFiles().length);
+  }
+
+  @Test
   public void testNewKeystorePasswordFileTooLarge() throws Exception {
     File dir = tempFolder.newFolder("keystore-bigpw");
     File pwFile = tempFolder.newFile("bigpw.txt");

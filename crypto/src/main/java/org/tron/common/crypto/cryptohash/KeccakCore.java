@@ -18,6 +18,8 @@
 
 package org.tron.common.crypto.cryptohash;
 
+import java.util.Arrays;
+
 abstract class KeccakCore extends DigestEngine {
 
   private static final long[] RC = {
@@ -529,6 +531,7 @@ abstract class KeccakCore extends DigestEngine {
   }
 
   private final void doReset() {
+    Arrays.fill(tmpOut, (byte) 0);
     for (int i = 0; i < 25; i++) {
       A[i] = 0;
     }
@@ -540,9 +543,14 @@ abstract class KeccakCore extends DigestEngine {
     A[20] = 0xFFFFFFFFFFFFFFFFL;
   }
 
-  protected Digest copyState(KeccakCore dst) {
-    System.arraycopy(A, 0, dst.A, 0, 25);
-    return super.copyState(dst);
+  @Override
+  protected Digest copyState(DigestEngine dst) {
+    if (!(dst instanceof KeccakCore)) {
+      throw new IllegalArgumentException("Destination must be a KeccakCore");
+    }
+    super.copyState(dst);
+    System.arraycopy(A, 0, ((KeccakCore) dst).A, 0, 25);
+    return dst;
   }
 
   public String toString() {

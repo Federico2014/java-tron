@@ -20,10 +20,12 @@ package org.tron.common.crypto.cryptohash;
 
 import java.security.DigestException;
 import java.security.MessageDigest;
+import java.util.Arrays;
 
 public abstract class DigestEngine extends MessageDigest implements Digest {
 
-  private int digestLen, blockLen, inputLen;
+  private final int digestLen;
+  private int blockLen, inputLen;
   private byte[] inputBuf;
   private long blockCount;
 
@@ -45,6 +47,7 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
    * state.
    */
   protected void engineReset() {
+    Arrays.fill(inputBuf, (byte) 0);
     inputLen = 0;
     blockCount = 0;
   }
@@ -57,9 +60,7 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
   protected abstract void processBlock(byte[] data);
 
   /**
-   * Perform the final padding and store the result in the provided buffer. This method shall call
-   * {@link #flush} and then {@link #update} with the appropriate padding data in order to getData
-   * the full input data.
+   * Perform the final padding and store the resulting digest in the provided buffer.
    *
    * @param buf the output buffer
    * @param off the output offset
@@ -67,23 +68,18 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
   protected abstract void doPadding(byte[] buf, int off);
 
   /**
-   * This function is called at object creation time; the implementation should use it to perform
-   * initialization tasks. After this method is called, the implementation should be ready to
-   * process data or meaningfully honour calls such as {@link #engineGetDigestLength}
+   * Called by the DigestEngine constructor before subclass initializers and constructor bodies run.
+   * Initialize any state required by {@link #engineGetDigestLength()} and
+   * {@link #getInternalBlockLength()}. After this method returns, both methods must return correct,
+   * fixed lengths without relying on later subclass initialization. The input buffer is allocated
+   * only after this method returns.
    */
   protected abstract void doInit();
-
-  private void adjustDigestLen() {
-    if (digestLen == 0) {
-      digestLen = engineGetDigestLength();
-    }
-  }
 
   /**
    * @see Digest
    */
   public byte[] digest() {
-    adjustDigestLen();
     byte[] result = new byte[digestLen];
     doPadding(result, 0);
     reset();
@@ -108,7 +104,6 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
     if (offset < 0 || len < 0 || offset > buf.length || len > buf.length - offset) {
       throw new IllegalArgumentException("Invalid output buffer range");
     }
-    adjustDigestLen();
     if (len < digestLen) {
       throw new DigestException("Partial digests are not returned");
     }
@@ -227,18 +222,22 @@ public abstract class DigestEngine extends MessageDigest implements Digest {
   /**
    * This function copies the internal buffering state to some other instance of a class extending
    * {@code DigestEngine}. It returns a reference to the copy. This method is intended to be called
-   * by the implementation of the {@link #copy} method.
+   * by the implementation of the {@link #copy} method. The destination must use the same algorithm,
+   * digest length and internal block length.
    *
    * @param dest the copy
    * @return the value {@code dest}
+   * @throws IllegalArgumentException if the destination is null or incompatible
    */
   protected Digest copyState(DigestEngine dest) {
+    if (dest == null || digestLen != dest.digestLen || blockLen != dest.blockLen
+        || !getAlgorithm().equals(dest.getAlgorithm())) {
+      throw new IllegalArgumentException("Incompatible digest destination");
+    }
     dest.inputLen = inputLen;
     dest.blockCount = blockCount;
     System.arraycopy(inputBuf, 0, dest.inputBuf, 0,
         inputBuf.length);
-    adjustDigestLen();
-    dest.adjustDigestLen();
     return dest;
   }
 }

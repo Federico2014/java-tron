@@ -615,7 +615,7 @@ public class ManagerTest extends BaseMethodTest {
             .put(addressByte.toByteArray(), accountCapsule);
 
     WitnessCapsule sr1 = new WitnessCapsule(
-        ByteString.copyFrom(address), "www.tron.net/first");
+        ByteString.copyFrom(ecKey.getPubKey()), "www.tron.net/first");
     sr1.setVoteCount(1000000000L);
 
 
@@ -623,7 +623,7 @@ public class ManagerTest extends BaseMethodTest {
     final ECKey ecKey2 = ECKey.fromPrivate(privateKey2);
     byte[] address2 = ecKey2.getAddress();
     WitnessCapsule sr2 = new WitnessCapsule(
-        ByteString.copyFrom(address2), "www.tron.net/second");
+        ByteString.copyFrom(ecKey2.getPubKey()), "www.tron.net/second");
     sr2.setVoteCount(100000L);
     chainManager.getWitnessStore().put(address, sr1);
     WitnessCapsule witnessCapsule = new WitnessCapsule(ByteString.copyFrom(address));

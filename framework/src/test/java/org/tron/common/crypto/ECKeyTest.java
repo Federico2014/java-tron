@@ -17,6 +17,7 @@ import java.security.SignatureException;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.sec.SECNamedCurves;
+import org.bouncycastle.math.ec.ECPoint;
 import org.bouncycastle.util.BigIntegers;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
@@ -467,5 +468,58 @@ public class ECKeyTest {
     ECKey key = ECKey.fromPublicOnly(pubKey);
 
     assertEquals(key, ECKey.fromNodeId(key.getNodeId()));
+  }
+
+  @Test
+  public void testComputeAddressRejectsMalformedPublicKey() {
+    assertThrows(IllegalArgumentException.class, () -> Hash.computeAddress(new byte[33]));
+    assertThrows(IllegalArgumentException.class, () -> Hash.computeAddress(new byte[65]));
+
+    ECKey key = ECKey.fromPrivate(privateKey);
+    assertArrayEquals(key.getAddress(), Hash.computeAddress(key.getPubKey()));
+  }
+
+  @Test
+  public void testLegacyPointAtInfinityAddressUnchanged() {
+    // The address derived from the Keccak-256 hash of the empty input, as documented before the
+    // change: legacy recovery encoded the point at infinity as the single byte 0x00.
+    byte[] expected = Hex.decode("41dcc703c0e500b653ca82273b7bfad8045d85a470");
+
+    assertArrayEquals(expected, Hash.computeAddress(new byte[]{0}));
+    assertArrayEquals(expected, Hash.sha3omit12(new byte[0]));
+  }
+
+  @Test
+  public void testComputeAddressRejectsPointAtInfinity() {
+    assertThrows(IllegalArgumentException.class,
+        () -> Hash.computeAddress(ECKey.CURVE.getCurve().getInfinity()));
+    assertThrows(IllegalArgumentException.class, () -> Hash.computeAddress((ECPoint) null));
+  }
+
+  @Test
+  public void testECKeyIsNotSerializable() {
+    ECKey key = ECKey.fromPrivate(privateKey);
+    assertFalse(key instanceof java.io.Serializable);
+  }
+
+  @Test
+  public void testMissingPrivateKeyIsIllegalStateException() {
+    ECKey publicOnly = ECKey.fromPublicOnly(pubKey);
+
+    assertThrows(IllegalStateException.class, publicOnly::getPrivKey);
+    assertThrows(IllegalStateException.class, () -> publicOnly.sign(new byte[32]));
+  }
+
+  @Test
+  public void testSignatureEqualityIncludesRecoveryId() {
+    byte[] r = BigInteger.ONE.toByteArray();
+    byte[] s = BigInteger.valueOf(2).toByteArray();
+
+    ECDSASignature low = new ECDSASignature(r, s, (byte) 27);
+    ECDSASignature high = new ECDSASignature(r, s, (byte) 28);
+
+    assertEquals(low, new ECDSASignature(r, s, (byte) 27));
+    assertEquals(low.hashCode(), new ECDSASignature(r, s, (byte) 27).hashCode());
+    assertNotEquals(low, high);
   }
 }

@@ -177,10 +177,24 @@ public class Hash {
   }
 
   public static byte[] computeAddress(ECPoint pubPoint) {
+    if (pubPoint == null || pubPoint.isInfinity()) {
+      throw new IllegalArgumentException(
+          "Public key must not be null or the point at infinity");
+    }
     return computeAddress(pubPoint.getEncoded(/* uncompressed */ false));
   }
 
   public static byte[] computeAddress(byte[] pubBytes) {
+    if (pubBytes == null) {
+      throw new IllegalArgumentException("Public key must not be null");
+    }
+    if (pubBytes.length == 1 && pubBytes[0] == 0) {
+      // Legacy signature recovery encodes the point at infinity as a single zero byte.
+      return sha3omit12(new byte[0]);
+    }
+    if (pubBytes.length != 65 || pubBytes[0] != 0x04) {
+      throw new IllegalArgumentException("Expected a 65-byte uncompressed public key");
+    }
     return sha3omit12(
         Arrays.copyOfRange(pubBytes, 1, pubBytes.length));
   }

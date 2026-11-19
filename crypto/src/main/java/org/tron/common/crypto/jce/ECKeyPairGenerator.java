@@ -82,7 +82,8 @@ public final class ECKeyPairGenerator {
 
     static {
       try {
-        INSTANCE = KeyPairGenerator.getInstance(ALGORITHM);
+        // SunEC dropped secp256k1 in JDK 16, so never fall back to the default provider.
+        INSTANCE = KeyPairGenerator.getInstance(ALGORITHM, TronCastleProvider.getInstance());
         INSTANCE.initialize(SECP256K1_CURVE);
       } catch (NoSuchAlgorithmException ex) {
         throw new AssertionError(algorithmAssertionMsg, ex);

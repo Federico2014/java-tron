@@ -44,17 +44,22 @@ public class StringUtil {
     return ByteString.copyFrom(ByteArray.fromHexString(hexString));
   }
 
+  /**
+   * Checks for non-empty, even-length ASCII hex with an optional {@code 0x} prefix.
+   */
   public static boolean isHexadecimal(String str) {
     if (str == null || str.isEmpty()) {
       return false;
     }
-    if (str.length() % 2 != 0) {
+    int start = str.startsWith("0x") ? 2 : 0;
+    if (str.length() == start || str.length() % 2 != 0) {
       return false;
     }
 
-    for (int i = 0; i < str.length(); i++) {
+    for (int i = start; i < str.length(); i++) {
       char c = str.charAt(i);
-      if (Character.digit(c, 16) == -1) {
+      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+          || (c >= 'A' && c <= 'F'))) {
         return false;
       }
     }
