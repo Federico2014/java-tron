@@ -171,7 +171,7 @@ public class WitnessInitializerKeystoreTest {
       ObjectMapper mapper = new ObjectMapper().configure(
           DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
       WalletFile wf = mapper.readValue(keystoreFile, WalletFile.class);
-      String spoofedAddress = "TSpoofedSrAddressXXXXXXXXXXXXXXXXXXX";
+      String spoofedAddress = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
       wf.setAddress(spoofedAddress);
       mapper.writeValue(keystoreFile, wf);
 
@@ -193,11 +193,16 @@ public class WitnessInitializerKeystoreTest {
 
   @Test
   public void testInvalidPrivateKeyLoadError() throws Exception {
-    // Only mock the source of bytes for encryption. Decryption and key validation are real.
+    // Bypass creation validation to build an invalid fixture; loading uses real key validation.
     SignInterface invalidKey = mock(SignInterface.class);
     when(invalidKey.getPrivateKey()).thenReturn(new byte[32]);
     when(invalidKey.getAddress()).thenReturn(ECKey.fromPrivate(BigInteger.ONE).getAddress());
-    WalletFile walletFile = Wallet.createLight(PASSWORD, invalidKey);
+    WalletFile walletFile;
+    try (MockedStatic<ECKey> ecKey = org.mockito.Mockito.mockStatic(ECKey.class)) {
+      ecKey.when(() -> ECKey.isValidPrivateKey(org.mockito.ArgumentMatchers.any(byte[].class)))
+          .thenReturn(true);
+      walletFile = Wallet.createLight(PASSWORD, invalidKey);
+    }
     String fileName = DIR_NAME + "/invalid-key.json";
     new ObjectMapper().writeValue(new File(System.getProperty("user.dir"), fileName), walletFile);
 

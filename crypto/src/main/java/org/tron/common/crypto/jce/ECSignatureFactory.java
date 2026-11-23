@@ -35,7 +35,8 @@ public final class ECSignatureFactory {
 
   public static Signature getRawInstance() {
     try {
-      return Signature.getInstance(RAW_ALGORITHM);
+      // SunEC dropped secp256k1 in JDK 16, so never fall back to the default provider.
+      return Signature.getInstance(RAW_ALGORITHM, TronCastleProvider.getInstance());
     } catch (NoSuchAlgorithmException ex) {
       throw new AssertionError(rawAlgorithmAssertionMsg, ex);
     }

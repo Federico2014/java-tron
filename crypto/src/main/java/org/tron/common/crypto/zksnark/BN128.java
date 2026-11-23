@@ -161,7 +161,11 @@ public abstract class BN128<T extends Field<T>> {
 
   public BN128<T> mul(BigInteger s) {
 
-    if (s.compareTo(BigInteger.ZERO) == 0) // P * 0 = 0
+    if (s.signum() < 0) {
+      throw new IllegalArgumentException("Scalar must be non-negative");
+    }
+
+    if (s.signum() == 0) // P * 0 = 0
     {
       return zero();
     }

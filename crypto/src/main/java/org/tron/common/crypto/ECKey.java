@@ -17,7 +17,6 @@ package org.tron.common.crypto;
  * along with the ethereumJ library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import java.io.Serializable;
 import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
@@ -64,7 +63,7 @@ import org.tron.common.utils.ByteUtil;
  * low-S signatures.
  */
 @Slf4j(topic = "crypto")
-public class ECKey implements Serializable, SignInterface {
+public class ECKey implements SignInterface {
 
   /**
    * The parameters of the secp256k1 curve.
@@ -88,7 +87,6 @@ public class ECKey implements Serializable, SignInterface {
   private static final BigInteger SECP256K1N =
       new BigInteger("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16);
   private static final SecureRandom secureRandom;
-  private static final long serialVersionUID = -728224901792295832L;
 
   static {
     // All clients must agree on the curve to use by agreement.
@@ -501,15 +499,15 @@ public class ECKey implements Serializable, SignInterface {
   /**
    * Recovers the public key using SEC1v2 section 4.1.6.
    *
-   * <p>Replaces the three-argument overload; pass {@code false} for legacy recovery and rebuild
-   * downstream callers.</p>
-   *
    * @param recId recovery selector, from 0 to 3
    * @param sig signature components
    * @param messageHash hash of the signed data
-   * @param strictValidation whether to enforce strict ECDSA validation; consensus callers use
-   *     the applicable proposal state
+   * @param strictValidation whether to enforce strict ECDSA validation
    * @return encoded public key, or {@code null} if recovery is not possible
+   * @throws IllegalArgumentException if an argument is invalid or the candidate point is not on
+   *     the curve
+   * @throws ArithmeticException if {@code r} is not invertible modulo the curve order when
+   *     strict validation is disabled
    */
   @Nullable
   public static byte[] recoverPubBytesFromSignature(int recId,
@@ -816,7 +814,13 @@ public class ECKey implements Serializable, SignInterface {
     int recId = -1;
     byte[] thisKey = this.pub.getEncoded(/* compressed */ false);
     for (int i = 0; i < 4; i++) {
-      byte[] k = ECKey.recoverPubBytesFromSignature(i, sig, messageHash, true);
+      byte[] k;
+      try {
+        k = ECKey.recoverPubBytesFromSignature(i, sig, messageHash, true);
+      } catch (IllegalArgumentException e) {
+        // x = r + (i / 2) * n is not a valid curve point; try the next recId.
+        continue;
+      }
       if (k != null && Arrays.equals(k, thisKey)) {
         recId = i;
         break;
@@ -826,6 +830,9 @@ public class ECKey implements Serializable, SignInterface {
       throw new RuntimeException("Could not construct a recoverable key" +
           ". This should never happen.");
     }
+    // recId 2 or 3 gives v = 29 or 30. It occurs only when n <= x(R) < p (probability about
+    // 2^-127.65) and is valid for transaction signatures; validateComponents restricts the
+    // precompile path to recIds 0 and 1.
     sig.v = (byte) (recId + 27);
     return sig;
   }
@@ -927,6 +934,12 @@ public class ECKey implements Serializable, SignInterface {
       return signature;
     }
 
+    /**
+     * Validates signature components for the precompile path, which accepts only recovery ids 0
+     * and 1 (v = 27 or 28). Transaction signatures may also use recovery ids 2 and 3 (v = 29 or
+     * 30) and are validated through {@link ECKey#signatureToKeyBytes(byte[], ECDSASignature,
+     * boolean)}.
+     */
     public static boolean validateComponents(BigInteger r, BigInteger s,
         byte v) {
 
@@ -1007,6 +1020,9 @@ public class ECKey implements Serializable, SignInterface {
 
       ECDSASignature signature = (ECDSASignature) o;
 
+      if (v != signature.v) {
+        return false;
+      }
       if (!r.equals(signature.r)) {
         return false;
       }
@@ -1017,12 +1033,13 @@ public class ECKey implements Serializable, SignInterface {
     public int hashCode() {
       int result = r.hashCode();
       result = 31 * result + s.hashCode();
+      result = 31 * result + (int) v;
       return result;
     }
   }
 
   @SuppressWarnings("serial")
-  public static class MissingPrivateKeyException extends RuntimeException {
+  public static class MissingPrivateKeyException extends IllegalStateException {
 
   }
 

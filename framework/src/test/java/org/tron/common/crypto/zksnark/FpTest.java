@@ -87,6 +87,16 @@ public class FpTest {
     Assert.assertNull(BN128Fp.create(one, outOfRange));
   }
 
+  @Test
+  public void testMulRejectsNegativeScalar() {
+    BN128<Fp> point = BN128Fp.create(BigInteger.ONE.toByteArray(),
+        BigInteger.valueOf(2).toByteArray());
+    Assert.assertNotNull(point);
+
+    Assert.assertThrows(IllegalArgumentException.class,
+        () -> point.mul(BigInteger.valueOf(-1)));
+  }
+
   private void assertInitializesWithoutCurveParameters(String name) throws Exception {
     URL location = Fp.class.getProtectionDomain().getCodeSource().getLocation();
     // A fresh loader exercises first use even if another test already initialized these classes.

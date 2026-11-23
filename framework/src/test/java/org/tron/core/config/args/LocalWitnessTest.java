@@ -161,12 +161,13 @@ public class LocalWitnessTest {
 
   @Test
   public void testHexStringFormat() {
-    Assert.assertTrue(StringUtil.isHexadecimal("0123456789abcdefABCDEF"));
-    Assert.assertFalse(StringUtil.isHexadecimal(null));
-    Assert.assertFalse(StringUtil.isHexadecimal(""));
-    Assert.assertFalse(StringUtil.isHexadecimal("abc"));
-    Assert.assertFalse(StringUtil.isHexadecimal(" "));
-    Assert.assertFalse(StringUtil.isHexadecimal("123xyz"));
+    for (String value : new String[] {"0123456789abcdefABCDEF", "0x12", "0xabcdefABCDEF"}) {
+      Assert.assertTrue("Expected valid hex: " + value, StringUtil.isHexadecimal(value));
+    }
+    for (String value : new String[] {null, "", "abc", " ", "123xyz", "0x", "0x1",
+        "0x0x12", "0X12", "0x１２", "00 00", "１２", "ＡＢ", "١٢"}) {
+      Assert.assertFalse("Expected invalid hex: " + value, StringUtil.isHexadecimal(value));
+    }
   }
 
   @Test
